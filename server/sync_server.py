@@ -6,7 +6,7 @@ wysyła swoje zmiany i pobiera cudze. Dostęp tylko z tajnym kluczem (nagłówek
 Konflikt tego samego rekordu rozstrzyga nowszy znacznik czasu (ostatni zapis wygrywa).
 
 Uruchomienie:  OPERAT_SYNC_KEY=... OPERAT_SYNC_DB=/var/lib/operat-sync/sync.db python3 sync_server.py
-Nasłuch: 127.0.0.1:8787 (publicznie wystawia go Caddy po HTTPS).
+Nasłuch: 127.0.0.1:18795 (publicznie wystawia go Caddy po HTTPS).
 """
 import hmac, json, os, shutil, sqlite3, sys, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -14,7 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 KEY = os.environ.get('OPERAT_SYNC_KEY', '')
 DB = os.environ.get('OPERAT_SYNC_DB', 'sync.db')
 HOST = os.environ.get('OPERAT_SYNC_HOST', '127.0.0.1')
-PORT = int(os.environ.get('OPERAT_SYNC_PORT', '8787'))
+PORT = int(os.environ.get('OPERAT_SYNC_PORT', '18795'))
 MAX_BODY = 60 * 1024 * 1024
 PAGE = 2000
 COLLS = {'offers', 'wlasne', 'wyceny', 'budynki', 'ust'}

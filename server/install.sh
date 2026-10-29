@@ -6,10 +6,26 @@ DIR=/opt/operat-sync; DATA=/var/lib/operat-sync; ENVF=/etc/operat-sync.env
 here="$(cd "$(dirname "$0")" && pwd)"
 mkdir -p "$DIR" "$DATA"
 cp "$here/sync_server.py" "$DIR/sync_server.py"
+# wolny port (nie wolno zająć portu innej aplikacji); zapamiętany w pliku środowiska
+freeport() { python3 - <<'PY'
+import socket
+for p in range(18795, 18895):
+    s = socket.socket()
+    try:
+        s.bind(('127.0.0.1', p)); s.close(); print(p); break
+    except OSError:
+        s.close()
+PY
+}
 if [ ! -f "$ENVF" ]; then
   KEY="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
   umask 077; printf 'OPERAT_SYNC_KEY=%s\nOPERAT_SYNC_DB=%s/sync.db\n' "$KEY" "$DATA" > "$ENVF"
 fi
+if ! grep -q '^OPERAT_SYNC_PORT=' "$ENVF"; then
+  systemctl stop operat-sync 2>/dev/null || true
+  echo "OPERAT_SYNC_PORT=$(freeport)" >> "$ENVF"
+fi
+PORT="$(grep '^OPERAT_SYNC_PORT=' "$ENVF" | cut -d= -f2-)"
 cat > /etc/systemd/system/operat-sync.service <<'EOF'
 [Unit]
 Description=Operat szacunkowy: synchronizacja
@@ -34,6 +50,7 @@ echo
 echo "Klucz synchronizacji (wpisz go w aplikacji: Ustawienia -> Synchronizacja):"
 grep '^OPERAT_SYNC_KEY=' "$ENVF" | cut -d= -f2-
 echo
+echo "Port usługi (do Caddy): $PORT"
 echo "Test lokalny:"
 KEY="$(grep '^OPERAT_SYNC_KEY=' "$ENVF" | cut -d= -f2-)"
-curl -s -H "Authorization: Bearer $KEY" http://127.0.0.1:8787/v1/ping || true; echo
+curl -s -H "Authorization: Bearer $KEY" http://127.0.0.1:$PORT/v1/ping || true; echo

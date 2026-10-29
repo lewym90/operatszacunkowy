@@ -12,10 +12,10 @@ Dane RCN nie idą przez ten serwer: aplikacja pobiera je z pliku `/operat-data/r
     cd /tmp && rm -rf operat-src && git clone --depth 1 https://github.com/lewym90/operatszacunkowy operat-src
     bash operat-src/server/install.sh
 
-Skrypt wypisze klucz. Potem w Caddy trzeba przekierować `/operat-sync/*` na `127.0.0.1:8787` (patrz poniżej) i przeładować Caddy.
+Skrypt wypisze klucz. Potem w Caddy trzeba przekierować `/operat-sync/*` na `127.0.0.1:PORT (skrypt wypisze port)` (patrz poniżej) i przeładować Caddy.
 
     handle_path /operat-sync/* {
-        reverse_proxy 127.0.0.1:8787
+        reverse_proxy 127.0.0.1:PORT (skrypt wypisze port)
     }
 
 ## Interfejs
