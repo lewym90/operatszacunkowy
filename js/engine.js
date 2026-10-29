@@ -134,7 +134,7 @@ export function learnPremiums(pool) {
   if (pool.length >= 60) {
     const cnt = {}; pool.forEach(o => { const d = nz(o.dzielnica); cnt[d] = (cnt[d] || 0) + 1; });
     const dzs = Object.keys(cnt).filter(d => d && cnt[d] >= 8).sort();
-    const feat = o => { const t = segmentTags(o.tytul), d = nz(o.dzielnica);
+    const feat = o => { const t = o.tags || segmentTags(o.tytul), d = nz(o.dzielnica);
       return [1, Math.log(o.m2 / 40), o.pokoje - 2, ...dzs.map(x => x === d ? 1 : 0), t.nowe, t.wysoki]; };
     const X = pool.map(feat), y = pool.map(o => Math.log(o.cena / o.m2)), n = pool.length, d = X[0].length;
     let seed = 12345; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
@@ -177,16 +177,17 @@ export function estimateRent(offers, subject) {
     const sameSt = subject.ulica && o.ulica && norm(o.ulica) === norm(subject.ulica);
     const loc = sameSt ? 1 : sameDz ? 0.9 : 0.35;
     let w = loc * sizeScore(o.m2, subject.m2) * roomScore(o.pokoje, subject.pokoje) * floorScore(o.pietro, subject.pietro);
-    const t = segmentTags(o.tytul); let adj = 0, mism = false;
+    const t = o.tags || segmentTags(o.tytul); let adj = 0, mism = false;
     for (const k of ['nowe', 'wysoki']) {
       const sv = k === 'nowe' ? sNowe : sWys; if (sv == null) continue;
       if (t[k] !== sv) { mism = true; if (use[k]) adj += (sv - t[k]) * L[k].used; }
     }
     if (mism) w *= (use.nowe || use.wysoki) && Math.abs(adj) > 0 ? 0.85 : 0.6;   // inny segment: niższa waga
+    if (o.own) w *= 2;                              // własna umowa biura: największa waga
     if (w < 0.12) return null;
     const pm2raw = o.cena / o.m2, pm2 = pm2raw * Math.exp(adj);
     return { id: o.id, kind: 'oferta', pm2, pm2raw, adjPct: Math.exp(adj) - 1, tags: t, cena: o.cena, czynsz: o.czynsz, m2: o.m2, pokoje: o.pokoje, pietro: o.pietro,
-      opis: [o.ulica || '', o.dzielnica || ''].filter(Boolean).join(', '), tytul: o.tytul, sprzedawca: o.sprzedawca, w, local: sameDz || sameSt, src: 'ogłoszenia (ceny ofertowe)' };
+      opis: [o.ulica || '', o.dzielnica || ''].filter(Boolean).join(', '), tytul: o.tytul, sprzedawca: o.sprzedawca, own: !!o.own, meble: o.meble, w, local: sameDz || sameSt, src: o.own ? 'własna umowa' : 'ogłoszenia (ceny ofertowe)' };
   }).filter(Boolean).sort((a, b) => b.w - a.w).slice(0, 30);
   let sc = build(0.3, true);
   if (sc.length < 8) { sc = build(0.45, false); if (subject.dzielnica) notes.push('Za mało ofert w tej dzielnicy: poszerzono do całego miasta (niższa waga ofert spoza dzielnicy).'); }

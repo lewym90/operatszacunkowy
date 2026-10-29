@@ -5,19 +5,23 @@ import { linesFromPdf, offersFromLines, offerKey } from './pdfimport.js';
 import { esc, $, $$, fmt, roundTo, toast, openSheet, closeSheet, countUp, saveFile, ICON } from './ui.js';
 import { buildReport, makePdf } from './report.js';
 
-const VERSION = '1.3.0';
-const S = {
+const VERSION = '1.4.0';
+const S = { wlasne: [],
   offers: [], rcn: null, tx: [], streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
   form: { tryb: 'sprzedaz', ulica: '', nr: '', dzielnica: '', m2: '', pokoje: 2, pietro: null, rok: '', rynek: '', standard: '', meble: '', zapamietaj: true },
 };
+// Własne umowy najmu biura -> ta sama postać co oferty, z jawnymi cechami (nie ze słów w tytule) i dużą wagą
+const ownToOffer = w => ({ id: 'w' + w.id, own: true, ulica: w.ulica, dzielnica: w.dzielnica, miasto: 'Lublin', m2: w.m2, pokoje: w.pokoje, pietro: w.pietro, cena: w.cena, czynsz: w.czynsz || null, meble: w.meble,
+  tags: { nowe: w.rok && w.rok >= 2018 ? 1 : 0, wysoki: w.standard === 'wysoki' ? 1 : 0 }, tytul: 'własna umowa', wlaczone: true, flagi: [] });
+const allOffers = () => S.offers.concat((S.wlasne || []).map(ownToOffer));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const now = () => new Date().getFullYear();
 const LV = { 'niska': 'Niska', 'średnia': 'Średnia', 'wysoka': 'Wysoka' };
 const LVTXT = { 'niska': 'Traktuj wynik wyłącznie orientacyjnie: danych jest mało lub są mocno rozrzucone.', 'średnia': 'Dobra podstawa do rozmowy z klientem. Zweryfikuj porównania przed podaniem liczby.', 'wysoka': 'Dużo zbliżonych porównań o podobnej cenie. To nadal szacunek, nie wycena.' };
 
 async function load() {
-  S.offers = await store.get('offers', []); S.budynki = await store.get('budynki', {}); S.wyceny = await store.get('wyceny', []);
+  S.wlasne = await store.get('wlasne', []); S.offers = await store.get('offers', []); S.budynki = await store.get('budynki', {}); S.wyceny = await store.get('wyceny', []);
   S.ust = { ...S.ust, ...(await store.get('ust', {})) }; S.rcn = await store.get('rcn', null); setTx();
 }
 function setTx() {
@@ -25,7 +29,7 @@ function setTx() {
   S.streets = [...new Set(S.tx.map(t => t.ulica).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pl'));
 }
 const save = {
-  offers: () => store.set('offers', S.offers), budynki: () => store.set('budynki', S.budynki), wyceny: () => store.set('wyceny', S.wyceny), ust: () => store.set('ust', S.ust),
+  offers: () => store.set('offers', S.offers), wlasne: () => store.set('wlasne', S.wlasne), budynki: () => store.set('budynki', S.budynki), wyceny: () => store.set('wyceny', S.wyceny), ust: () => store.set('ust', S.ust),
 };
 
 /* ---------- router ---------- */
@@ -102,11 +106,11 @@ function submitForm() {
   const rok = f.rok ? parseInt(f.rok, 10) : null;
   if (f.rok && !(rok >= 1700 && rok <= now() + 3)) return toast('Rok budowy wygląda błędnie');
   if (f.tryb === 'sprzedaz' && !S.tx.length) return toast('Najpierw zaimportuj dane RCN (zakładka Dane)');
-  if (f.tryb === 'najem' && !S.offers.length) return toast('Najpierw zaimportuj oferty najmu (zakładka Dane)');
+  if (f.tryb === 'najem' && !S.offers.length && !(S.wlasne || []).length) return toast('Najpierw zaimportuj oferty najmu (zakładka Dane)');
   const subj = { tryb: f.tryb, ulica: f.ulica, nr: f.nr, dzielnica: f.dzielnica, m2, pokoje: f.pokoje, pietro: f.pietro, rok, rynek: f.rynek || null, standard: f.standard || null, meble: f.meble === '' ? null : f.meble };
   let dzNote = null;
   if (f.tryb === 'najem' && subj.ulica) {
-    const inf = inferDistrict(S.offers, S.tx, subj.ulica);
+    const inf = inferDistrict(allOffers(), S.tx, subj.ulica);
     if (inf) {
       const src = inf.source === 'oferty' ? `ofert z tej ulicy (${inf.n})` : `położenia ulicy wg RCN i najbliższych ulic ze znaną dzielnicą (${inf.n}, najbliższa ${inf.km.toFixed(1).replace('.', ',')} km)`;
       if (!subj.dzielnica) { subj.dzielnica = inf.name; dzNote = `Dzielnica ustalona automatycznie: ${inf.name}, na podstawie ${src}. Sprawdź, czy się zgadza.`; }
@@ -115,8 +119,8 @@ function submitForm() {
   }
   if (rok && f.zapamietaj && f.ulica && f.nr && f.tryb === 'sprzedaz') { S.budynki[addrKey(f.ulica, f.nr)] = rok; save.budynki(); }
   const yearOf = k => S.budynki[k] ?? null;
-  const res = f.tryb === 'najem' ? estimateRent(S.offers, subj) : estimateSale(S.tx, subj, { yearOf });
-  if (f.tryb === 'najem' && res.ok) { try { const baseRent = res.adjusted ? estimateRent(S.offers, { ...subj, rok: null, standard: null }) : res; res.cross = crossCheckRent(S.offers, S.tx, subj, baseRent.ok ? baseRent : res); const c = res.cross; if (res.adjusted && baseRent.ok) c.vsBase = baseRent.total; if (c.ok && c.agreement === 'rozbieżne' && c.r2 >= 0.3 && res.confidence.score > 1) { res.confidence.score -= 1; res.confidence.level = res.confidence.score === 1 ? 'niska' : 'średnia'; res.confidence.why.push('obniżono: kontrola ze sprzedażą (wiarygodna, R² ≥ 0,3) daje wyraźnie inny czynsz'); } } catch (e) { res.cross = { ok: false, reason: 'Nie udało się policzyć kontroli: ' + e.message }; } }
+  const res = f.tryb === 'najem' ? estimateRent(allOffers(), subj) : estimateSale(S.tx, subj, { yearOf });
+  if (f.tryb === 'najem' && res.ok) { try { const baseRent = res.adjusted ? estimateRent(allOffers(), { ...subj, rok: null, standard: null }) : res; res.cross = crossCheckRent(allOffers(), S.tx, subj, baseRent.ok ? baseRent : res); const c = res.cross; if (res.adjusted && baseRent.ok) c.vsBase = baseRent.total; if (c.ok && c.agreement === 'rozbieżne' && c.r2 >= 0.3 && res.confidence.score > 1) { res.confidence.score -= 1; res.confidence.level = res.confidence.score === 1 ? 'niska' : 'średnia'; res.confidence.why.push('obniżono: kontrola ze sprzedażą (wiarygodna, R² ≥ 0,3) daje wyraźnie inny czynsz'); } } catch (e) { res.cross = { ok: false, reason: 'Nie udało się policzyć kontroli: ' + e.message }; } }
   if (dzNote && res.ok) res.notes.unshift(dzNote);
   S.last[f.tryb] = { id: null, ts: Date.now(), subj, res };
   go('#/wynik/' + f.tryb);
@@ -189,7 +193,7 @@ function viewWynik(p) {
 const subj_m2 = e => e.subj.m2;
 function compHTML(c, i, sale) {
   const w = Math.max(6, Math.round(c.w * 100));
-  return `<div class="comp" style="animation-delay:${Math.min(i, 12) * 40}ms"><div><b>${esc(c.opis || '—')}</b>${c.sameBuilding ? '<span class="badge g">ten sam budynek</span>' : ''}<span class="badge">${c.kind}</span></div><div class="p">${fmt(c.cena)} zł</div>
+  return `<div class="comp" style="animation-delay:${Math.min(i, 12) * 40}ms"><div><b>${esc(c.opis || '—')}</b>${c.sameBuilding ? '<span class="badge g">ten sam budynek</span>' : ''}${c.own ? '<span class="badge g">własna umowa</span>' : ''}<span class="badge">${c.kind}</span></div><div class="p">${fmt(c.cena)} zł</div>
     <div class="m">${String(c.m2).replace('.', ',')} m² · ${c.pokoje} pok.${c.pietro != null ? ' · ' + (c.pietro === 0 ? 'parter' : c.pietro + '. p.') : ''}${c.data ? ' · akt ' + c.data : c.rok ? ' · akt ' + c.rok : ''}${c.rokBudowy ? ' · bud. ' + c.rokBudowy : ''}</div><div class="m r">${fmt(c.pm2raw ?? c.pm2)} zł/m²${c.adjPct && Math.abs(c.adjPct) >= 0.005 ? `<br><small>po korekcie ${fmt(c.pm2)} (${c.adjPct > 0 ? '+' : '−'}${Math.abs(c.adjPct * 100).toFixed(0)}%)</small>` : ''}</div><div class="wbar"><i style="width:${w}%"></i></div></div>`;
 }
 function mapSVG(r) {
@@ -235,6 +239,9 @@ function viewDane() {
     <div class="gap"></div><button class="btn" data-act="pdf">Wgraj PDF z ofertami</button><div class="gap"></div><button class="btn ghost" data-act="paste">Wklej tekst ofert</button>
     <input type="file" id="fpdf" accept="application/pdf" multiple hidden>
     <p class="tiny muted" style="margin:10px 0 0">W Safari: lista ofert → Udostępnij → Drukuj → pinch na podglądzie → Zapisz do Plików. Plik wgrywasz tutaj. Odczyt dzieje się w telefonie, bez internetu i bez AI.</p></div>
+  <div class="card"><div class="eyebrow">Własne umowy najmu</div><p class="small muted" style="margin:0 0 10px">Prawdziwe umowy Twojego biura lub najmy, które znasz z pierwszej ręki. Mają największą wagę w wycenie i pozwalają zmierzyć standard, meble i budynek, których nie ma w ogłoszeniach.</p>
+    ${(S.wlasne || []).map(w => `<button class="off" data-own="${w.id}"><div><b>${esc([w.ulica, w.dzielnica].filter(Boolean).join(', ') || 'Najem')}</b></div><div class="p">${fmt(w.cena)} zł</div><div class="m">${w.m2} m² · ${w.pokoje} pok.${w.rok ? ' · rok ' + w.rok : ''}${w.standard ? ' · ' + ({ remont: 'do remontu', dobry: 'dobry', wysoki: 'wysoki' })[w.standard] : ''}${w.meble === 'tak' ? ' · meble' : ''}</div><div class="m" style="text-align:right">${fmt(w.cena / w.m2)} zł/m²</div></button>`).join('')}
+    <div class="gap"></div><button class="btn" data-act="own">Dodaj umowę najmu</button></div>
   <div class="card"><div class="eyebrow">Transakcje (RCN)</div>${meta ? `<div class="kv"><span>Rekordów</span><b>${fmt(S.tx.length)}</b></div><div class="kv"><span>Mieszkań z ostatnich 3 lat (użytecznych)</span><b>${fmt(resid)}</b></div><div class="kv"><span>Pobrano</span><b>${esc(meta.pobrano || '—')}</b></div><div class="kv"><span>Bez współrzędnych</span><b>${fmt(meta.bez_wspolrzednych ?? 0)}</b></div>` : '<p class="muted small" style="margin:0 0 10px">Brak danych. Wygeneruj plik skryptem na serwerze (tools/rcn_export.py) i wgraj poniżej.</p>'}
     <div class="gap"></div><label class="field"><span>Adres pliku z serwera</span><input class="in" id="rurl" value="${esc(S.ust.rcnUrl)}" placeholder="https://…/rcn_lublin.json"></label>
     <button class="btn" data-act="rcnurl">Pobierz z serwera</button><div class="gap"></div><button class="btn ghost" data-act="rcnfile">Wczytaj plik JSON</button><input type="file" id="frcn" accept=".json,application/json" hidden></div>
@@ -247,12 +254,14 @@ function viewDane() {
     $('[data-act="pdf"]', v).onclick = () => pdfIn.click();
     pdfIn.onchange = () => importPdfs([...pdfIn.files]);
     $('[data-act="paste"]', v).onclick = pasteSheet;
+    $('[data-act="own"]', v).onclick = () => ownSheet(null);
+    $$('[data-own]', v).forEach(b => b.onclick = () => ownSheet(b.dataset.own));
     $$('.off', v).forEach(b => b.onclick = () => { const o = S.offers.find(x => x.id === b.dataset.id); o.wlaczone = o.wlaczone === false; save.offers(); b.classList.toggle('dis', o.wlaczone === false); });
     $('[data-act="rcnurl"]', v).onclick = async () => { const u = $('#rurl', v).value.trim(); if (!u) return toast('Wpisz adres pliku'); S.ust.rcnUrl = u; save.ust(); toast('Pobieram…'); try { const r = await fetch(u, { cache: 'no-store' }); if (!r.ok) throw new Error('HTTP ' + r.status); await setRcn(await r.json()); } catch (e) { toast('Nie udało się: ' + e.message); } };
     const fr = $('#frcn', v); $('[data-act="rcnfile"]', v).onclick = () => fr.click(); fr.onchange = async () => { try { await setRcn(JSON.parse(await fr.files[0].text())); } catch (e) { toast('Błędny plik: ' + e.message); } };
-    $('[data-act="exp"]', v).onclick = async () => { const blob = new Blob([JSON.stringify({ v: 1, offers: S.offers, budynki: S.budynki, wyceny: S.wyceny, ust: S.ust })], { type: 'application/json' }); await saveFile(blob, 'kopia-wycena-' + new Date().toISOString().slice(0, 10) + '.json'); };
+    $('[data-act="exp"]', v).onclick = async () => { const blob = new Blob([JSON.stringify({ v: 1, offers: S.offers, wlasne: S.wlasne, budynki: S.budynki, wyceny: S.wyceny, ust: S.ust })], { type: 'application/json' }); await saveFile(blob, 'kopia-wycena-' + new Date().toISOString().slice(0, 10) + '.json'); };
     const fb = $('#fbak', v); $('[data-act="imp"]', v).onclick = () => fb.click();
-    fb.onchange = async () => { try { const d = JSON.parse(await fb.files[0].text()); if (!Array.isArray(d.offers)) throw new Error('to nie jest kopia'); S.offers = d.offers; S.budynki = d.budynki || {}; S.wyceny = d.wyceny || []; S.ust = { ...S.ust, ...(d.ust || {}) }; save.offers(); save.budynki(); save.wyceny(); save.ust(); toast('Przywrócono'); render(); } catch (e) { toast('Błąd: ' + e.message); } };
+    fb.onchange = async () => { try { const d = JSON.parse(await fb.files[0].text()); if (!Array.isArray(d.offers)) throw new Error('to nie jest kopia'); S.offers = d.offers; S.wlasne = d.wlasne || []; save.wlasne(); S.budynki = d.budynki || {}; S.wyceny = d.wyceny || []; S.ust = { ...S.ust, ...(d.ust || {}) }; save.offers(); save.budynki(); save.wyceny(); save.ust(); toast('Przywrócono'); render(); } catch (e) { toast('Błąd: ' + e.message); } };
     $('[data-act="clear"]', v).onclick = () => { if (confirm('Usunąć wszystkie oferty z bazy?')) { S.offers = []; save.offers(); render(); } };
   }];
 }
@@ -290,6 +299,34 @@ async function importPdfs(files) {
   if (sale) { closeSheet(); return toast('To lista ofert sprzedaży. Tu importujemy tylko najem.'); }
   if (!all.length) { closeSheet(); return toast('Nie znaleziono ofert w tym pliku'); }
   confirmImport(all, `Odczytano ${files.length} plik(ów).`);
+}
+function ownSheet(id) {
+  const w = id ? S.wlasne.find(x => x.id === id) : null, d = { standard: w?.standard || '', meble: w?.meble || '' };
+  const chips = (k, items) => `<div class="chips" data-oc="${k}">${items.map(([v, n]) => `<button type="button" class="chip ${d[k] === v ? 'on' : ''}" data-v="${v}">${n}</button>`).join('')}</div>`;
+  openSheet(`<h3>Umowa najmu</h3><p class="small muted">Czynsz najmu z umowy (bez czynszu administracyjnego i opłat). Bez danych osobowych.</p>
+    <label class="field"><span>Ulica</span><input class="in" id="o-ul" list="o-dl" value="${esc(w?.ulica || '')}" placeholder="np. Granata"></label><datalist id="o-dl">${S.streets.map(x => `<option value="${esc(x)}">`).join('')}</datalist>
+    <label class="field"><span>Dzielnica (uzupełni się z ulicy)</span><input class="in" id="o-dz" value="${esc(w?.dzielnica || '')}"></label>
+    <div class="grid2"><label class="field"><span>Powierzchnia (m²)</span><input class="in" id="o-m2" inputmode="decimal" value="${w?.m2 ?? ''}"></label><label class="field"><span>Rok budowy (opcj.)</span><input class="in" id="o-rok" inputmode="numeric" maxlength="4" value="${w?.rok ?? ''}"></label></div>
+    <div class="grid2"><label class="field"><span>Pokoje</span><input class="in" id="o-pk" inputmode="numeric" value="${w?.pokoje ?? ''}"></label><label class="field"><span>Piętro (0 = parter)</span><input class="in" id="o-pi" inputmode="numeric" value="${w?.pietro ?? ''}"></label></div>
+    <div class="field"><span>Standard</span>${chips('standard', [['', 'Nie wiem'], ['remont', 'Do remontu'], ['dobry', 'Dobry'], ['wysoki', 'Wysoki']])}</div>
+    <div class="field"><span>Wyposażenie</span>${chips('meble', [['', 'Nie wiem'], ['tak', 'Umeblowane'], ['nie', 'Bez mebli']])}</div>
+    <div class="grid2"><label class="field"><span>Czynsz najmu (zł)</span><input class="in" id="o-ce" inputmode="numeric" value="${w?.cena ?? ''}"></label><label class="field"><span>Czynsz adm. (opcj.)</span><input class="in" id="o-ca" inputmode="numeric" value="${w?.czynsz ?? ''}"></label></div>
+    <button class="btn" id="o-ok">Zapisz</button>${w ? '<div class="gap"></div><button class="btn danger" id="o-del">Usuń tę umowę</button>' : ''}`, p => {
+    $$('[data-oc]', p).forEach(g => $$('button', g).forEach(b => b.onclick = () => { d[g.dataset.oc] = b.dataset.v; $$('button', g).forEach(x => x.classList.toggle('on', x === b)); }));
+    const num = x => { const n = parseFloat(String($(x, p).value).replace(',', '.').replace(/[^\d.]/g, '')); return Number.isFinite(n) ? n : null; };
+    $('#o-ul', p).onchange = () => { if (!$('#o-dz', p).value.trim()) { const inf = inferDistrict(allOffers(), S.tx, $('#o-ul', p).value.trim()); if (inf) $('#o-dz', p).value = inf.name; } };
+    $('#o-ok', p).onclick = () => {
+      const m2 = num('#o-m2'), cena = num('#o-ce'), pk = num('#o-pk');
+      if (!(m2 >= 10 && m2 <= 400)) return toast('Podaj powierzchnię (10–400 m²)'); if (!(cena >= 200 && cena <= 30000)) return toast('Podaj czynsz najmu (200–30000 zł)'); if (!(pk >= 1 && pk <= 10)) return toast('Podaj liczbę pokoi');
+      const rok = num('#o-rok'); if (rok != null && !(rok >= 1700 && rok <= now() + 3)) return toast('Rok budowy wygląda błędnie');
+      let dz = $('#o-dz', p).value.trim(), ul = $('#o-ul', p).value.trim();
+      if (!dz && ul) { const inf = inferDistrict(allOffers(), S.tx, ul); if (inf) dz = inf.name; }
+      const rec = { id: w?.id || uid(), ulica: ul, dzielnica: dz, m2, pokoje: Math.round(pk), pietro: num('#o-pi'), rok, standard: d.standard, meble: d.meble, cena: Math.round(cena), czynsz: num('#o-ca'), ts: w?.ts || Date.now() };
+      if (w) Object.assign(w, rec); else S.wlasne.push(rec);
+      save.wlasne(); closeSheet(); toast('Zapisano umowę'); render();
+    };
+    const del = $('#o-del', p); if (del) del.onclick = () => { S.wlasne = S.wlasne.filter(x => x.id !== w.id); save.wlasne(); closeSheet(); render(); };
+  });
 }
 function pasteSheet() {
   openSheet(`<h3>Wklej tekst ofert</h3><p class="small muted">Zaznacz całą stronę wyników (lista ofert najmu), skopiuj i wklej tutaj.</p><textarea class="in" id="tx" rows="8" placeholder="Wklej tekst…"></textarea><div class="gap"></div><button class="btn" id="go">Odczytaj</button>`, p => {

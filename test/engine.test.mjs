@@ -104,4 +104,11 @@ const infA=inferDistrict(offD,txD,'S5b'); const infB=inferDistrict(offD,txD,'Nie
 console.log('DZIELNICA z ulicy S5b (bez ofert, tylko RCN):', infA&&infA.name, infA&&infA.source, '| nieznana ulica:', infB);
 assert.ok(infA&&infA.name==='D5'&&infB===null);
 assert.equal(inferDistrict(offD,txD,'S3a').name,'D3'); assert.equal(inferDistrict(offD,txD,'S3a').source,'oferty');
+// 9) własne umowy: mają jawne cechy i podwójną wagę; dodanie dwóch umów wysokiego standardu przesuwa wynik ku nim
+const own=[{id:'w1',own:true,ulica:'Granata',dzielnica:'Wrotków',m2:52,pokoje:3,pietro:1,cena:3500,tags:{nowe:0,wysoki:1},tytul:'własna umowa',wlaczone:true,flagi:[]},
+ {id:'w2',own:true,ulica:'Granata',dzielnica:'Wrotków',m2:28,pokoje:1,pietro:1,cena:2500,tags:{nowe:0,wysoki:1},tytul:'własna umowa',wlaczone:true,flagi:[]}];
+const subG={tryb:'najem',dzielnica:'Wrotków',m2:52,pokoje:3,pietro:1,rok:2005,standard:'wysoki'};
+const g0=estimateRent(offers,subG), g1=estimateRent([...offers,...own],subG);
+console.log('WŁASNE UMOWY: bez:',Math.round(g0.total.mid),'z umowami:',Math.round(g1.total.mid),'| własne wśród porównań:',g1.comps.filter(c=>c.own).length);
+assert.ok(g1.comps.some(c=>c.own)&&g1.total.mid>g0.total.mid,'własna umowa podnosi wynik ku swojej wartości'); assert.ok(g1.total.mid<3500,'nie przejmuje całkowicie wyniku');
 console.log('TESTY OK');
