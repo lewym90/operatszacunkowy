@@ -5,7 +5,7 @@ import { linesFromPdf, offersFromLines, offerKey } from './pdfimport.js';
 import { esc, $, $$, fmt, roundTo, toast, openSheet, closeSheet, countUp, saveFile, ICON } from './ui.js';
 import { buildReport, makePdf } from './report.js';
 
-const VERSION = '1.5.0';
+const VERSION = '1.6.0';
 const S = { wlasne: [],
   offers: [], rcn: null, tx: [], streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -35,7 +35,7 @@ const save = {
 /* ---------- router ---------- */
 const TABS = [['wycena', 'Wycena'], ['dane', 'Dane'], ['historia', 'Historia'], ['ust', 'Ustawienia']];
 function tabs(active) {
-  $('#tabs').innerHTML = '<div class="in-tabs">' + TABS.map(([k, n]) => `<a href="#/${k}" class="${k === active ? 'on' : ''}">${ICON[k === 'wycena' ? 'wycena' : k]}<span>${n}</span></a>`).join('') + '</div>';
+  $('#tabs').innerHTML = '<div class="in-tabs"><div class="brand"><img src="icons/logo-am.png" alt=""><b>OPERAT SZACUNKOWY</b><span>AM Nieruchomości</span></div>' + TABS.map(([k, n]) => `<a href="#/${k}" class="${k === active ? 'on' : ''}">${ICON[k === 'wycena' ? 'wycena' : k]}<span>${n}</span></a>`).join('') + '</div>';
 }
 function render() {
   const h = location.hash.replace(/^#\/?/, '') || 'wycena', p = h.split('/');
@@ -48,7 +48,10 @@ function render() {
   else if (p[0] === 'wynik') { tab = 'wycena'; [html, mount] = viewWynik(p); }
   else if (p[0] === 'raport') { tab = 'wycena'; [html, mount] = viewRaport(p); }
   else [html, mount] = viewWycena();
-  const v = $('#view'); v.innerHTML = html; v.classList.remove('enter'); void v.offsetWidth; v.classList.add('enter');
+  const v = $('#view'); v.innerHTML = html; v.dataset.view = ['wycena', 'dane', 'historia', 'ust', 'wynik', 'raport'].includes(p[0]) ? p[0] : 'wycena';
+  const topEl = v.querySelector(':scope > .top');   // reszta widoku w osobnym bloku: na szerokim ekranie układa się w kolumny
+  if (topEl) { const body = document.createElement('div'); body.className = 'body'; while (topEl.nextSibling) body.appendChild(topEl.nextSibling); v.appendChild(body); }
+  v.classList.remove('enter'); void v.offsetWidth; v.classList.add('enter');
   tabs(tab); window.scrollTo(0, 0); mount && mount(v);
 }
 const go = h => { location.hash = h; };
@@ -241,7 +244,7 @@ function viewDane() {
   <div class="card"><div class="eyebrow">Oferty najmu</div><div class="kv"><span>W bazie</span><b>${fmt(n)}</b></div><div class="kv"><span>Podejrzane (pominięte)</span><b>${fl}</b></div><div class="kv"><span>Wyłączone ręcznie</span><b>${off}</b></div>
     <div class="gap"></div><button class="btn" data-act="pdf">Wgraj PDF z ofertami</button><div class="gap"></div><button class="btn ghost" data-act="paste">Wklej tekst ofert</button>
     <input type="file" id="fpdf" accept="application/pdf" multiple hidden>
-    <p class="tiny muted" style="margin:10px 0 0">W Safari: lista ofert → Udostępnij → Drukuj → pinch na podglądzie → Zapisz do Plików. Plik wgrywasz tutaj. Odczyt dzieje się w telefonie, bez internetu i bez AI.</p></div>
+    <p class="tiny muted" style="margin:10px 0 0">W Safari: lista ofert → Udostępnij → Drukuj → pinch na podglądzie → Zapisz do Plików. Plik wgrywasz tutaj. Odczyt dzieje się na tym urządzeniu, bez internetu i bez AI.</p></div>
   <div class="card"><div class="eyebrow">Cechy ofert (z filtrów portalu)</div>${attrCard()}</div>
   <div class="card"><div class="eyebrow">Własne umowy najmu</div><p class="small muted" style="margin:0 0 10px">Prawdziwe umowy Twojego biura lub najmy, które znasz z pierwszej ręki. Mają największą wagę w wycenie i pozwalają zmierzyć standard, meble i budynek, których nie ma w ogłoszeniach.</p>
     ${(S.wlasne || []).map(w => `<button class="off" data-own="${w.id}"><div><b>${esc([w.ulica, w.dzielnica].filter(Boolean).join(', ') || 'Najem')}</b></div><div class="p">${fmt(w.cena)} zł</div><div class="m">${w.m2} m² · ${w.pokoje} pok.${w.rok ? ' · rok ' + w.rok : ''}${w.standard ? ' · ' + ({ remont: 'do remontu', dobry: 'dobry', wysoki: 'wysoki' })[w.standard] : ''}${w.meble === 'tak' ? ' · meble' : ''}</div><div class="m" style="text-align:right">${fmt(w.cena / w.m2)} zł/m²</div></button>`).join('')}
@@ -377,7 +380,7 @@ function viewHistoria() {
 function viewUst() {
   const u = S.ust, f = (k, l, ph) => `<label class="field"><span>${l}</span><input class="in" data-k="${k}" value="${esc(u[k])}" placeholder="${ph || ''}"></label>`;
   const html = head('Ustawienia', 'Dane w raporcie') + `<div class="card"><div class="eyebrow">Biuro (nagłówek raportu)</div>${f('biuro', 'Nazwa biura')}${f('haslo', 'Hasło')}${f('agent', 'Sporządził (imię i nazwisko)')}${f('tel', 'Telefon')}${f('email', 'E-mail')}${f('www', 'Strona www')}</div>
-    <div class="card"><div class="eyebrow">O aplikacji</div><div class="kv"><span>Wersja</span><b>${VERSION}</b></div><div class="kv"><span>Dane</span><b>tylko w tym telefonie</b></div>
+    <div class="card"><div class="eyebrow">O aplikacji</div><div class="kv"><span>Wersja</span><b>${VERSION}</b></div><div class="kv"><span>Dane</span><b>tylko na tym urządzeniu</b></div>
     <div class="gap"></div><button class="btn ghost" data-act="upd">Wymuś aktualizację aplikacji</button><p class="tiny muted" style="margin:8px 0 0">Pobiera najnowszą wersję. Twoje dane (oferty, RCN, historia) zostają.</p>
     <p class="small muted">Szacunek ma charakter orientacyjny i nie zastępuje wyceny rzeczoznawcy majątkowego. Wynik zawsze jest przedziałem z oceną pewności; cechy bez danych porównawczych nie zmieniają go.</p></div>`;
   return [html, v => {
