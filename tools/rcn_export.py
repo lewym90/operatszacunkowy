@@ -4,7 +4,7 @@ Uruchamiać NA SERWERZE (tylko biblioteka standardowa):
     python3 rcn_export.py --out /var/www/operat-data/rcn_lublin.json
 Nie zapisuje danych osobowych (sprzedający/kupujący są pomijani). Dane są publiczne (RCN, bezpłatnie od 13.02.2026).
 Nic tu nie jest zgadywane: pola brane są wprost z odpowiedzi usługi; gdy współrzędnych nie da się odczytać, lat/lon = null."""
-import argparse, json, re, sys, time, urllib.parse, urllib.request, xml.etree.ElementTree as ET
+import argparse, json, math, re, sys, time, urllib.parse, urllib.request, xml.etree.ElementTree as ET
 
 BASE = "https://mapy.geoportal.gov.pl/wss/service/rcn"
 BBOX = (51.15, 22.38, 51.33, 22.73)   # lat_min, lon_min, lat_max, lon_max — Lublin z otoczeniem
@@ -26,8 +26,30 @@ def fetch(params, timeout=120):
 def floats(txt):
     return [float(x) for x in re.findall(r'-?\d+(?:\.\d+)?', txt or '')]
 
+def cs92_to_wgs84(n, e):
+    """EPSG:2180 (PL-1992) -> szerokość/długość WGS84. Odwrotne odwzorowanie Gaussa-Krügera (GRS80), n = northing, e = easting."""
+    a_, f = 6378137.0, 1 / 298.257222101; k0, lon0, fe, fn = 0.9993, math.radians(19), 500000.0, -5300000.0
+    n_ = f / (2 - f); A = a_ / (1 + n_) * (1 + n_**2 / 4 + n_**4 / 64)
+    b1 = n_ / 2 - 2 * n_**2 / 3 + 37 * n_**3 / 96 - n_**4 / 360
+    b2 = n_**2 / 48 + n_**3 / 15 - 437 * n_**4 / 1440
+    b3 = 17 * n_**3 / 480 - 37 * n_**4 / 840
+    b4 = 4397 * n_**4 / 161280
+    xi, eta = (n - fn) / (k0 * A), (e - fe) / (k0 * A)
+    xp = xi - sum(c * math.sin(2 * j * xi) * math.cosh(2 * j * eta) for j, c in ((1, b1), (2, b2), (3, b3), (4, b4)))
+    ep = eta - sum(c * math.cos(2 * j * xi) * math.sinh(2 * j * eta) for j, c in ((1, b1), (2, b2), (3, b3), (4, b4)))
+    chi = math.asin(math.sin(xp) / math.cosh(ep))
+    e2 = f * (2 - f); d1 = e2 / 2 + 5 * e2**2 / 24 + e2**3 / 12 + 13 * e2**4 / 360
+    d2 = 7 * e2**2 / 48 + 29 * e2**3 / 240 + 811 * e2**4 / 11520
+    d3 = 7 * e2**3 / 120 + 81 * e2**4 / 1120; d4 = 4279 * e2**4 / 161280
+    lat = chi + d1 * math.sin(2 * chi) + d2 * math.sin(4 * chi) + d3 * math.sin(6 * chi) + d4 * math.sin(8 * chi)
+    lon = lon0 + math.atan2(math.sinh(ep), math.cos(xp))
+    return math.degrees(lat), math.degrees(lon)
+
+def in_area(la, lo):
+    return BBOX[0] - 0.3 <= la <= BBOX[2] + 0.3 and BBOX[1] - 0.3 <= lo <= BBOX[3] + 0.3
+
 def centroid(feature):
-    """Środek geometrii; rozpoznaje kolejność lat/lon po zakresie wartości (Polska: lat 49–55, lon 14–25)."""
+    """Środek geometrii. Obsługuje stopnie (4326) i metry (2180). Przyjęty wynik musi leżeć w okolicy Lublina; inaczej null (nie zgadujemy)."""
     pts = []
     for el in feature.iter():
         if local(el.tag) in ('posList', 'pos', 'coordinates') and el.text:
@@ -36,9 +58,10 @@ def centroid(feature):
     if not pts: return None, None
     la, lo = [], []
     for a, b in pts:
-        if 49 <= a <= 55 and 14 <= b <= 25: la.append(a); lo.append(b)
-        elif 49 <= b <= 55 and 14 <= a <= 25: la.append(b); lo.append(a)
-    if not la: return None, None          # np. układ metryczny 2180 — nie zgadujemy
+        cands = [(a, b), (b, a)] if (abs(a) < 400 and abs(b) < 400) else [cs92_to_wgs84(a, b), cs92_to_wgs84(b, a)]
+        for c in cands:
+            if in_area(*c): la.append(c[0]); lo.append(c[1]); break
+    if not la: return None, None
     return round(sum(la) / len(la), 6), round(sum(lo) / len(lo), 6)
 
 def addr(s):
