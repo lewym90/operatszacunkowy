@@ -8,7 +8,7 @@ import { buildReport, makePdf } from './report.js';
 import { createSync, DEFAULT_URL, encodeCode, decodeCode } from './sync.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer } from './mapa.js';
 
-const VERSION = '1.11.4';
+const VERSION = '1.12.0';
 const S = { wlasne: [],
   offers: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -234,7 +234,7 @@ function viewWynik(p) {
     <div class="range"><div class="t" style="left:${X(r.pm2.mid)}%">mediana ${fmt(r.pm2.mid)} zł/m²</div><div class="track"><div class="fill" style="left:${X(r.pm2.lo)}%;width:${Math.max(1, X(r.pm2.hi) - X(r.pm2.lo))}%"></div></div>
       ${r.comps.slice(0, 40).map(c => `<div class="dot" style="left:${X(c.pm2)}%"></div>`).join('')}<div class="mid" style="left:${X(r.pm2.mid)}%"></div>
       <div class="t b" style="left:0;transform:none">${fmt(dMin)}</div><div class="t b" style="left:100%;transform:translateX(-100%)">${fmt(dMax)} zł/m²</div></div></div>
-  <div class="stats"><div class="stat"><b>${r.n}</b><span>porównań</span></div><div class="stat"><b>${fmt(mid)}</b><span>mediana, zł</span></div><div class="stat"><b>${fmt(r.pm2.mid)}</b><span>zł za m²</span></div></div>
+  <div class="stats"><div class="stat"><b>${r.n}</b><span>porównań</span></div><div class="stat"><b>${fmt(mid)}</b><span>wartość centralna, zł</span></div><div class="stat"><b>${fmt(r.pm2.mid)}</b><span>zł za m²</span></div></div>
   <div class="card"><div class="eyebrow">Pewność wyniku</div><div class="conf"><div class="gauge" data-l="${r.confidence.score}">${[1, 2, 3].map(i => `<i class="${i <= r.confidence.score ? 'on' : ''}"></i>`).join('')}</div><b>${LV[r.confidence.level]}</b></div>
     <p class="small muted" style="margin:10px 0 0">${LVTXT[r.confidence.level]}</p>
     <details style="margin-top:8px"><summary class="small" style="color:var(--gold-l);cursor:pointer">Dlaczego tak?</summary><ul class="clean">${r.confidence.why.map(x => `<li>${esc(x)}</li>`).join('')}</ul><p class="tiny muted">Progi są orientacyjne i wymagają skalibrowania na prawdziwych transakcjach.</p></details></div>`;

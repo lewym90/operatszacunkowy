@@ -186,6 +186,74 @@ export function learnPremiums(pool) {
   _memo = { key, val: out }; return out;
 }
 
+// ---------- MODEL CEN NAJMU (regresja grzbietowa z częściowym uśrednianiem dzielnic i ulic) ----------
+// Uczy się z CAŁEJ bazy ofert (żadna oferta nie wypada z powodu braku słów w tytule). Dzielnice i ulice z małą liczbą ofert są
+// „ściągane” do średniej miasta (kara λ), więc dzielnica z 10 ofertami nie wnioskuje sama z siebie. Błąd modelu jest mierzony
+// 10-krotną walidacją krzyżową (test wsteczny), a przedział wyniku bierze się z tych rzeczywistych błędów.
+const RM_CFG = { lf: 1, ld: 10, ls: 2 };
+const ydBand = r => !r ? 0 : r < 1990 ? 1 : r < 2008 ? 2 : r < 2018 ? 3 : 4;
+const RM_ATTRS = ['klima', 'winda', 'balkon', 'taras', 'ogrod'];
+function rmSolve(A, b) {
+  const n = b.length, M = A.map((r, i) => [...r, b[i]]);
+  for (let c = 0; c < n; c++) {
+    let p = c; for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
+    [M[c], M[p]] = [M[p], M[c]];
+    const d = M[c][c] || 1e-12;
+    for (let r = c + 1; r < n; r++) { const f = M[r][c] / d; if (f) for (let k = c; k <= n; k++) M[r][k] -= f * M[c][k]; }
+  }
+  const x = new Array(n).fill(0);
+  for (let i = n - 1; i >= 0; i--) { let v = M[i][n]; for (let k = i + 1; k < n; k++) v -= M[i][k] * x[k]; x[i] = v / (M[i][i] || 1e-12); }
+  return x;
+}
+// cechy „podstawowe” jednej oferty lub wycenianego mieszkania (wartości nieznane = null)
+function rmBase(o, prev) {
+  const b = ydBand(o.rok), a = o.attrs || {}, v = k => (a[k] === 1 || a[k] === 0) ? a[k] : (prev ? prev[k] : 0);
+  const wys = o.wysoki != null ? o.wysoki : segmentTags(o.tytul).wysoki;
+  return [1, Math.log(o.m2 / 45), Math.min(4, Math.max(1, o.pokoje || 2)) - 2, o.pietro === 0 ? 1 : 0, o.pietro >= 5 ? 1 : 0,
+    b === 1 ? 1 : 0, b === 2 ? 1 : 0, b === 3 ? 1 : 0, b === 4 ? 1 : 0, wys, v('klima'), v('winda'), v('balkon'), v('taras'), v('ogrod'), a.garaz === 1 ? 1 : (a.garaz === 0 ? 0 : (prev ? prev.garaz : 0)),
+    prev && prev.useMeble ? (a.meble === 1 ? 1 : a.meble === 0 ? 0 : prev.meble) : 0];
+}
+const RM_NB = 17;
+function rmFit(train, prev) {
+  const dzs = [...new Set(train.map(o => norm(o.dzielnica)).filter(Boolean))].sort();
+  const cnt = new Map(); for (const o of train) { const k = streetKey(o.ulica || ''); if (k) cnt.set(k, (cnt.get(k) || 0) + 1); }
+  const sts = [...cnt.entries()].filter(([, c]) => c >= 2).map(([k]) => k).sort();
+  const dzI = new Map(dzs.map((d, i) => [d, RM_NB + i])), stI = new Map(sts.map((d, i) => [d, RM_NB + dzs.length + i])), k = RM_NB + dzs.length + sts.length;
+  const feat = o => { const f = rmBase(o, prev), idx = []; const d = dzI.get(norm(o.dzielnica)); if (d != null) idx.push(d); const st = stI.get(streetKey(o.ulica || '')); if (st != null) idx.push(st); return { f, idx }; };
+  const A = Array.from({ length: k }, () => new Array(k).fill(0)), b = new Array(k).fill(0);
+  for (const o of train) {
+    const { f, idx } = feat(o), y = Math.log(o.cena / o.m2), col = []; f.forEach((v, j) => { if (v) col.push([j, v]); }); idx.forEach(j => col.push([j, 1]));
+    for (const [j, vj] of col) { b[j] += vj * y; for (const [l, vl] of col) A[j][l] += vj * vl; }
+  }
+  for (let j = 1; j < RM_NB; j++) A[j][j] += RM_CFG.lf;
+  for (let j = RM_NB; j < RM_NB + dzs.length; j++) A[j][j] += RM_CFG.ld;
+  for (let j = RM_NB + dzs.length; j < k; j++) A[j][j] += RM_CFG.ls;
+  const w = rmSolve(A, b);
+  return o => { const { f, idx } = feat(o); let z = 0; f.forEach((v, j) => { z += v * w[j]; }); idx.forEach(j => { z += w[j]; }); return Math.exp(z) * o.m2; };
+}
+let _rm = null;
+export function rentModel(pool) {
+  const key = pool.length + '|' + pool.reduce((a, o) => a + o.cena + o.m2 * 3 + (o.rok || 0) + (o.attrs ? Object.values(o.attrs).reduce((x, v) => x + v + 1, 0) : 0) + (o.tytul ? o.tytul.length : 0), 0);
+  if (_rm && _rm.key === key) return _rm.val;
+  let val = null;
+  if (pool.length >= 60) {
+    const prev = {}; for (const k of [...RM_ATTRS, 'garaz']) { const kn = pool.filter(o => o.attrs && (o.attrs[k] === 1 || o.attrs[k] === 0)); prev[k] = kn.length ? kn.filter(o => o.attrs[k] === 1).length / kn.length : 0; }
+    { const k1 = pool.filter(o => o.attrs && o.attrs.meble === 1).length, k0 = pool.filter(o => o.attrs && o.attrs.meble === 0).length; prev.useMeble = k1 >= ATTR_MIN && k0 >= ATTR_MIN; prev.meble = k1 + k0 ? k1 / (k1 + k0) : 0; }
+    const wysPrev = pool.reduce((s, o) => s + segmentTags(o.tytul).wysoki, 0) / pool.length;
+    const order = pool.map((o, i) => i).sort((i, j) => String(pool[i].id).localeCompare(String(pool[j].id)));
+    const foldOf = new Map(order.map((i, r) => [i, (r * 7919) % 10]));
+    const res = [];                                       // błędy poza próbą: ln(rzeczywista / przewidziana)
+    for (let f = 0; f < 10; f++) {
+      const tr = pool.filter((_, i) => foldOf.get(i) !== f), fn = rmFit(tr, prev);
+      pool.forEach((o, i) => { if (foldOf.get(i) === f) res.push({ e: Math.log(o.cena / fn(o)), m2: o.m2 }); });
+    }
+    const fit = rmFit(pool, prev), ae = res.map(r => Math.exp(Math.abs(r.e)) - 1).sort((a, b) => a - b);
+    val = { n: pool.length, prev, wysPrev, res, mape: ae[Math.floor(ae.length / 2)], predict: s => fit({ ...s, wysoki: s.wysoki }) };
+  }
+  _rm = { key, val }; return val;
+}
+const qOf = (a, q) => { const s = a.slice().sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.max(0, Math.round(q * (s.length - 1))))]; };
+
 // ---------- NAJEM (oferty z list) ----------
 export function estimateRent(offers, subject) {
   const notes = [], unused = [], ask = [];
@@ -245,6 +313,22 @@ export function estimateRent(offers, subject) {
     notes.push('Segmenty „nowe" i „wysoki standard" są rozpoznawane ze słów w tytułach ogłoszeń, więc zmierzone premie są raczej ostrożnym minimum.');
   } else unused.push('cechy mieszkania: za mało ofert w bazie, by zmierzyć różnice (minimum 60)');
   const r = summarize(sc, subject, 'Szacunkowy czynsz najmu', { notes, unused });
+  // HYBRYDA: model z całej bazy (częściowe uśrednianie dzielnic i ulic) + najbliższe porównania; przedział z rzeczywistych błędów w teście wstecznym
+  const RM = rentModel(pool);
+  if (r.ok && RM) {
+    const sub = { m2: subject.m2, pokoje: subject.pokoje, pietro: subject.pietro, rok: subject.rok, dzielnica: subject.dzielnica, ulica: subject.ulica,
+      attrs: { ...(subject.attrs || {}), ...(subject.meble === 'tak' ? { meble: 1 } : subject.meble === 'nie' ? { meble: 0 } : {}) }, wysoki: subject.standard === 'wysoki' ? 1 : subject.standard ? 0 : RM.wysPrev };
+    const pB = RM.predict(sub), pA = r.total.mid, wB = 0.6, ag = Math.abs(Math.log(pA / pB));
+    const ctr = Math.exp(wB * Math.log(pB) + (1 - wB) * Math.log(pA));
+    const near = RM.res.filter(x => Math.abs(Math.log(x.m2 / subject.m2)) < 0.3), R = (near.length >= 40 ? near : RM.res).map(x => x.e), widen = ag > 0.15 ? 1.25 : 1;
+    const lo = ctr * Math.exp(qOf(R, 0.25) * widen), mid = ctr * Math.exp(qOf(R, 0.5)), hi = ctr * Math.exp(qOf(R, 0.75) * widen), m2 = subject.m2;
+    r.compsTotal = r.total; r.total = { lo, mid, hi }; r.pm2 = { lo: lo / m2, mid: mid / m2, hi: hi / m2 };
+    r.rangeKind = 'przedział typowego błędu metody (środkowe 50% dopasowań w teście wstecznym)';
+    r.model = { pA, pB, wB, agreement: ag, mape: RM.mape, n: RM.n };
+    r.confidence.why.push(`metoda hybrydowa: model z ${RM.n} ofert (${Math.round(pB)} zł) i najbliższe porównania (${Math.round(pA)} zł); typowy błąd w teście wstecznym ${(RM.mape * 100).toFixed(0)}%`);
+    if (ag > 0.15) r.confidence.why.push(`model i porównania różnią się o ${(ag * 100).toFixed(0)}%: przedział poszerzono`);
+    if (ag > 0.2 && r.confidence.score > 1) { r.confidence.score -= 1; r.confidence.level = r.confidence.score === 1 ? 'niska' : 'średnia'; }
+  }
   if (r.ok) {
     const cz = sc.filter(s => s.czynsz != null).map(s => s.czynsz / s.m2);
     r.adminPm2 = cz.length >= 3 ? median(cz) : null;
