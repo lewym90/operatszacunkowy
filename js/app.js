@@ -7,7 +7,7 @@ import { buildReport, makePdf } from './report.js';
 import { createSync, DEFAULT_URL, encodeCode, decodeCode } from './sync.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer } from './mapa.js';
 
-const VERSION = '1.9.1';
+const VERSION = '1.9.2';
 const S = { wlasne: [],
   offers: [], rcn: null, tx: [], streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -500,7 +500,7 @@ function viewMapa() {
   const metrazF = `<div class="field"><span>Metraż mieszkania (m²)</span>${chips('metraz', M2_CHIPS)}<p class="tiny muted" style="margin:6px 0 0">Przedział od wartości włącznie do kolejnej wyłącznie: np. „30–40” to od 30,0 do 39,9 m².</p></div>`;
   const filters = () => m.mode === 'najem'
     ? `<div class="field"><span>Liczba pokoi</span>${chips('pokoje', [['', 'Wszystkie'], ['1', '1 pokój'], ['2', '2 pokoje'], ['3', '3 i więcej']])}</div>${metrazF}`
-    : `<div class="grid2"><div class="field"><span>Rynek</span>${chips('rynek', [['', 'Wszystkie'], ['wtorny', 'Wtórny'], ['pierwotny', 'Pierwotny']])}</div><div class="field"><span>Transakcje z ostatnich</span>${chips('lata', [[1, '1 roku'], [3, '3 lat'], [5, '5 lat']])}</div></div>${metrazF}`;
+    : `<div class="field"><span>Rynek</span>${chips('rynek', [['', 'Wszystkie'], ['wtorny', 'Wtórny'], ['pierwotny', 'Pierwotny']])}</div><div class="field"><span>Transakcje z ostatnich</span>${chips('lata', [[1, '1 roku'], [3, '3 lat'], [5, '5 lat']])}</div>${metrazF}`;
   const html = head('Mapa', 'Ceny i oferty w Lublinie') + `
   <div class="seg" data-n="3" data-v="${MODES.findIndex(x => x[0] === m.mode)}"><i></i>${MODES.map(([k, n]) => `<button data-mode="${k}" class="${m.mode === k ? 'on' : ''}">${n}</button>`).join('')}</div>
   <div class="card"><div id="mapfilters">${filters()}</div></div>
