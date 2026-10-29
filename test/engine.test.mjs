@@ -90,4 +90,13 @@ const rentD=estimateRent(offD,subD); const cd=crossCheckRent(offD,txD,subD,rentD
 console.log('KONTROLA (dzielnice):', cd.ok, cd.unit, cd.pairs, 'przypisano transakcji:', cd.assigned, 'rentowność %:', cd.grossYieldPct?.toFixed(2), 'R2:', cd.r2?.toFixed(2), 'implied:', cd.implied&&Object.values(cd.implied).map(Math.round), 'z ofert:', rentD.ok&&Object.values(rentD.total).map(Math.round), cd.agreement);
 assert.ok(cd.ok && cd.unit==='dzielnic' && cd.pairs>=10); assert.ok(Math.abs(cd.grossYieldPct-6.6)<0.8); assert.ok(cd.r2>0.8);
 const trueMid=44*pmD(5)*0.0055; assert.ok(Math.abs(cd.implied.mid-trueMid)/trueMid<0.12,'wyliczony czynsz blisko prawdziwego');
+// 7) metraż: czynsz/m² ~ m2^-0,5, cena/m² ~ m2^-0,1; mieszkanie 30 m² — bez standaryzacji kontrola zaniżałaby czynsz
+const rowsE=[],offE=[]; const trueRent=(i,m2)=>m2*pmD(i)*0.0055*Math.pow(m2/45,-0.5);
+for(let i=0;i<12;i++){ for(let k=0;k<40;k++){ const m2=28+(k%12)*5, u='S'+i+(k%2?'a':'b'); const r=mk('E'+i+'_'+k,'TE'+i+'_'+k,Math.round(m2*pmD(i)*Math.pow(m2/45,-0.1)*(0.95+rn()*0.1)),'wolnyRynek','rynekWtorny',2026,'mieszkalna',m2,null,'2026-06-01');
+    r[C.indexOf('ulica')]=u; r[C.indexOf('lat')]=51.15+i*0.012+rn()*0.002; r[C.indexOf('lon')]=22.5+rn()*0.002; rowsE.push(r); }
+  for(let k=0;k<12;k++){ const m2=28+k*5; offE.push({id:'oe'+i+'_'+k,wlaczone:true,flagi:[],ulica:k<3?'S'+i+'a':null,dzielnica:'D'+i,m2,pokoje:2,pietro:1,cena:Math.round(trueRent(i,m2)*(0.95+rn()*0.1)),tytul:'x'}); } }
+const txE=rcnToObjects({cols:C,rows:rowsE}); const subE={tryb:'najem',ulica:'',nr:'',dzielnica:'D5',m2:30,pokoje:1,pietro:1};
+const ce=crossCheckRent(offE,txE,subE,null,{nowTs:Date.parse('2026-10-29')}); const tr=trueRent(5,30);
+console.log('KONTROLA (metraż 30 m2):', ce.ok, 'implied:', Math.round(ce.implied.mid), 'prawdziwy:', Math.round(tr), 'efekt metrażu:', ce.sizeEffect.rent.toFixed(2), ce.sizeEffect.sale.toFixed(2));
+assert.ok(Math.abs(ce.implied.mid-tr)/tr<0.12,'po standaryzacji metrażu blisko prawdy');
 console.log('TESTY OK');

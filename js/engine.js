@@ -302,18 +302,23 @@ export function crossCheckRent(offers, tx, subject, rentRes, opts = {}) {
   const sales = tx.filter(t => t.funkcja === 'mieszkalna' && t.izby > 0 && t.m2 >= 12 && t.m2 <= 250 && t.cena > 0 && !t.wielolokalowa && t.pelne && age(t) <= 3);
   const rents = offers.filter(o => o.wlaczone !== false && !(o.flagi && o.flagi.length) && o.m2 > 0 && o.cena > 0);
   const out = { ok: false };
+  // --- standaryzacja metrażu: cena/m² zależy od metrażu (czynsz silnie, cena sprzedaży słabiej). Obie strony przeliczamy do metrażu wycenianego mieszkania.
+  const slope = pts => { const n = pts.length; if (n < 60) return 0; const mx = pts.reduce((a, p) => a + p[0], 0) / n, my = pts.reduce((a, p) => a + p[1], 0) / n; const sxx = pts.reduce((a, p) => a + (p[0] - mx) ** 2, 0); return sxx > 0 ? Math.max(-0.9, Math.min(0.2, pts.reduce((a, p) => a + (p[0] - mx) * (p[1] - my), 0) / sxx)) : 0; };
+  const bR = slope(rents.map(o => [Math.log(o.m2), Math.log(o.cena / o.m2)])), bS = slope(sales.map(t => [Math.log(t.m2), Math.log(t.cena / t.m2)]));
+  const stdR = o => (o.cena / o.m2) * Math.pow(subject.m2 / o.m2, bR), stdS = t => (t.cena / t.m2) * Math.pow(subject.m2 / t.m2, bS);
+  out.sizeEffect = { rent: bR, sale: bS };
   // --- przypisanie dzielnic transakcjom: punkty (ulica -> środek wg RCN) z dzielnicą znaną z ofert
   const streetPts = new Map();
   for (const t of sales) if (t.ulica && t.lat != null) { const k = norm(t.ulica), p = streetPts.get(k) || streetPts.set(k, { la: 0, lo: 0, n: 0 }).get(k); p.la += t.lat; p.lo += t.lon; p.n++; }
   const known = []; const seenSt = new Set();
   for (const o of rents) if (o.ulica && o.dzielnica) { const k = norm(o.ulica), d = norm(o.dzielnica), key = k + '|' + d, p = streetPts.get(k); if (p && p.n >= 2 && !seenSt.has(key)) { seenSt.add(key); known.push({ la: p.la / p.n, lo: p.lo / p.n, d }); } }
   const D = new Map(), get = d => D.get(d) || D.set(d, { rent: [], sale: [] }).get(d);
-  for (const o of rents) if (o.dzielnica) get(norm(o.dzielnica)).rent.push(o.cena / o.m2);
+  for (const o of rents) if (o.dzielnica) get(norm(o.dzielnica)).rent.push(stdR(o));
   let assigned = 0;
   if (known.length >= 5) for (const t of sales) {
     if (t.lat == null) continue;
     let best = null, bd = 1e9; for (const k of known) { const d = haversine([t.lat, t.lon], [k.la, k.lo]); if (d < bd) { bd = d; best = k; } }
-    if (best && bd <= 2.5) { get(best.d).sale.push(t.cena / t.m2); assigned++; }
+    if (best && bd <= 2.5) { get(best.d).sale.push(stdS(t)); assigned++; }
   }
   const dp = []; for (const [d, v] of D) if (v.rent.length >= 5 && v.sale.length >= 30) dp.push({ d, rent: median(v.rent), sale: median(v.sale), nr: v.rent.length, ns: v.sale.length, rq: [q(v.rent, .25), q(v.rent, .75)], sq: [q(v.sale, .25), q(v.sale, .75)] });
   let ratioMid, ratioLo, ratioHi, unit, pairs, subjSalePm2 = null;
@@ -332,8 +337,8 @@ export function crossCheckRent(offers, tx, subject, rentRes, opts = {}) {
   } else {
     // zapasowo: ulice (wymaga ulicy w ofertach i transakcjach)
     const S = new Map(), R = new Map();
-    for (const t of sales) if (t.ulica) { const k = norm(t.ulica); (S.get(k) || S.set(k, []).get(k)).push(t.cena / t.m2); }
-    for (const o of rents) if (o.ulica) { const k = norm(o.ulica); (R.get(k) || R.set(k, []).get(k)).push(o.cena / o.m2); }
+    for (const t of sales) if (t.ulica) { const k = norm(t.ulica); (S.get(k) || S.set(k, []).get(k)).push(stdS(t)); }
+    for (const o of rents) if (o.ulica) { const k = norm(o.ulica); (R.get(k) || R.set(k, []).get(k)).push(stdR(o)); }
     pairs = []; for (const [k, rs] of R) { const ss = S.get(k); if (ss && ss.length >= 3 && rs.length >= 2) pairs.push({ d: k, rent: median(rs), sale: median(ss), nr: rs.length, ns: ss.length }); }
     unit = 'ulic';
     if (pairs.length < 8) { out.pairs = pairs.length; out.unit = unit; out.reason = `Za mało miejsc, w których mamy jednocześnie oferty najmu i transakcje, żeby zmierzyć związek czynszu z ceną kupna (dzielnic: ${dp.length}, ulic: ${pairs.length}; minimum 8). Dodawaj oferty najmu, najlepiej z ulicą.`; return out; }

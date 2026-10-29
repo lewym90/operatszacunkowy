@@ -5,7 +5,7 @@ import { linesFromPdf, offersFromLines, offerKey } from './pdfimport.js';
 import { esc, $, $$, fmt, roundTo, toast, openSheet, closeSheet, countUp, saveFile, ICON } from './ui.js';
 import { buildReport, makePdf } from './report.js';
 
-const VERSION = '1.2.2';
+const VERSION = '1.2.3';
 const S = {
   offers: [], rcn: null, tx: [], streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -149,7 +149,7 @@ function viewWynik(p) {
       <h3>${fmt(roundTo(c.implied.lo, 10))} – ${fmt(roundTo(c.implied.hi, 10))} zł</h3>
       <p class="small muted" style="margin:6px 0 0">Czynsz wyliczony z szacunkowej wartości mieszkania (${fmt(roundTo(c.sale.total.lo, 1000))} – ${fmt(roundTo(c.sale.total.hi, 1000))} zł, RCN) i zmierzonego w Twoich danych stosunku czynszu do wartości: rentowność brutto ok. ${c.grossYieldPct.toFixed(1).replace('.', ',')}% rocznie (zmierzone na ${c.pairs} ${c.unit} z ofertami i transakcjami).</p>
       <div class="kv" style="margin-top:8px"><span>Zgodność z wynikiem z ofert</span><b>${c.agreement || '—'}${c.diffPct != null ? ` (środek ${c.diffPct > 0 ? '+' : '−'}${Math.abs(c.diffPct).toFixed(0)}%)` : ''}</b></div>
-      <div class="kv"><span>Podstawa stosunku czynsz/wartość</span><b>${esc(c.basis || '')}</b></div>
+      <p class="tiny muted" style="margin:8px 0 0">Stosunek czynszu do wartości: ${esc(c.basis || '')}. Obie strony przeliczono do metrażu ${String(subj_m2(e)).replace('.', ',')} m² (czynsz za m² zmienia się z metrażem o ${(c.sizeEffect.rent * 100).toFixed(0)}% na każde 100% metrażu, cena sprzedaży o ${(c.sizeEffect.sale * 100).toFixed(0)}%).</p>
       ${c.r2 != null ? `<p class="tiny muted" style="margin:8px 0 0">Czy cena kupna tłumaczy czynsz? Między ${c.unit === 'dzielnic' ? 'dzielnicami' : 'ulicami'}: R² = ${c.r2.toFixed(2).replace('.', ',')}${c.slope != null ? `, czynsz rośnie o ${c.slope.toFixed(2).replace('.', ',')}% na każdy 1% wyższej ceny kupna` : ''}. ${c.r2 < 0.3 ? 'To słaby związek: traktuj kontrolę ostrożnie.' : c.r2 < 0.6 ? 'Związek umiarkowany.' : 'Związek wyraźny.'}</p>` : ''}
       ${c.agreement === 'rozbieżne' ? '<p class="small" style="margin:8px 0 0;color:var(--gold-l)">Obie oceny wyraźnie się różnią: zweryfikuj porównania ręcznie.</p>' : ''}</div>`
       : `<div class="card"><div class="eyebrow">Kontrola ze sprzedażą</div><p class="small muted" style="margin:0">${esc(c.reason || 'Niedostępna.')}</p></div>`;
@@ -175,6 +175,7 @@ function viewWynik(p) {
     const rl = $('[data-act="real"]', v); if (rl) rl.onclick = () => realSheet(e);
   }];
 }
+const subj_m2 = e => e.subj.m2;
 function compHTML(c, i, sale) {
   const w = Math.max(6, Math.round(c.w * 100));
   return `<div class="comp" style="animation-delay:${Math.min(i, 12) * 40}ms"><div><b>${esc(c.opis || '—')}</b>${c.sameBuilding ? '<span class="badge g">ten sam budynek</span>' : ''}<span class="badge">${c.kind}</span></div><div class="p">${fmt(c.cena)} zł</div>
