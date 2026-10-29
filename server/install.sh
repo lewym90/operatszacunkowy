@@ -28,12 +28,12 @@ WantedBy=multi-user.target
 EOF
 systemctl daemon-reload
 systemctl enable --now operat-sync
-sleep 1
-systemctl is-active operat-sync
+for i in 1 2 3 4 5 6 7 8; do systemctl is-active --quiet operat-sync && break; sleep 1; done
+systemctl is-active operat-sync || { echo 'Usługa nie wstała. Sprawdź: journalctl -u operat-sync -n 30 --no-pager'; }
 echo
 echo "Klucz synchronizacji (wpisz go w aplikacji: Ustawienia -> Synchronizacja):"
 grep '^OPERAT_SYNC_KEY=' "$ENVF" | cut -d= -f2-
 echo
 echo "Test lokalny:"
 KEY="$(grep '^OPERAT_SYNC_KEY=' "$ENVF" | cut -d= -f2-)"
-curl -s -H "Authorization: Bearer $KEY" http://127.0.0.1:8787/v1/ping; echo
+curl -s -H "Authorization: Bearer $KEY" http://127.0.0.1:8787/v1/ping || true; echo
