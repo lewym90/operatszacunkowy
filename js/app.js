@@ -5,8 +5,9 @@ import { linesFromPdf, offersFromLines, offerKey } from './pdfimport.js';
 import { esc, $, $$, fmt, roundTo, toast, openSheet, closeSheet, countUp, saveFile, ICON } from './ui.js';
 import { buildReport, makePdf } from './report.js';
 import { createSync, DEFAULT_URL, encodeCode, decodeCode } from './sync.js';
+import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer } from './mapa.js';
 
-const VERSION = '1.8.0';
+const VERSION = '1.9.0';
 const S = { wlasne: [],
   offers: [], rcn: null, tx: [], streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -59,28 +60,30 @@ function paintSync(st) {
 }
 
 /* ---------- router ---------- */
-const TABS = [['wycena', 'Wycena'], ['dane', 'Dane'], ['historia', 'Historia'], ['ust', 'Ustawienia']];
+const TABS = [['wycena', 'Wycena'], ['mapa', 'Mapa'], ['dane', 'Dane'], ['historia', 'Historia'], ['ust', 'Ustawienia']];
 function tabs(active) {
   $('#tabs').innerHTML = '<div class="in-tabs"><div class="brand"><img src="icons/logo-am.png" alt=""><b>OPERAT SZACUNKOWY</b><span>AM Nieruchomości</span></div>' + TABS.map(([k, n]) => `<a href="#/${k}" class="${k === active ? 'on' : ''}">${ICON[k === 'wycena' ? 'wycena' : k]}<span>${n}</span></a>`).join('') + '</div>';
 }
 function render() {
   const h = location.hash.replace(/^#\/?/, '') || 'wycena', p = h.split('/');
   let html = '', mount = null, tab = p[0];
-  closeSheet();
-  if (p[0] === 'wycena') [html, mount] = viewWycena();
+  closeSheet(); if (mapCtl) { try { mapCtl.destroy(); } catch { } mapCtl = null; }
+  if (p[0] === 'mapa') [html, mount] = viewMapa();
+  else if (p[0] === 'wycena') [html, mount] = viewWycena();
   else if (p[0] === 'dane') [html, mount] = viewDane();
   else if (p[0] === 'historia') [html, mount] = viewHistoria();
   else if (p[0] === 'ust') [html, mount] = viewUst();
   else if (p[0] === 'wynik') { tab = 'wycena'; [html, mount] = viewWynik(p); }
   else if (p[0] === 'raport') { tab = 'wycena'; [html, mount] = viewRaport(p); }
   else [html, mount] = viewWycena();
-  const v = $('#view'); v.innerHTML = html; v.dataset.view = ['wycena', 'dane', 'historia', 'ust', 'wynik', 'raport'].includes(p[0]) ? p[0] : 'wycena';
+  const v = $('#view'); v.innerHTML = html; v.dataset.view = ['wycena', 'mapa', 'dane', 'historia', 'ust', 'wynik', 'raport'].includes(p[0]) ? p[0] : 'wycena';
   const topEl = v.querySelector(':scope > .top');   // reszta widoku w osobnym bloku: na szerokim ekranie układa się w kolumny
   if (topEl) { const body = document.createElement('div'); body.className = 'body'; while (topEl.nextSibling) body.appendChild(topEl.nextSibling); v.appendChild(body); }
   v.classList.remove('enter'); void v.offsetWidth; v.classList.add('enter');
   tabs(tab); window.scrollTo(0, 0); mount && mount(v);
 }
 const go = h => { location.hash = h; };
+let mapCtl = null;
 
 const head = (title, sub, back, line) => `<div class="top">${back ? `<button class="back" data-back aria-label="Wróć">${ICON.back}</button>` : '<img class="mark" src="icons/logo-am.png" alt="">'}<div><h1>${title}</h1>${sub ? `<small class="${line ? 'line' : ''}">${sub}</small>` : ''}</div></div>`;
 
@@ -209,13 +212,14 @@ function viewWynik(p) {
   html += `<div class="card"><div class="eyebrow">Uwagi do wyniku</div><ul class="clean note-warn">${r.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>
     ${r.unused.length ? `<div class="eyebrow" style="margin-top:14px">Nie uwzględniono w wycenie</div><ul class="clean">${r.unused.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}</div>`;
   const withLL = r.comps.filter(c => c.lat != null);
-  if (sale && r.subLL && withLL.length >= 3) html += `<div class="card"><div class="eyebrow">Położenie porównań</div>${mapSVG(r)}<p class="tiny muted" style="margin:8px 0 0">Złoty znak: lokal wyceniany (${esc(r.llKind || '')}). Większy punkt = większa waga porównania.</p></div>`;
+  if (sale && r.subLL && withLL.length >= 3) html += `<div class="card"><div class="eyebrow">Położenie porównań</div><div class="mapbox sm" id="resmap">${mapSVG(r)}</div><div id="reslegend"></div><p class="tiny muted" style="margin:8px 0 0">Złoty pierścień: lokal wyceniany (${esc(r.llKind || '')}). Większy punkt = większa waga porównania; kolor = cena za m². Dotknij punktu, aby zobaczyć transakcję.</p></div>`;
   html += `<div class="card"><div class="eyebrow">Porównania (${r.comps.length})</div><div id="comps">${r.comps.slice(0, 10).map((c, i) => compHTML(c, i, sale)).join('')}</div>${r.comps.length > 10 ? '<button class="btn ghost" data-act="more" style="margin-top:10px">Pokaż wszystkie</button>' : ''}</div>
   <div class="row">${saved ? '' : '<button class="btn ghost" data-act="save">Zapisz do historii</button>'}<button class="btn" data-act="report">Raport dla klienta</button></div>
   ${saved ? `<div class="gap"></div><button class="btn ghost" data-act="real">${e.real ? 'Zmień cenę rzeczywistą' : 'Wpisz cenę rzeczywistą (do kontroli trafności)'}</button>` : ''}`;
   return [html, v => {
     $('[data-back]', v).onclick = () => (saved ? go('#/historia') : go('#/wycena'));
     $$('[data-cu]', v).forEach(el => countUp(el, +el.dataset.cu));
+    const rmEl = $('#resmap', v); if (rmEl) resMap(rmEl, r, v);
     const more = $('[data-act="more"]', v); if (more) more.onclick = () => { $('#comps', v).innerHTML = r.comps.map((c, i) => compHTML(c, i, sale)).join(''); more.remove(); };
     const sv = $('[data-act="save"]', v); if (sv) sv.onclick = () => { e.id = uid(); S.wyceny.unshift(e); save.wyceny(); toast('Zapisano w historii'); go('#/wynik/h/' + e.id); };
     $('[data-act="report"]', v).onclick = () => go(saved ? '#/raport/h/' + e.id : '#/raport/cur/' + s.tryb);
@@ -470,6 +474,76 @@ async function syncCard(v) {
   }
 }
 
+
+/* ---------- MAPA ---------- */
+S.mapa = { mode: 'tx', rynek: '', lata: 3, pokoje: '' };
+let centersCache = null;
+const centersOf = () => { if (!centersCache || centersCache.for !== S.tx) centersCache = { for: S.tx, map: streetCenters(S.tx) }; return centersCache.map; };
+const legendHTML = (cls, unit) => cls.labels.length ? `<div class="legend">${cls.labels.map(l => `<span><i style="background:${l.c}"></i>${l.t}</span>`).join('')}</div><p class="tiny muted" style="margin:6px 0 0">${unit}</p>` : '';
+async function resMap(el, r, v) {
+  try {
+    const ctl = await createMap(el, { center: r.subLL, zoom: 15 });
+    if (!el.isConnected) { ctl.destroy(); return; }
+    mapCtl = ctl;
+    const comps = r.comps.filter(c => c.lat != null), cls = makeClasses(comps.map(c => c.pm2raw ?? c.pm2));
+    const pts = ctl.dots(comps.map(c => ({ lat: c.lat, lon: c.lon, v: c.pm2raw ?? c.pm2, r: 3.5 + c.w * 6, c })), cls.color,
+      it => `<b>${esc(it.c.opis || 'Transakcja')}</b><br>${fmt(it.c.cena)} zł · ${String(it.c.m2).replace('.', ',')} m²<br><b>${fmt(it.c.pm2raw ?? it.c.pm2)} zł/m²</b><br><span class="tiny">${it.c.data ? 'akt: ' + it.c.data : it.c.rok ? 'akt: ' + it.c.rok : ''}${it.c.sameBuilding ? ' · ten sam budynek' : ''} · waga ${Math.round(it.c.w * 100)}%</span>`);
+    ctl.subject(r.subLL); ctl.fit([...pts, r.subLL]);
+    const lg = $('#reslegend', v); if (lg) lg.innerHTML = legendHTML(cls, 'Cena za m² w porównaniach (zł).');
+  } catch (e) { /* zostaje schemat */ }
+}
+function viewMapa() {
+  const m = S.mapa, MODES = [['tx', 'Transakcje'], ['grid', 'Ceny okolic'], ['najem', 'Najem']];
+  const chips = (key, opts) => `<div class="chips" data-mf="${key}">${opts.map(([val, n]) => `<button type="button" class="chip ${String(m[key]) === String(val) ? 'on' : ''}" data-v="${val}">${n}</button>`).join('')}</div>`;
+  const filters = () => m.mode === 'najem'
+    ? `<div class="field"><span>Pokoje</span>${chips('pokoje', [['', 'Wszystkie'], ['1', '1'], ['2', '2'], ['3', '3 i więcej']])}</div>`
+    : `<div class="grid2"><div class="field"><span>Rynek</span>${chips('rynek', [['', 'Wszystkie'], ['wtorny', 'Wtórny'], ['pierwotny', 'Pierwotny']])}</div><div class="field"><span>Okres</span>${chips('lata', [[1, '1 rok'], [3, '3 lata'], [5, '5 lat']])}</div></div>`;
+  const html = head('Mapa', 'Ceny i oferty w Lublinie') + `
+  <div class="seg" data-n="3" data-v="${MODES.findIndex(x => x[0] === m.mode)}"><i></i>${MODES.map(([k, n]) => `<button data-mode="${k}" class="${m.mode === k ? 'on' : ''}">${n}</button>`).join('')}</div>
+  <div class="card"><div id="mapfilters">${filters()}</div></div>
+  <div class="card mapcard"><div class="mapbox" id="mapbox"><div class="empty">Ładuję mapę…</div></div><div id="maplegend" style="margin-top:10px"></div></div>
+  <div class="card"><div id="mapstat" class="small muted"></div></div>`;
+  return [html, async v => {
+    let ctl = null, subj = S.last.sprzedaz?.res?.ok ? S.last.sprzedaz.res.subLL : null;
+    const stat = t => { $('#mapstat', v).innerHTML = t; };
+    const draw = fit => {
+      ctl.clear(); let pts = [], cls, unit = '';
+      if (m.mode === 'najem') {
+        const offers = allOffers().filter(o => o.wlaczone !== false && !(o.flagi && o.flagi.length) && o.m2 > 0 && o.cena > 0 && (m.pokoje === '' || (m.pokoje === '3' ? o.pokoje >= 3 : o.pokoje === +m.pokoje)));
+        if (!S.tx.length) { $('#maplegend', v).innerHTML = ''; return stat('Do ustawienia ofert na mapie potrzebne są dane RCN: środek ulicy wyliczamy z pozycji transakcji. Pobierz je w zakładce <b>Dane</b>.'); }
+        const { placed, none } = placeOffers(offers, centersOf());
+        cls = makeClasses(placed.map(p => p.o.cena / p.o.m2)); unit = 'Czynsz najmu za m² miesięcznie (zł). Pełny punkt: środek ulicy; pusta obwódka: środek dzielnicy (przybliżenie).';
+        pts = ctl.dots(placed.map(p => ({ lat: p.lat, lon: p.lon, v: p.o.cena / p.o.m2, approx: p.approx, o: p.o, r: 5 })), cls.color, it => popupOffer(it.o, it.approx));
+        const md = median(placed.map(p => p.o.cena / p.o.m2));
+        stat(placed.length ? `Na mapie: <b>${fmt(placed.length)}</b> z ${fmt(offers.length)} ofert najmu, mediana <b>${fmt(md)} zł/m²</b> miesięcznie. ${fmt(placed.filter(p => p.approx).length)} ofert ma położenie przybliżone do dzielnicy${none ? `, ${fmt(none)} nie ma ani znanej ulicy, ani dzielnicy` : ''}. Położenie ofert to środek ulicy, nie adres.` : 'Brak ofert z rozpoznanym położeniem. Dodaj oferty w zakładce <b>Dane</b>.');
+      } else {
+        if (!S.tx.length) { $('#maplegend', v).innerHTML = ''; return stat('Brak danych RCN. Pobierz je w zakładce <b>Dane</b>.'); }
+        const sales = usableSales(S.tx, { years: +m.lata, rynek: m.rynek });
+        if (m.mode === 'tx') {
+          cls = makeClasses(sales.map(s => s.pm2)); unit = 'Cena transakcyjna za m² (zł) z aktów notarialnych.';
+          pts = ctl.dots(sales.map(s => ({ ...s, v: s.pm2 })), cls.color, popupSale);
+          stat(`Na mapie: <b>${fmt(sales.length)}</b> transakcji mieszkań, mediana <b>${fmt(median(sales.map(s => s.pm2)) || 0)} zł/m²</b>. Każdy punkt to jedna sprzedaż; dotknij, aby zobaczyć szczegóły.`);
+        } else {
+          const cells = buildGrid(sales); cls = makeClasses(cells.map(c => c.med)); unit = 'Mediana ceny za m² (zł) w kwadracie ok. 500 × 500 m. Pokazane tylko kwadraty z min. 5 transakcjami.';
+          ctl.cells(cells, cls.color, c => `<b>${fmt(c.med)} zł/m²</b> (mediana)<br>środkowe 50%: ${fmt(c.p25)}–${fmt(c.p75)} zł/m²<br><span class="tiny">${c.n} transakcji w tym kwadracie</span>`);
+          pts = cells.flatMap(c => c.bounds);
+          stat(`<b>${fmt(cells.length)}</b> kwadratów z min. 5 transakcjami (z ${fmt(sales.length)} transakcji). Mediana ceny w kwadracie jest wskazówką, nie wyceną: różni się z wiekiem budynku i standardem.`);
+        }
+      }
+      $('#maplegend', v).innerHTML = legendHTML(cls, unit);
+      ctl.subject(subj, 'Ostatnio wyceniane mieszkanie');
+      if (fit && pts.length) ctl.fit(pts);
+    };
+    const redrawFilters = () => { $('#mapfilters', v).innerHTML = filters(); bindFilters(); };
+    const bindFilters = () => $$('[data-mf]', v).forEach(g => $$('button', g).forEach(b => b.onclick = () => { m[g.dataset.mf] = b.dataset.v; $$('button', g).forEach(x => x.classList.toggle('on', x === b)); draw(false); }));
+    $$('.seg button', v).forEach(b => b.onclick = () => { m.mode = b.dataset.mode; const sg = $('.seg', v); sg.dataset.v = MODES.findIndex(x => x[0] === m.mode); $$('button', sg).forEach(x => x.classList.toggle('on', x === b)); redrawFilters(); draw(true); });
+    bindFilters();
+    try { ctl = await createMap($('#mapbox', v)); } catch (e) { $('#mapbox', v).innerHTML = `<div class="empty"><b>Mapa niedostępna</b>${esc(e.message)}</div>`; return; }
+    if (!$('#mapbox', v).isConnected) { ctl.destroy(); return; }
+    mapCtl = ctl; draw(true);
+  }];
+}
+
 /* ---------- start ---------- */
 window.addEventListener('hashchange', render);
 document.addEventListener('click', e => { const b = e.target.closest('[data-back]'); if (b && !b.onclick) history.length > 1 ? history.back() : go('#/wycena'); });
@@ -482,5 +556,5 @@ load().then(() => {
     navigator.serviceWorker.addEventListener('controllerchange', () => { if (had && !done) { done = true; location.reload(); } });   // nowa wersja przejęła kontrolę: odśwież raz
     navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => { });
   }
-  window.__am = { S, render, go, sync, checkRcn };
+  window.__am = { S, render, go, sync, checkRcn, getMap: () => mapCtl };
 });

@@ -151,6 +151,27 @@ ul.clean li:first-child { border-top: 0; } ul.clean li::before { content: ''; po
 .report-img { width: 100%; border-radius: 10px; margin-bottom: 14px; box-shadow: 0 18px 50px rgba(0, 0, 0, .5); background: #fff; display: block; }
 #syncst[data-s="ok"] { color: var(--ok); } #syncst[data-s="syncing"], #syncst[data-s="idle"] { color: var(--gold-l); } #syncst[data-s="offline"] { color: var(--warn); } #syncst[data-s="error"] { color: var(--bad); }
 
+/* ---------- mapa ---------- */
+.seg[data-n="3"] { grid-template-columns: repeat(3, 1fr); }
+.seg[data-n="3"] i { width: calc((100% - 8px) / 3); }
+.seg[data-n="3"][data-v="2"] i { transform: translateX(200%); }
+.mapcard { padding: 12px; }
+.mapbox { position: relative; isolation: isolate; height: clamp(340px, 58dvh, 640px); border-radius: 16px; overflow: hidden; background: #0f0f12; border: 1px solid var(--line2); }
+.mapbox.sm { height: 300px; }
+.mapbox svg.map { width: 100%; height: 100%; aspect-ratio: auto; max-height: none; border: 0; border-radius: 0; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--ash); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; } .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; }
+.leaflet-container { background: #0f0f12; font: inherit; }
+.leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.78) contrast(.92) saturate(.55); }
+.leaflet-popup-content-wrapper, .leaflet-popup-tip { background: #1d1d23; color: var(--bone); border: 1px solid var(--line); box-shadow: 0 10px 30px rgba(0, 0, 0, .5); }
+.leaflet-popup-content { margin: 12px 14px; font: 13px/1.45 var(--text); } .leaflet-popup-content .tiny { color: var(--ash); }
+.leaflet-container a.leaflet-popup-close-button { color: var(--ash); }
+.leaflet-bar a, .leaflet-bar a:hover { background: var(--g2); color: var(--gold-l); border-color: var(--line2); } .leaflet-bar a:hover { background: var(--g3); }
+.leaflet-control-attribution { background: rgba(11, 11, 13, .72) !important; color: var(--ash2) !important; } .leaflet-control-attribution a { color: var(--ash) !important; }
+.leaflet-tooltip { background: var(--g2); color: var(--gold-l); border-color: var(--line); box-shadow: none; }
+@media (max-width: 420px) { #tabs a { letter-spacing: .02em; font-size: 10px; } }
+@media (min-width: 1024px) { #view[data-view="mapa"] { max-width: 1160px; } .mapbox { height: 66vh; } .mapbox.sm { height: 360px; } }
+
 /* ---------- ekrany szersze od telefonu ---------- */
 #tabs .brand { display: none; }
 :focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
