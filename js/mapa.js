@@ -30,12 +30,13 @@ export function makeClasses(values) {
 }
 
 // Mieszkania z RCN nadające się do mapy cen: pełny lokal, jedna cena, współrzędne, rozsądna cena za m²
-export function usableSales(tx, { years = 3, rynek = '' } = {}) {
+export function usableSales(tx, { years = 3, rynek = '', m2min = 0, m2max = 1e9 } = {}) {
   const from = Date.now() - years * 365.25 * 864e5, out = [];
   for (const t of tx) {
     if (t.lat == null || t.funkcja !== 'mieszkalna' || t.wielolokalowa || !t.pelne || !(t.m2 >= 15 && t.m2 <= 200) || !(t.cena > 50000)) continue;
     const when = t.ts ?? (t.rok ? Date.UTC(t.rok, 6, 1) : null); if (when == null || when < from) continue;
     if (rynek && t.rynek !== rynek) continue;
+    if (t.m2 < m2min || t.m2 >= m2max) continue;
     const pm2 = t.cena / t.m2; if (pm2 < 2000 || pm2 > 30000) continue;
     out.push({ lat: t.lat, lon: t.lon, cena: t.cena, m2: t.m2, pm2, ts: when, ulica: t.ulica, nr: t.nr, rynek: t.rynek, izby: t.izby });
   }

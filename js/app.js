@@ -7,7 +7,7 @@ import { buildReport, makePdf } from './report.js';
 import { createSync, DEFAULT_URL, encodeCode, decodeCode } from './sync.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer } from './mapa.js';
 
-const VERSION = '1.9.0';
+const VERSION = '1.9.1';
 const S = { wlasne: [],
   offers: [], rcn: null, tx: [], streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -476,7 +476,9 @@ async function syncCard(v) {
 
 
 /* ---------- MAPA ---------- */
-S.mapa = { mode: 'tx', rynek: '', lata: 3, pokoje: '' };
+S.mapa = { mode: 'tx', rynek: '', lata: 3, pokoje: '', metraz: '' };
+const M2 = { '': [0, 1e9], '0-20': [0, 20], '20-30': [20, 30], '30-40': [30, 40], '40-50': [40, 50], '50+': [50, 1e9] };   // od (włącznie) do (bez)
+const M2_CHIPS = [['', 'Wszystkie'], ['0-20', 'do 20'], ['20-30', '20–30'], ['30-40', '30–40'], ['40-50', '40–50'], ['50+', 'powyżej 50']];
 let centersCache = null;
 const centersOf = () => { if (!centersCache || centersCache.for !== S.tx) centersCache = { for: S.tx, map: streetCenters(S.tx) }; return centersCache.map; };
 const legendHTML = (cls, unit) => cls.labels.length ? `<div class="legend">${cls.labels.map(l => `<span><i style="background:${l.c}"></i>${l.t}</span>`).join('')}</div><p class="tiny muted" style="margin:6px 0 0">${unit}</p>` : '';
@@ -495,9 +497,10 @@ async function resMap(el, r, v) {
 function viewMapa() {
   const m = S.mapa, MODES = [['tx', 'Transakcje'], ['grid', 'Ceny okolic'], ['najem', 'Najem']];
   const chips = (key, opts) => `<div class="chips" data-mf="${key}">${opts.map(([val, n]) => `<button type="button" class="chip ${String(m[key]) === String(val) ? 'on' : ''}" data-v="${val}">${n}</button>`).join('')}</div>`;
+  const metrazF = `<div class="field"><span>Metraż mieszkania (m²)</span>${chips('metraz', M2_CHIPS)}<p class="tiny muted" style="margin:6px 0 0">Przedział od wartości włącznie do kolejnej wyłącznie: np. „30–40” to od 30,0 do 39,9 m².</p></div>`;
   const filters = () => m.mode === 'najem'
-    ? `<div class="field"><span>Pokoje</span>${chips('pokoje', [['', 'Wszystkie'], ['1', '1'], ['2', '2'], ['3', '3 i więcej']])}</div>`
-    : `<div class="grid2"><div class="field"><span>Rynek</span>${chips('rynek', [['', 'Wszystkie'], ['wtorny', 'Wtórny'], ['pierwotny', 'Pierwotny']])}</div><div class="field"><span>Okres</span>${chips('lata', [[1, '1 rok'], [3, '3 lata'], [5, '5 lat']])}</div></div>`;
+    ? `<div class="field"><span>Liczba pokoi</span>${chips('pokoje', [['', 'Wszystkie'], ['1', '1 pokój'], ['2', '2 pokoje'], ['3', '3 i więcej']])}</div>${metrazF}`
+    : `<div class="grid2"><div class="field"><span>Rynek</span>${chips('rynek', [['', 'Wszystkie'], ['wtorny', 'Wtórny'], ['pierwotny', 'Pierwotny']])}</div><div class="field"><span>Transakcje z ostatnich</span>${chips('lata', [[1, '1 roku'], [3, '3 lat'], [5, '5 lat']])}</div></div>${metrazF}`;
   const html = head('Mapa', 'Ceny i oferty w Lublinie') + `
   <div class="seg" data-n="3" data-v="${MODES.findIndex(x => x[0] === m.mode)}"><i></i>${MODES.map(([k, n]) => `<button data-mode="${k}" class="${m.mode === k ? 'on' : ''}">${n}</button>`).join('')}</div>
   <div class="card"><div id="mapfilters">${filters()}</div></div>
@@ -509,7 +512,7 @@ function viewMapa() {
     const draw = fit => {
       ctl.clear(); let pts = [], cls, unit = '';
       if (m.mode === 'najem') {
-        const offers = allOffers().filter(o => o.wlaczone !== false && !(o.flagi && o.flagi.length) && o.m2 > 0 && o.cena > 0 && (m.pokoje === '' || (m.pokoje === '3' ? o.pokoje >= 3 : o.pokoje === +m.pokoje)));
+        const offers = allOffers().filter(o => o.wlaczone !== false && !(o.flagi && o.flagi.length) && o.m2 > 0 && o.cena > 0 && (m.pokoje === '' || (m.pokoje === '3' ? o.pokoje >= 3 : o.pokoje === +m.pokoje)) && o.m2 >= M2[m.metraz][0] && o.m2 < M2[m.metraz][1]);
         if (!S.tx.length) { $('#maplegend', v).innerHTML = ''; return stat('Do ustawienia ofert na mapie potrzebne są dane RCN: środek ulicy wyliczamy z pozycji transakcji. Pobierz je w zakładce <b>Dane</b>.'); }
         const { placed, none } = placeOffers(offers, centersOf());
         cls = makeClasses(placed.map(p => p.o.cena / p.o.m2)); unit = 'Czynsz najmu za m² miesięcznie (zł). Pełny punkt: środek ulicy; pusta obwódka: środek dzielnicy (przybliżenie).';
@@ -518,7 +521,7 @@ function viewMapa() {
         stat(placed.length ? `Na mapie: <b>${fmt(placed.length)}</b> z ${fmt(offers.length)} ofert najmu, mediana <b>${fmt(md)} zł/m²</b> miesięcznie. ${fmt(placed.filter(p => p.approx).length)} ofert ma położenie przybliżone do dzielnicy${none ? `, ${fmt(none)} nie ma ani znanej ulicy, ani dzielnicy` : ''}. Położenie ofert to środek ulicy, nie adres.` : 'Brak ofert z rozpoznanym położeniem. Dodaj oferty w zakładce <b>Dane</b>.');
       } else {
         if (!S.tx.length) { $('#maplegend', v).innerHTML = ''; return stat('Brak danych RCN. Pobierz je w zakładce <b>Dane</b>.'); }
-        const sales = usableSales(S.tx, { years: +m.lata, rynek: m.rynek });
+        const sales = usableSales(S.tx, { years: +m.lata, rynek: m.rynek, m2min: M2[m.metraz][0], m2max: M2[m.metraz][1] });
         if (m.mode === 'tx') {
           cls = makeClasses(sales.map(s => s.pm2)); unit = 'Cena transakcyjna za m² (zł) z aktów notarialnych.';
           pts = ctl.dots(sales.map(s => ({ ...s, v: s.pm2 })), cls.color, popupSale);

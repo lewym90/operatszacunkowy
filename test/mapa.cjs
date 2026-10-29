@@ -23,6 +23,10 @@ const VP = [['phone', 390, 844, true], ['tablet', 820, 1180, true], ['desktop', 
     await p.click('[data-mode=grid]'); await p.waitForTimeout(900); console.log(name, 'siatka:', (await nDots()).slice(0, 90)); await p.screenshot({ path: `${OUT}/${name}-2-ceny-okolic.png` });
     await p.click('[data-mode=najem]'); await p.waitForTimeout(900); console.log(name, 'najem:', (await nDots()).slice(0, 110)); await p.screenshot({ path: `${OUT}/${name}-3-najem.png` });
     await p.click('[data-mf=pokoje] [data-v="2"]'); await p.waitForTimeout(500); console.log(name, 'najem 2 pok.:', (await nDots()).slice(0, 80));
+    const before = (await nDots()).match(/Na mapie: (\d+)/)?.[1]; await p.click('[data-mf=metraz] [data-v="30-40"]'); await p.waitForTimeout(500); const after = (await nDots()).match(/Na mapie: (\d+)/)?.[1];
+    console.log(name, 'metraż 30–40: ofert na mapie', before, '→', after); if (!(+after < +before)) errs.push('FILTR METRAŻU NIE ZMIENIA LICZBY OFERT');
+    await p.click('[data-mode=tx]'); await p.waitForTimeout(600); await p.click('[data-mf=metraz] [data-v=""]'); await p.waitForTimeout(400); const a1 = (await nDots()).match(/Na mapie: (\d+)/)?.[1]; await p.click('[data-mf=metraz] [data-v="50+"]'); await p.waitForTimeout(500); const a2 = (await nDots()).match(/Na mapie: (\d+)/)?.[1];
+    console.log(name, 'transakcje: wszystkie', a1, '→ powyżej 50 m²', a2); if (!(+a2 < +a1)) errs.push('FILTR METRAŻU NIE DZIAŁA DLA TRANSAKCJI');
     // punkt -> okienko
     await p.evaluate(() => { const L = window.L; });
     // wynik sprzedaży z mapą
