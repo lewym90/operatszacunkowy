@@ -1,4 +1,5 @@
 // Raport dla klienta: rysowany na kanwie (czcionki biura) i pakowany do PDF. Nigdzie nie występuje nazwa aplikacji.
+import { KAT, POD_TXT } from './rcn.js';
 const W = 1240, H = 1754, M = 84;
 const C = { onyx: '#0B0B0D', gold: '#C8A44D', goldD: '#8A6C2A', goldL: '#E6CE94', bone: '#E8E5DE', paper: '#FBFAF6', ink: '#16161A', ink2: '#55544F', line: '#E3DECF' };
 const money = n => Math.round(n).toLocaleString('pl-PL');
@@ -46,8 +47,17 @@ export async function buildReport(e, ust) {
   text(sale ? 'Orientacyjna analiza wartości nieruchomości' : 'Orientacyjna analiza czynszu najmu', 50, C.ink, 400, 'Marcellus', 1.25); y += 10;
   // dane nieruchomości
   const lok = sale ? [s.ulica, s.nr].filter(Boolean).join(' ') : [s.dzielnica, s.ulica].filter(Boolean).join(', ');
-  const rows = [['Lokalizacja', (lok || 'Lublin') + (sale ? '' : ', Lublin')], ['Powierzchnia', String(s.m2).replace('.', ',') + ' m²'], ['Liczba pokoi', String(s.pokoje)], ['Piętro', s.pietro == null ? '—' : s.pietro === 0 ? 'parter' : String(s.pietro)],
-    ['Rok budowy', s.rok ? String(s.rok) : 'nie podano'], ['Standard (wg zgłoszenia)', ({ remont: 'do remontu', dobry: 'dobry', wysoki: 'wysoki' })[s.standard] || 'nie podano'], ...(sale ? [['Rynek', ({ wtorny: 'wtórny', pierwotny: 'pierwotny' })[s.rynek] || 'dowolny']] : [['Wyposażenie (wg zgłoszenia)', ({ tak: 'umeblowane', nie: 'bez mebli' })[s.meble] || 'nie podano'], ...(s.attrs && Object.values(s.attrs).some(Boolean) ? [['Udogodnienia', Object.entries(s.attrs).filter(e => e[1]).map(e => ({ klima: 'klimatyzacja', winda: 'winda', balkon: 'balkon', taras: 'taras', ogrod: 'ogród', garaz: 'garaż' })[e[0]]).join(', ')]] : [])])];
+  const kat = s.kat || 'mieszkanie', fl = kat === 'mieszkanie', stdTxt = ({ remont: 'do remontu', dobry: 'dobry', wysoki: 'wysoki' })[s.standard] || 'nie podano';
+  const m2Lbl = kat === 'dzialka' ? 'Powierzchnia działki' : kat === 'dom' ? 'Powierzchnia użytkowa budynku' : 'Powierzchnia';
+  const podLbl = { dzialka: 'Przeznaczenie wg planu', lokal: 'Funkcja lokalu', obiekt: 'Rodzaj obiektu' }[kat];
+  const rows = [...(fl ? [] : [['Rodzaj nieruchomości', KAT[kat].n]]), ['Lokalizacja', (lok || 'Lublin') + (sale ? '' : ', Lublin')], [m2Lbl, String(s.m2).replace('.', ',') + ' m²'],
+    ...(kat === 'dom' && s.dzm2 ? [['Powierzchnia działki', String(s.dzm2).replace('.', ',') + ' m²']] : []),
+    ...(fl ? [['Liczba pokoi', String(s.pokoje)], ['Piętro', s.pietro == null ? '—' : s.pietro === 0 ? 'parter' : String(s.pietro)]] : []),
+    ...(podLbl && s.pod ? [[podLbl, POD_TXT[s.pod] || s.pod]] : []),
+    ...(['mieszkanie', 'dom', 'obiekt'].includes(kat) ? [['Rok budowy', s.rok ? String(s.rok) : 'nie podano']] : []),
+    ...(kat === 'garaz' || kat === 'dzialka' ? [] : [['Standard (wg zgłoszenia)', stdTxt]]),
+    ...(sale ? (['mieszkanie', 'dom', 'obiekt', 'lokal'].includes(kat) ? [['Rynek', ({ wtorny: 'wtórny', pierwotny: 'pierwotny' })[s.rynek] || 'dowolny']] : [])
+      : [['Wyposażenie (wg zgłoszenia)', ({ tak: 'umeblowane', nie: 'bez mebli' })[s.meble] || 'nie podano'], ...(s.attrs && Object.values(s.attrs).some(Boolean) ? [['Udogodnienia', Object.entries(s.attrs).filter(e => e[1]).map(e => ({ klima: 'klimatyzacja', winda: 'winda', balkon: 'balkon', taras: 'taras', ogrod: 'ogród', garaz: 'garaż' })[e[0]]).join(', ')]] : [])])];
   const cw = (W - 2 * M) / 2;
   rows.forEach((rw, i) => { const x = M + (i % 2) * cw, yy = y + Math.floor(i / 2) * 78; ctx.font = '400 21px Archivo'; ctx.fillStyle = C.ink2; ctx.fillText(rw[0].toUpperCase(), x, yy); ctx.font = '700 30px Archivo'; ctx.fillStyle = C.ink; ctx.fillText(rw[1], x, yy + 38); });
   y += Math.ceil(rows.length / 2) * 78 + 24;
@@ -58,14 +68,14 @@ export async function buildReport(e, ust) {
   ctx.fillStyle = C.ink2; ctx.font = '400 26px Archivo'; ctx.fillText(`mediana porównań: ${money(round(r.total.mid, step))} zł  ·  ${money(r.pm2.mid)} zł za m²`, W / 2, y + 210);
   ctx.fillText(`pewność oceny: ${LV[r.confidence.level]}  ·  liczba porównań: ${r.n}`, W / 2, y + 250); ctx.textAlign = 'left'; y += bh + 44;
   text('Jak to policzono', 34, C.ink, 400, 'Marcellus'); y += 4;
-  text(sale ? `Metoda porównawcza. Podstawą są ceny z aktów notarialnych zapisane w Rejestrze Cen Nieruchomości (RCN) dla lokali o zbliżonej powierzchni, liczbie pokoi, piętrze i położeniu. Podany przedział to ${r.rangeKind}. Starsze transakcje mają mniejszą wagę.`
+  text(sale ? `Metoda porównawcza. Podstawą są ceny z aktów notarialnych zapisane w Rejestrze Cen Nieruchomości (RCN) dla ${fl ? 'lokali o zbliżonej powierzchni, liczbie pokoi, piętrze i położeniu' : ({ dom: 'domów o zbliżonej powierzchni, wielkości działki i położeniu', dzialka: 'działek o zbliżonej powierzchni, przeznaczeniu i położeniu', lokal: 'lokali użytkowych o zbliżonej powierzchni, funkcji i położeniu', obiekt: 'obiektów o zbliżonej powierzchni, rodzaju i położeniu', garaz: 'garaży o zbliżonej powierzchni i położeniu' })[kat]}. Podany przedział to ${r.rangeKind}. Starsze transakcje mają mniejszą wagę.`
     : `Metoda porównawcza. Podstawą są ceny ofertowe lokali na wynajem z ogłoszeń o zbliżonej powierzchni, liczbie pokoi, piętrze i dzielnicy. Podany przedział to ${r.rangeKind}. Ceny ofertowe mogą być wyższe od faktycznie uzgodnionych czynszów.`, 25, C.ink2); y += 8;
   if (r.adminTotal) { text(`Czynsz administracyjny w porównywalnych ofertach: ok. ${money(round(r.adminTotal, 10))} zł miesięcznie (nie wlicza się do powyższego przedziału).`, 25, C.ink2); y += 8; }
   if (!sale && r.applied && r.applied.length) { text('Uwzględnione cechy mieszkania: ' + r.applied.map(a => `${a.label}${a.has === false ? ' (brak)' : ''}`).join(', ') + '. Ich wpływ na czynsz zmierzono na bazie ofert z rynku lubelskiego.', 25, C.ink2); y += 8; }
   const nts = r.notes.filter(n => !/^(Lokalizacja podmiotu|Pominięto|Korekta segmentu|Cecha „|Segmenty |Dzielnica ustalona|Uwaga: wpisano)/.test(n)).slice(0, 4); nts.forEach(n => text('•  ' + n, 23, C.ink2, 400, 'Archivo', 1.38, W - 2 * M - 28)); y += 10;
 
   // tabela porównań
-  const cols = [['Lokalizacja', M, 'l'], ['m²', 620, 'r'], ['Pok.', 705, 'r'], ['Cena', 880, 'r'], ['zł/m²', 1010, 'r'], [sale ? 'Akt' : 'Typ', W - M, 'r']];
+  const cols = [['Lokalizacja', M, 'l'], ['m²', 620, 'r'], [fl ? 'Pok.' : '', 705, 'r'], ['Cena', 880, 'r'], ['zł/m²', 1010, 'r'], [sale ? 'Akt' : 'Typ', W - M, 'r']];
   const head = () => { ctx.fillStyle = C.goldD; ctx.font = '700 21px Archivo'; cols.forEach(([n, x, a]) => { ctx.textAlign = a === 'r' ? 'right' : 'left'; ctx.fillText(n.toUpperCase(), x, y); }); ctx.textAlign = 'left'; ctx.fillStyle = C.line; ctx.fillRect(M, y + 14, W - 2 * M, 2); y += 52; };
   const comps = r.comps.slice(0, 24); let first = true;
   if (H - 190 - y < 5 * 46 + 140) { footer(pages.length); newPage(false); }   // tabela nie zaczyna się przy samym dole strony
@@ -75,7 +85,7 @@ export async function buildReport(e, ust) {
     ctx.font = '400 24px Archivo'; ctx.fillStyle = C.ink;
     let lbl = c.opis || '—'; while (ctx.measureText(lbl).width > 500 && lbl.length > 4) lbl = lbl.slice(0, -2); if (lbl !== (c.opis || '—')) lbl += '…';
     ctx.fillText(lbl, M, y);
-    const vals = [String(c.m2).replace('.', ','), String(c.pokoje), money(c.cena) + ' zł', money(c.pm2), sale ? String(c.rok || '') : 'oferta'];
+    const vals = [String(c.m2).replace('.', ','), c.pokoje != null ? String(c.pokoje) : '', money(c.cena) + ' zł', money(c.pm2), sale ? String(c.rok || '') : 'oferta'];
     ctx.textAlign = 'right'; [620, 705, 880, 1010, W - M].forEach((x, i) => ctx.fillText(vals[i], x, y)); ctx.textAlign = 'left'; y += 46;
   }
   y += 14;

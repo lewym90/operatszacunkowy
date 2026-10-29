@@ -244,3 +244,10 @@ ul.clean li:first-child { border-top: 0; } ul.clean li::before { content: ''; po
 }
 @media (min-width: 1500px) { #view[data-view="wynik"], #view[data-view="dane"], #view[data-view="historia"] { max-width: 1280px; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-delay: 0s !important; transition-duration: .01ms !important; } #glow { animation: none; } #splash { animation-delay: 0s; } }
+
+/* katalog nieruchomości (zakładka Dane) */
+.cattab{display:grid;gap:0;font-size:13.5px}
+.cattab .r{display:grid;grid-template-columns:minmax(0,1.7fr) repeat(3,minmax(0,1fr));gap:8px;padding:7px 0;border-top:1px solid var(--line, rgba(255,255,255,.08));align-items:baseline}
+.cattab .r span:not(:first-child){text-align:right;font-variant-numeric:tabular-nums}
+.cattab .r.h{border-top:0;color:var(--ash, #9A978F);font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+.cattab .r.h span:first-child{text-align:left}

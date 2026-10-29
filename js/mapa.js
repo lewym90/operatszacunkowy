@@ -2,6 +2,7 @@
 // bez niego punkty i tak się rysują, tylko bez ulic pod spodem). Dane: wyłącznie współrzędne transakcji RCN oraz środki ulic wyliczone z nich.
 import { normStreet } from './engine.js';
 import { esc, fmt } from './ui.js';
+import { KAT, POD_TXT, pm2Of } from './rcn.js';
 
 export const PALETTE = ['#4C8DC2', '#5EB1A5', '#A5CF7E', '#E9CB57', '#E2795C'];   // tanio → drogo (przejście chłodne → ciepłe, czytelne na ciemnym tle)
 export const LUBLIN = [51.2465, 22.5684];
@@ -30,22 +31,26 @@ export function makeClasses(values) {
 }
 
 // Mieszkania z RCN nadające się do mapy cen: pełny lokal, jedna cena, współrzędne, rozsądna cena za m²
-export function usableSales(tx, { years = 3, rynek = '', m2min = 0, m2max = 1e9 } = {}) {
+export function usableSales(tx, { years = 3, rynek = '', m2min = 0, m2max = 1e9, kat = 'mieszkanie' } = {}) {
   const from = Date.now() - years * 365.25 * 864e5, out = [];
   for (const t of tx) {
-    if (t.lat == null || t.funkcja !== 'mieszkalna' || t.wielolokalowa || !t.pelne || !(t.m2 >= 15 && t.m2 <= 200) || !(t.cena > 50000)) continue;
+    if (t.lat == null) continue;
+    let pm2;
+    if (kat === 'mieszkanie') {
+      if (t.funkcja !== 'mieszkalna' || t.wielolokalowa || !t.pelne || !(t.m2 >= 15 && t.m2 <= 200) || !(t.cena > 50000)) continue;
+      pm2 = t.cena / t.m2; if (pm2 < 2000 || pm2 > 30000) continue;
+    } else { if (t.kat !== kat) continue; pm2 = pm2Of(t); if (pm2 == null) continue; }
     const when = t.ts ?? (t.rok ? Date.UTC(t.rok, 6, 1) : null); if (when == null || when < from) continue;
     if (rynek && t.rynek !== rynek) continue;
     if (t.m2 < m2min || t.m2 >= m2max) continue;
-    const pm2 = t.cena / t.m2; if (pm2 < 2000 || pm2 > 30000) continue;
-    out.push({ lat: t.lat, lon: t.lon, cena: t.cena, m2: t.m2, pm2, ts: when, ulica: t.ulica, nr: t.nr, rynek: t.rynek, izby: t.izby });
+    out.push({ lat: t.lat, lon: t.lon, cena: t.cena, m2: t.m2, pm2, ts: when, ulica: t.ulica, nr: t.nr, rynek: t.rynek, izby: t.izby, kat: t.kat || 'mieszkanie', pod: t.pod || null, dzm2: t.dzm2 || null });
   }
   return out;
 }
 
 // Siatka komórek ok. 500 m × 500 m: mediana ceny za m², tylko komórki z min. 5 transakcjami (mniej = przypadek, nie cena okolicy)
 const DLAT = 0.0045, DLON = 0.0072;
-export function buildGrid(sales, minN = 5) {
+export function buildGrid(sales, minN = 5) {   // minN: najmniej transakcji w kwadracie
   const cells = new Map();
   for (const s of sales) { const i = Math.floor(s.lat / DLAT), j = Math.floor(s.lon / DLON), k = i + ':' + j; (cells.get(k) || cells.set(k, { i, j, v: [] }).get(k)).v.push(s.pm2); }
   return [...cells.values()].filter(c => c.v.length >= minN).map(c => ({ bounds: [[c.i * DLAT, c.j * DLON], [(c.i + 1) * DLAT, (c.j + 1) * DLON]], n: c.v.length, med: med(c.v), p25: quant(c.v, .25), p75: quant(c.v, .75) }));
@@ -80,7 +85,7 @@ export function placeOffers(offers, centers) {
 
 export const rynekTxt = r => r === 'pierwotny' ? 'pierwotny' : r === 'wtorny' ? 'wtórny' : '—';
 const dt = ts => ts ? new Date(ts).toLocaleDateString('pl-PL', { year: 'numeric', month: 'short' }) : '—';
-export const popupSale = s => `<b>${esc([s.ulica, s.nr].filter(Boolean).join(' ') || 'Transakcja')}</b><br>${fmt(s.cena)} zł · ${String(s.m2).replace('.', ',')} m²${s.izby ? ' · ' + s.izby + ' pok.' : ''}<br><b>${fmt(s.pm2)} zł/m²</b><br><span class="tiny">akt: ${dt(s.ts)} · rynek ${rynekTxt(s.rynek)}</span>`;
+export const popupSale = s => `<b>${esc([s.ulica, s.nr].filter(Boolean).join(' ') || (s.kat && s.kat !== 'mieszkanie' ? KAT[s.kat].n : 'Transakcja'))}</b><br>${fmt(s.cena)} zł · ${String(s.m2).replace('.', ',')} m²${s.izby ? ' · ' + s.izby + ' pok.' : ''}${s.dzm2 ? ' · działka ' + fmt(s.dzm2) + ' m²' : ''}<br><b>${fmt(s.pm2)} zł/m²</b><br><span class="tiny">akt: ${dt(s.ts)}${s.kat === 'mieszkanie' || s.kat === 'dom' || s.kat === 'obiekt' ? ' · rynek ' + rynekTxt(s.rynek) : ''}${s.pod ? ' · ' + esc(POD_TXT[s.pod] || s.pod) : ''}</span>`;
 export const popupOffer = (o, approx) => `<b>${esc([o.ulica, o.dzielnica].filter(Boolean).join(', ') || 'Oferta najmu')}</b><br>${fmt(o.cena)} zł/mies. · ${String(o.m2).replace('.', ',')} m² · ${o.pokoje} pok.${o.pietro != null ? ' · ' + (o.pietro === 0 ? 'parter' : o.pietro + '. p.') : ''}<br><b>${fmt(o.cena / o.m2)} zł/m²</b>${o.czynsz ? `<br><span class="tiny">czynsz adm. ${fmt(o.czynsz)} zł</span>` : ''}<br><span class="tiny">${approx ? 'położenie przybliżone (środek dzielnicy)' : 'położenie: środek ulicy'}</span>`;
 
 // Kontroler mapy: jedna mapa, wymienialne warstwy

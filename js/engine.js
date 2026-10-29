@@ -1,3 +1,4 @@
+import { KAT, pm2Of, POD_TXT } from './rcn.js';
 // Silnik szacowania wartości: metoda porównawcza. Czysta logika, bez DOM.
 // ZASADY:
 //  - brak korekt "z głowy": cechy bez danych porównawczych NIE zmieniają wyniku, tylko są wypisane jako "nieużyte";
@@ -296,6 +297,59 @@ export function estimateSale(tx, subject, opts = {}) {
   if (r.ok) { r.subLL = subLL; r.llKind = llKind; r.window = win; }
   return r;
 }
+
+// ---------- SPRZEDAŻ: pozostałe kategorie (dom, działka, lokal użytkowy, obiekt/hala, garaż) ----------
+// Ta sama metoda co dla mieszkań (porównawcza, ważona), ale wagi zależą od kategorii: powierzchnia (skala logarytmiczna), podtyp
+// (przeznaczenie działki, funkcja lokalu, rodzaj budynku), położenie i wiek transakcji. Cena odnosi się do m² powierzchni tej kategorii:
+// użytkowa lokalu/budynku albo powierzchnia działki. Dla domu cena zawiera działkę.
+const sizeLog = (a, b, f) => Math.max(0, 1 - Math.abs(Math.log(a / b)) / Math.log(f));
+const SIZE_F = { dom: 1.8, dzialka: 2.5, lokal: 2, obiekt: 2.5, garaz: 1.6 };
+export function estimateSaleKat(tx, subject, opts = {}) {
+  const kat = subject.kat, K = KAT[kat], notes = [], unused = [];
+  const nowTs = opts.nowTs || Date.now(), geo = opts.geo || tx;
+  const own = tx.filter(t => t.kat === kat), base = own.filter(t => pm2Of(t) != null), excluded = own.length - base.length;
+  let subLL = subject.latlon || null, llKind = subLL ? 'podane' : null;
+  if (!subLL && subject.ulica) {
+    const k = addrKey(subject.ulica, subject.nr), same = geo.filter(t => t.lat != null && addrKey(t.ulica, t.nr) === k);
+    if (same.length) { subLL = avgLL(same); llKind = 'ten sam adres w RCN'; }
+    else { const st = geo.filter(t => t.lat != null && norm(t.ulica) === norm(subject.ulica)); if (st.length >= 3) { subLL = avgLL(st); llKind = 'środek ulicy wg RCN (przybliżone)'; } }
+  }
+  const ageOf = t => { const w = (t.ts && t.ts <= nowTs) ? t.ts : (t.rok ? Date.UTC(t.rok, 6, 1) : null); return w == null ? 99 : Math.max(0, (nowTs - w) / 31557600000); };
+  const build = (years) => base.map(t => {
+    const ageY = ageOf(t); if (ageY > years) return null;
+    const sz = sizeLog(t.m2, subject.m2, SIZE_F[kat] || 2); if (sz <= 0) return null;
+    if (subject.rynek && t.rynek && t.rynek !== subject.rynek) return null;
+    let loc = 0.3, local = false, same = false;
+    if (subLL && t.lat != null) {
+      const d = haversine(subLL, [t.lat, t.lon]);
+      loc = d < 0.3 ? 1 : d < 0.8 ? 0.85 : d < 1.5 ? 0.65 : d < 3 ? 0.4 : d < 6 ? 0.25 : d < 12 ? 0.15 : 0.08; local = d < 1.5;
+      same = !!subject.ulica && addrKey(t.ulica, t.nr) === addrKey(subject.ulica, subject.nr);
+    } else if (subject.ulica) { same = norm(t.ulica) === norm(subject.ulica); loc = same ? 1 : 0.3; local = same; }
+    const rec = ageY <= 1 ? 1 : ageY <= 2 ? 0.85 : ageY <= 3 ? 0.7 : ageY <= 5 ? 0.55 : 0.4;
+    const pod = subject.pod && t.pod ? (subject.pod === t.pod ? 1 : 0.5) : 0.9;
+    const plot = kat === 'dom' && subject.dzm2 && t.dzm2 ? 0.6 + 0.4 * sizeLog(t.dzm2, subject.dzm2, 3) : 1;
+    const wiecz = subject.wieczyste != null && t.wieczyste != null && !!subject.wieczyste !== !!t.wieczyste ? 0.6 : 1;
+    const w = loc * (0.3 + 0.7 * sz) * rec * pod * plot * wiecz; if (w < 0.08) return null;
+    const lab = kat === 'dzialka' ? (POD_TXT[t.pod] || t.pod || '') : (POD_TXT[t.pod] || '');
+    return { id: t.id, kind: 'transakcja', pm2: t.cena / t.m2, cena: t.cena, m2: t.m2, pokoje: null, pietro: null, rok: t.rok, data: t.ts ? new Date(t.ts).toISOString().slice(0, 10) : null, sprz: t.sprz, rodzaj: t.rodzaj, rynek: t.rynek,
+      opis: [[t.ulica, t.nr].filter(Boolean).join(' ') || 'okolice Lublina (bez adresu w RCN)', lab].filter(Boolean).join(' · '), lat: t.lat, lon: t.lon, w, local, sameBuilding: same, dzm2: t.dzm2 || null, pod: t.pod, src: 'RCN (ceny z aktów notarialnych)' };
+  }).filter(Boolean).sort((a, b) => b.w - a.w).slice(0, 40);
+  let sc = [], win = 3;
+  for (const y of [3, 5, 8]) { sc = build(y); win = y; if (sc.length >= 10) break; if (y < 8) notes.push(`Za mało transakcji z ostatnich ${y} lat: poszerzono okno do ${y === 3 ? 5 : 8} lat (starsze transakcje mają niższą wagę).`); }
+  notes.push(`Okno czasu: ostatnie ${win} lat (data aktu). Cena z aktu notarialnego, nie z ogłoszenia.`);
+  if (kat === 'dom') notes.push(`Cena domu obejmuje działkę. Wynik to cena za m² powierzchni użytkowej budynku; RCN podaje tę powierzchnię tylko w części aktów (użyto ${fmtN(base.length)} z ${fmtN(own.length)} transakcji domów).`);
+  if (kat === 'dzialka') notes.push('Cena za m² gruntu. Przeznaczenie działki wg planu miejscowego (jeśli RCN je zna) ma wpływ na wagę porównania.');
+  if (kat === 'garaz' || kat === 'lokal') notes.push('Dane dotyczą lokali (garaży i lokali użytkowych) sprzedawanych w Lublinie i okolicy; lokali tego typu jest w RCN znacznie mniej niż mieszkań.');
+  if (excluded) notes.push(`Pominięto ${fmtN(excluded)} rekordów tej kategorii: kilka nieruchomości w jednym akcie, udział w prawie, brak lub niejednoznaczna powierzchnia (RCN podaje grunt raz w m², raz w hektarach) albo cena za m² poza rozsądnym zakresem.`);
+  if (llKind) notes.push(`Lokalizacja podmiotu: ${llKind}.`); else notes.push('Nie ustalono współrzędnych podmiotu: lokalizację oceniono tylko po nazwie ulicy, więc wynik dotyczy rynku całej okolicy Lublina.');
+  if (subject.rok != null) unused.push('rok budowy (RCN go nie zawiera dla tej kategorii)');
+  if (subject.standard) unused.push('standard wykończenia (RCN go nie zawiera)');
+  const ce = []; if (!subLL) ce.push('brak współrzędnych podmiotu');
+  const r = summarize(sc, subject, 'Szacunkowa wartość rynkowa', { notes, unused, confExtra: ce });
+  if (r.ok) { r.subLL = subLL; r.llKind = llKind; r.window = win; }
+  return r;
+}
+const fmtN = n => Math.round(n).toLocaleString('pl-PL');
 
 const avgLL = a => [a.reduce((s, x) => s + x.lat, 0) / a.length, a.reduce((s, x) => s + x.lon, 0) / a.length];
 

@@ -1,17 +1,17 @@
 import * as store from './store.js';
-import { estimateRent, estimateSale, crossCheckRent, inferDistrict, ATTRS, learnPremiums, grossYield, addrKey, normStreet, YEAR_BANDS, yearBand } from './engine.js';
-import { rcnToObjects } from './rcn.js';
+import { estimateRent, estimateSale, estimateSaleKat, crossCheckRent, inferDistrict, ATTRS, learnPremiums, grossYield, addrKey, normStreet, YEAR_BANDS, yearBand } from './engine.js';
+import { rcnToObjects, inneToObjects, katalog, KAT, KAT_ORDER, POD_TXT } from './rcn.js';
 import { linesFromPdf, offersFromLines, offerKey } from './pdfimport.js';
 import { esc, $, $$, fmt, roundTo, toast, openSheet, closeSheet, countUp, saveFile, ICON } from './ui.js';
 import { buildReport, makePdf } from './report.js';
 import { createSync, DEFAULT_URL, encodeCode, decodeCode } from './sync.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer } from './mapa.js';
 
-const VERSION = '1.9.2';
+const VERSION = '1.10.0';
 const S = { wlasne: [],
-  offers: [], rcn: null, tx: [], streets: [], budynki: {}, wyceny: [], last: {},
+  offers: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
-  form: { tryb: 'sprzedaz', ulica: '', nr: '', dzielnica: '', m2: '', pokoje: 2, pietro: null, rok: '', rynek: '', standard: '', meble: '', zapamietaj: true, ud: [] },
+  form: { tryb: 'sprzedaz', kat: 'mieszkanie', pod: '', dzm2: '', ulica: '', nr: '', dzielnica: '', m2: '', pokoje: 2, pietro: null, rok: '', rynek: '', standard: '', meble: '', zapamietaj: true, ud: [] },
 };
 // Własne umowy najmu biura -> ta sama postać co oferty, z jawnymi cechami (nie ze słów w tytule) i dużą wagą
 const ownToOffer = w => ({ id: 'w' + w.id, own: true, ulica: w.ulica, dzielnica: w.dzielnica, miasto: 'Lublin', m2: w.m2, pokoje: w.pokoje, pietro: w.pietro, cena: w.cena, czynsz: w.czynsz || null, meble: w.meble,
@@ -24,11 +24,12 @@ const LVTXT = { 'niska': 'Traktuj wynik wyłącznie orientacyjnie: danych jest m
 
 async function load() {
   S.wlasne = await store.get('wlasne', []); S.offers = await store.get('offers', []); S.budynki = await store.get('budynki', {}); S.wyceny = await store.get('wyceny', []);
-  S.ust = { ...S.ust, ...(await store.get('ust', {})) }; S.rcn = await store.get('rcn', null); setTx();
+  S.ust = { ...S.ust, ...(await store.get('ust', {})) }; S.rcn = await store.get('rcn', null); S.rcnInne = await store.get('rcnInne', null); setTx();
 }
 function setTx() {
-  S.tx = S.rcn ? rcnToObjects(S.rcn) : [];
-  S.streets = [...new Set(S.tx.map(t => t.ulica).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pl'));
+  const st = {}; S.tx = S.rcn ? rcnToObjects(S.rcn, st) : [];
+  S.inne = S.rcnInne ? inneToObjects(S.rcnInne, st) : []; S.stats = st; S.pool = S.tx.concat(S.inne);
+  S.streets = [...new Set(S.pool.map(t => t.ulica).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pl'));
 }
 const DEF_UST = JSON.stringify(S.ust);
 const raw = {
@@ -90,34 +91,47 @@ const head = (title, sub, back, line) => `<div class="top">${back ? `<button cla
 /* ---------- WYCENA (formularz) ---------- */
 function stepHTML(id, val, label) { return `<div class="field"><span>${label}</span><div class="step" data-step="${id}"><button type="button" data-d="-1" aria-label="mniej">−</button><output>${val}</output><button type="button" data-d="1" aria-label="więcej">+</button></div></div>`; }
 const floorLbl = p => p == null ? '—' : p === 0 ? 'parter' : p;
+const POD_OPT = {
+  lokal: ['Funkcja lokalu', [['', 'Nie wiem'], ['handlowoUslugowa', 'Handlowo-usługowy'], ['biurowa', 'Biurowy'], ['produkcyjna', 'Produkcyjny'], ['inna', 'Inny']]],
+  obiekt: ['Rodzaj obiektu', [['', 'Nie wiem'], ['przemyslowy', 'Przemysłowy'], ['handlowoUslugowy', 'Handlowo-usługowy'], ['biurowy', 'Biurowy'], ['zbiornikiSilosyMagazyny', 'Magazyn / silos'], ['gospodarczy', 'Gospodarczy'], ['pozostaleNiemieszkalne', 'Inny niemieszkalny']]],
+  dzialka: ['Przeznaczenie (wg planu miejscowego)', [['', 'Nie wiem'], ['budownictwoMieszkanioweJednorodzinne', 'Jednorodzinna'], ['budownictwoMieszkanioweWielorodzinne', 'Wielorodzinna'], ['terenZabudowyUslugowej', 'Usługowa'], ['terenObiektowProdukcyjnychSkladowIMagazynow', 'Produkcja, składy'], ['terenRolniczy', 'Rolna'], ['terenZabudowyZagrodowejGospodarstwRolnych', 'Zagrodowa'], ['innyNiewymieniony', 'Inne']]],
+};
+const M2_LBL = { mieszkanie: 'Powierzchnia (m²)', dom: 'Powierzchnia użytkowa budynku (m²)', dzialka: 'Powierzchnia działki (m²)' };
 function viewWycena() {
-  const f = S.form, sale = f.tryb === 'sprzedaz';
+  const f = S.form, sale = f.tryb === 'sprzedaz', kat = f.kat || 'mieszkanie', flat = kat === 'mieszkanie';
   const dz = [...new Set(S.offers.map(o => o.dzielnica).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pl'));
-  const ready = sale ? S.tx.length > 0 : S.offers.length > 0;
-  const stat = sale ? (S.tx.length ? `Baza RCN: ${fmt(S.tx.length)} transakcji` : '') : (S.offers.length ? `Baza ofert najmu: ${fmt(S.offers.length)}` : '');
+  const katN = S.pool.filter(t => t.kat === kat).length;
+  const ready = sale ? S.pool.length > 0 : S.offers.length > 0;
+  const stat = sale ? (S.pool.length ? `Baza RCN: ${fmt(S.pool.length)} transakcji${flat ? '' : `, w tym ${fmt(katN)} z kategorii „${KAT[kat].n}”`}` : '') : (S.offers.length ? `Baza ofert najmu: ${fmt(S.offers.length)}` : '');
+  const chipsHTML = (name, opts, cur) => `<div class="chips" data-chips="${name}">${opts.map(([v, n]) => `<button type="button" class="chip ${cur === v ? 'on' : ''}" data-v="${v}">${n}</button>`).join('')}</div>`;
+  const po = POD_OPT[kat];
   const html = head('Wycena', 'Szacunek wartości rynkowej') + `
   <div class="seg" data-v="${sale ? 0 : 1}"><i></i><button data-t="sprzedaz" class="${sale ? 'on' : ''}">Sprzedaż</button><button data-t="najem" class="${sale ? '' : 'on'}">Najem</button></div>
+  <div class="field" style="margin-top:14px"><span>Rodzaj nieruchomości</span><div class="chips" data-katsel>${KAT_ORDER.filter(k => k !== 'zabudowana').map(k => `<button type="button" class="chip ${kat === k ? 'on' : ''}" data-v="${k}">${KAT[k].n}</button>`).join('')}</div></div>
   ${ready ? `<div class="banner"><span>◈</span><span>${stat}. Wynik zawsze jako przedział z oceną pewności.</span></div>`
       : `<div class="banner warn"><span>!</span><span>${sale ? 'Brak danych o transakcjach (RCN).' : 'Brak ofert najmu.'} Najpierw zaimportuj dane w zakładce <b>Dane</b>.</span></div>`}
   <form class="card" id="f" autocomplete="off" novalidate>
-    ${sale ? `<div class="grid3"><label class="field"><span>Ulica</span><input class="in" name="ulica" list="dl-st" value="${esc(f.ulica)}" placeholder="np. Bluszczowa"></label>
+    ${sale || !flat ? `<div class="grid3"><label class="field"><span>Ulica${flat ? '' : ' (opcjonalnie)'}</span><input class="in" name="ulica" list="dl-st" value="${esc(f.ulica)}" placeholder="np. Bluszczowa"></label>
       <label class="field"><span>Nr</span><input class="in" name="nr" value="${esc(f.nr)}" inputmode="text" placeholder="13"></label></div>`
       : `<label class="field"><span>Dzielnica (opcjonalnie)</span><input class="in" name="dzielnica" list="dl-dz" value="${esc(f.dzielnica)}" placeholder="np. Śródmieście"></label>
       <label class="field"><span>Ulica (opcjonalnie; dzielnica uzupełni się sama)</span><input class="in" name="ulica" list="dl-st" value="${esc(f.ulica)}" placeholder="np. Granata"></label>`}
     <datalist id="dl-st">${S.streets.map(s => `<option value="${esc(s)}">`).join('')}</datalist><datalist id="dl-dz">${dz.map(s => `<option value="${esc(s)}">`).join('')}</datalist>
-    <div class="grid2"><label class="field"><span>Powierzchnia (m²)</span><input class="in" name="m2" inputmode="decimal" value="${esc(f.m2)}" placeholder="45,5"></label>
-      <label class="field"><span>Rok budowy (opcj.)</span><input class="in" name="rok" inputmode="numeric" maxlength="4" value="${esc(f.rok)}" placeholder="np. 1978"></label></div>
-    <div class="grid2">${stepHTML('pokoje', f.pokoje, 'Pokoje')}${stepHTML('pietro', floorLbl(f.pietro), 'Piętro')}</div>
-    ${sale ? `<div class="field"><span>Rynek</span><div class="chips" data-chips="rynek">${[['', 'Dowolny'], ['wtorny', 'Wtórny'], ['pierwotny', 'Pierwotny']].map(([v, n]) => `<button type="button" class="chip ${f.rynek === v ? 'on' : ''}" data-v="${v}">${n}</button>`).join('')}</div></div>` : ''}
-    <div class="field"><span>Standard (informacyjnie)</span><div class="chips" data-chips="standard">${[['', 'Nie wiem'], ['remont', 'Do remontu'], ['dobry', 'Dobry'], ['wysoki', 'Wysoki']].map(([v, n]) => `<button type="button" class="chip ${f.standard === v ? 'on' : ''}" data-v="${v}">${n}</button>`).join('')}</div></div>
-    ${sale ? '' : `<div class="field"><span>Mieszkanie ma (zaznacz po obejrzeniu)</span><div class="chips" data-multi="ud">${ATTRS.filter(a => a[0] !== 'meble').map(([k, n]) => `<button type="button" class="chip ${(f.ud || []).includes(k) ? 'on' : ''}" data-v="${k}">${n}</button>`).join('')}</div></div>`}
-    ${sale ? '' : `<div class="field"><span>Wyposażenie</span><div class="chips" data-chips="meble">${[['', 'Nie wiem'], ['tak', 'Umeblowane'], ['nie', 'Bez mebli']].map(([v, n]) => `<button type="button" class="chip ${f.meble === v ? 'on' : ''}" data-v="${v}">${n}</button>`).join('')}</div></div>`}
-    ${sale ? `<label class="check"><input type="checkbox" name="zap" ${f.zapamietaj ? 'checked' : ''}> Zapamiętaj rok budowy dla tego adresu</label>` : ''}
-    <p class="tiny muted" style="margin:6px 0 14px">${sale ? 'Standard trafia do raportu jako informacja i nie zmienia wyniku.' : 'Rok budowy i standard zmieniają wynik tylko wtedy, gdy baza ofert pozwala zmierzyć różnicę z przedziałem pewności. Wyposażenie trafia do raportu jako informacja.'}</p>
+    <div class="grid2"><label class="field"><span>${M2_LBL[kat] || 'Powierzchnia użytkowa (m²)'}</span><input class="in" name="m2" inputmode="decimal" value="${esc(f.m2)}" placeholder="${kat === 'dzialka' ? '1000' : '45,5'}"></label>
+      ${kat === 'dom' ? `<label class="field"><span>Powierzchnia działki (m²)</span><input class="in" name="dzm2" inputmode="decimal" value="${esc(f.dzm2)}" placeholder="opcjonalnie"></label>` : ['mieszkanie', 'obiekt'].includes(kat) ? `<label class="field"><span>Rok budowy (opcj.)</span><input class="in" name="rok" inputmode="numeric" maxlength="4" value="${esc(f.rok)}" placeholder="np. 1978"></label>` : '<div></div>'}</div>
+    ${kat === 'dom' ? `<label class="field"><span>Rok budowy (opcj.)</span><input class="in" name="rok" inputmode="numeric" maxlength="4" value="${esc(f.rok)}" placeholder="np. 1978"></label>` : ''}
+    ${flat ? `<div class="grid2">${stepHTML('pokoje', f.pokoje, 'Pokoje')}${stepHTML('pietro', floorLbl(f.pietro), 'Piętro')}</div>` : ''}
+    ${po ? `<div class="field"><span>${po[0]}</span>${chipsHTML('pod', po[1], f.pod || '')}</div>` : ''}
+    ${sale && ['mieszkanie', 'dom', 'obiekt', 'lokal'].includes(kat) ? `<div class="field"><span>Rynek</span>${chipsHTML('rynek', [['', 'Dowolny'], ['wtorny', 'Wtórny'], ['pierwotny', 'Pierwotny']], f.rynek)}</div>` : ''}
+    ${kat === 'garaz' || kat === 'dzialka' ? '' : `<div class="field"><span>Standard (informacyjnie)</span>${chipsHTML('standard', [['', 'Nie wiem'], ['remont', 'Do remontu'], ['dobry', 'Dobry'], ['wysoki', 'Wysoki']], f.standard)}</div>`}
+    ${sale || !flat ? '' : `<div class="field"><span>Mieszkanie ma (zaznacz po obejrzeniu)</span><div class="chips" data-multi="ud">${ATTRS.filter(a => a[0] !== 'meble').map(([k, n]) => `<button type="button" class="chip ${(f.ud || []).includes(k) ? 'on' : ''}" data-v="${k}">${n}</button>`).join('')}</div></div>`}
+    ${sale || !flat ? '' : `<div class="field"><span>Wyposażenie</span>${chipsHTML('meble', [['', 'Nie wiem'], ['tak', 'Umeblowane'], ['nie', 'Bez mebli']], f.meble)}</div>`}
+    ${sale && flat ? `<label class="check"><input type="checkbox" name="zap" ${f.zapamietaj ? 'checked' : ''}> Zapamiętaj rok budowy dla tego adresu</label>` : ''}
+    <p class="tiny muted" style="margin:6px 0 14px">${sale ? (flat ? 'Standard trafia do raportu jako informacja i nie zmienia wyniku.' : 'Dla tej kategorii RCN nie zna standardu ani roku budowy, więc trafiają do raportu jako informacja i nie zmieniają wyniku. Wynik zależy od powierzchni, rodzaju, położenia i daty transakcji.') : (flat ? 'Rok budowy i standard zmieniają wynik tylko wtedy, gdy baza ofert pozwala zmierzyć różnicę z przedziałem pewności. Wyposażenie trafia do raportu jako informacja.' : 'Wycena najmu tej kategorii powstaje z ofert najmu zapisanych w bazie dla tej kategorii.')}</p>
     <button class="btn" type="submit">Oszacuj wartość</button>
   </form>`;
   return [html, v => {
     $$('.seg button', v).forEach(b => b.onclick = () => { readForm(v); S.form.tryb = b.dataset.t; render(); });
+    $$('[data-katsel] button', v).forEach(b => b.onclick = () => { readForm(v); if (S.form.kat !== b.dataset.v) { S.form.kat = b.dataset.v; S.form.pod = ''; } render(); });
     $$('[data-step]', v).forEach(st => $$('button', st).forEach(b => b.onclick = () => {
       readForm(v); const id = st.dataset.step, d = +b.dataset.d;
       if (id === 'pokoje') S.form.pokoje = Math.min(8, Math.max(1, S.form.pokoje + d));
@@ -131,20 +145,23 @@ function viewWycena() {
 }
 function readForm(v) {
   const q = n => { const el = $(`[name="${n}"]`, v); return el ? el.value.trim() : undefined; };
-  for (const k of ['ulica', 'nr', 'dzielnica', 'm2', 'rok']) { const x = q(k); if (x !== undefined) S.form[k] = x; }
+  for (const k of ['ulica', 'nr', 'dzielnica', 'm2', 'dzm2', 'rok']) { const x = q(k); if (x !== undefined) S.form[k] = x; }
   const z = $('[name="zap"]', v); if (z) S.form.zapamietaj = z.checked;
 }
 function submitForm() {
-  const f = S.form, m2 = parseFloat(String(f.m2).replace(',', '.'));
-  if (!(m2 >= 10 && m2 <= 400)) return toast('Podaj powierzchnię (10–400 m²)');
+  const f = S.form, kat = f.kat || 'mieszkanie', flat = kat === 'mieszkanie', m2 = parseFloat(String(f.m2).replace(',', '.'));
+  const rng = flat ? [10, 400] : KAT[kat].m2;
+  if (!(m2 >= rng[0] && m2 <= rng[1])) return toast(`Podaj powierzchnię (${rng[0].toLocaleString('pl-PL')}–${rng[1].toLocaleString('pl-PL')} m²)`);
+  const dzm2 = kat === 'dom' && f.dzm2 ? parseFloat(String(f.dzm2).replace(',', '.')) : null;
+  if (kat === 'dom' && f.dzm2 && !(dzm2 >= 30)) return toast('Powierzchnia działki wygląda błędnie');
   const rok = f.rok ? parseInt(f.rok, 10) : null;
   if (f.rok && !(rok >= 1700 && rok <= now() + 3)) return toast('Rok budowy wygląda błędnie');
-  if (f.tryb === 'sprzedaz' && !S.tx.length) return toast('Najpierw zaimportuj dane RCN (zakładka Dane)');
-  if (f.tryb === 'najem' && !S.offers.length && !(S.wlasne || []).length) return toast('Najpierw zaimportuj oferty najmu (zakładka Dane)');
-  const subj = { tryb: f.tryb, ulica: f.ulica, nr: f.nr, dzielnica: f.dzielnica, m2, pokoje: f.pokoje, pietro: f.pietro, rok, rynek: f.rynek || null, standard: f.standard || null, meble: f.meble === '' ? null : f.meble,
-    attrs: f.tryb === 'najem' ? Object.fromEntries(ATTRS.filter(a => a[0] !== 'meble').map(([k]) => [k, (f.ud || []).includes(k) ? 1 : 0])) : null };
+  if (f.tryb === 'sprzedaz' && !S.pool.length) return toast('Najpierw zaimportuj dane RCN (zakładka Dane)');
+  if (f.tryb === 'najem' && flat && !S.offers.length && !(S.wlasne || []).length) return toast('Najpierw zaimportuj oferty najmu (zakładka Dane)');
+  const subj = { tryb: f.tryb, kat, pod: f.pod || null, dzm2, ulica: f.ulica, nr: f.nr, dzielnica: f.dzielnica, m2, pokoje: flat ? f.pokoje : null, pietro: flat ? f.pietro : null, rok: ['mieszkanie', 'dom', 'obiekt'].includes(kat) ? rok : null, rynek: f.rynek || null, standard: f.standard || null, meble: f.meble === '' ? null : f.meble,
+    attrs: f.tryb === 'najem' && flat ? Object.fromEntries(ATTRS.filter(a => a[0] !== 'meble').map(([k]) => [k, (f.ud || []).includes(k) ? 1 : 0])) : null };
   let dzNote = null;
-  if (f.tryb === 'najem' && subj.ulica) {
+  if (f.tryb === 'najem' && flat && subj.ulica) {
     const inf = inferDistrict(allOffers(), S.tx, subj.ulica);
     if (inf) {
       const src = inf.source === 'oferty' ? `ofert z tej ulicy (${inf.n})` : `położenia ulicy wg RCN i najbliższych ulic ze znaną dzielnicą (${inf.n}, najbliższa ${inf.km.toFixed(1).replace('.', ',')} km)`;
@@ -152,17 +169,19 @@ function submitForm() {
       else if (normStreet(inf.name) !== normStreet(subj.dzielnica) && inf.share >= 0.7) dzNote = `Uwaga: wpisano dzielnicę ${subj.dzielnica}, a ulica ${subj.ulica} wg ${src} leży w dzielnicy ${inf.name}.`;
     }
   }
-  if (rok && f.zapamietaj && f.ulica && f.nr && f.tryb === 'sprzedaz') { S.budynki[addrKey(f.ulica, f.nr)] = rok; save.budynki(); }
+  if (rok && flat && f.zapamietaj && f.ulica && f.nr && f.tryb === 'sprzedaz') { S.budynki[addrKey(f.ulica, f.nr)] = rok; save.budynki(); }
   const yearOf = k => S.budynki[k] ?? null;
-  const res = f.tryb === 'najem' ? estimateRent(allOffers(), subj) : estimateSale(S.tx, subj, { yearOf });
-  if (f.tryb === 'najem' && res.ok) { try { const baseRent = res.adjusted ? estimateRent(allOffers(), { ...subj, rok: null, standard: null }) : res; res.cross = crossCheckRent(allOffers(), S.tx, subj, baseRent.ok ? baseRent : res); const c = res.cross; if (res.adjusted && baseRent.ok) c.vsBase = baseRent.total; if (c.ok && c.agreement === 'rozbieżne' && c.r2 >= 0.3 && res.confidence.score > 1) { res.confidence.score -= 1; res.confidence.level = res.confidence.score === 1 ? 'niska' : 'średnia'; res.confidence.why.push('obniżono: kontrola ze sprzedażą (wiarygodna, R² ≥ 0,3) daje wyraźnie inny czynsz'); } } catch (e) { res.cross = { ok: false, reason: 'Nie udało się policzyć kontroli: ' + e.message }; } }
+  const res = f.tryb === 'najem' ? (flat ? estimateRent(allOffers(), subj) : { ok: false, reason: `Brak ofert najmu dla kategorii „${KAT[kat].n}”. Baza ofert zawiera dziś tylko mieszkania; najem tej kategorii wyceniam z ofert, więc najpierw trzeba je zaimportować.` }) : flat ? estimateSale(S.tx, subj, { yearOf }) : estimateSaleKat(S.pool, subj, { geo: S.pool });
+  if (f.tryb === 'najem' && flat && res.ok) { try { const baseRent = res.adjusted ? estimateRent(allOffers(), { ...subj, rok: null, standard: null }) : res; res.cross = crossCheckRent(allOffers(), S.tx, subj, baseRent.ok ? baseRent : res); const c = res.cross; if (res.adjusted && baseRent.ok) c.vsBase = baseRent.total; if (c.ok && c.agreement === 'rozbieżne' && c.r2 >= 0.3 && res.confidence.score > 1) { res.confidence.score -= 1; res.confidence.level = res.confidence.score === 1 ? 'niska' : 'średnia'; res.confidence.why.push('obniżono: kontrola ze sprzedażą (wiarygodna, R² ≥ 0,3) daje wyraźnie inny czynsz'); } } catch (e) { res.cross = { ok: false, reason: 'Nie udało się policzyć kontroli: ' + e.message }; } }
   if (dzNote && res.ok) res.notes.unshift(dzNote);
   S.last[f.tryb] = { id: null, ts: Date.now(), subj, res };
   go('#/wynik/' + f.tryb);
 }
 
 /* ---------- WYNIK ---------- */
-const subjLine = s => [s.tryb === 'sprzedaz' ? [s.ulica, s.nr].filter(Boolean).join(' ') : [s.dzielnica, s.ulica].filter(Boolean).join(', '), `${String(s.m2).replace('.', ',')} m²`, `${s.pokoje} pok.`, s.pietro == null ? '' : s.pietro === 0 ? 'parter' : `${s.pietro}. piętro`, s.rok ? `rok ${s.rok}` : ''].filter(Boolean).join(' · ');
+const subjLine = s => { const k = s.kat || 'mieszkanie', fl = k === 'mieszkanie', sale = s.tryb === 'sprzedaz';
+  return [fl ? '' : KAT[k].n, sale || !fl ? [s.ulica, s.nr].filter(Boolean).join(' ') : [s.dzielnica, s.ulica].filter(Boolean).join(', '), `${String(s.m2).replace('.', ',')} m²`, fl ? `${s.pokoje} pok.` : '', k === 'dom' && s.dzm2 ? `działka ${String(s.dzm2).replace('.', ',')} m²` : '', s.pod ? (POD_TXT[s.pod] || '') : '',
+    fl ? (s.pietro == null ? '' : s.pietro === 0 ? 'parter' : `${s.pietro}. piętro`) : '', s.rok ? `rok ${s.rok}` : ''].filter(Boolean).join(' · '); };
 function getEntry(p) {
   if (p[1] === 'h') return S.wyceny.find(w => w.id === p[2]) || null;
   return S.last[p[1]] || null;
@@ -230,7 +249,7 @@ const subj_m2 = e => e.subj.m2;
 function compHTML(c, i, sale) {
   const w = Math.max(6, Math.round(c.w * 100));
   return `<div class="comp" style="animation-delay:${Math.min(i, 12) * 40}ms"><div><b>${esc(c.opis || '—')}</b>${c.sameBuilding ? '<span class="badge g">ten sam budynek</span>' : ''}${c.own ? '<span class="badge g">własna umowa</span>' : ''}<span class="badge">${c.kind}</span></div><div class="p">${fmt(c.cena)} zł</div>
-    <div class="m">${String(c.m2).replace('.', ',')} m² · ${c.pokoje} pok.${c.pietro != null ? ' · ' + (c.pietro === 0 ? 'parter' : c.pietro + '. p.') : ''}${c.data ? ' · akt ' + c.data : c.rok ? ' · akt ' + c.rok : ''}${c.rokBudowy ? ' · bud. ' + c.rokBudowy : ''}</div><div class="m r">${fmt(c.pm2raw ?? c.pm2)} zł/m²${c.adjPct && Math.abs(c.adjPct) >= 0.005 ? `<br><small>po korekcie ${fmt(c.pm2)} (${c.adjPct > 0 ? '+' : '−'}${Math.abs(c.adjPct * 100).toFixed(0)}%)</small>` : ''}</div><div class="wbar"><i style="width:${w}%"></i></div></div>`;
+    <div class="m">${String(c.m2).replace('.', ',')} m²${c.pokoje != null ? ' · ' + c.pokoje + ' pok.' : ''}${c.dzm2 ? ' · działka ' + fmt(c.dzm2) + ' m²' : ''}${c.pietro != null ? ' · ' + (c.pietro === 0 ? 'parter' : c.pietro + '. p.') : ''}${c.data ? ' · akt ' + c.data : c.rok ? ' · akt ' + c.rok : ''}${c.rokBudowy ? ' · bud. ' + c.rokBudowy : ''}</div><div class="m r">${fmt(c.pm2raw ?? c.pm2)} zł/m²${c.adjPct && Math.abs(c.adjPct) >= 0.005 ? `<br><small>po korekcie ${fmt(c.pm2)} (${c.adjPct > 0 ? '+' : '−'}${Math.abs(c.adjPct * 100).toFixed(0)}%)</small>` : ''}</div><div class="wbar"><i style="width:${w}%"></i></div></div>`;
 }
 function mapSVG(r) {
   const pts = r.comps.filter(c => c.lat != null), [la0, lo0] = r.subLL, k = Math.cos(la0 * Math.PI / 180);
@@ -265,10 +284,20 @@ function viewRaport(p) {
   }];
 }
 
+// Katalog nieruchomości: ile transakcji każdej kategorii jest w bazie i ile z nich nadaje się do wyceny
+function katalogHTML() {
+  const k = katalog(S.pool, S.stats), rows = KAT_ORDER.filter(c => k[c].rynkowe || k[c].nierynkowe);
+  if (!rows.length) return '';
+  const nr = rows.reduce((s, c) => s + k[c].nierynkowe, 0);
+  return `<div class="eyebrow" style="margin:14px 0 6px">Katalog nieruchomości</div><div class="cattab"><div class="r h"><span>Kategoria</span><span>Rynkowe</span><span>Do wyceny</span><span>Z 3 lat</span></div>
+    ${rows.map(c => `<div class="r"><span>${esc(KAT[c].n)}</span><span>${fmt(k[c].rynkowe)}</span><span>${c === 'zabudowana' ? '—' : fmt(k[c].uzyteczne)}</span><span>${c === 'zabudowana' ? '—' : fmt(k[c].trzyLata)}</span></div>`).join('')}</div>
+    <p class="tiny muted" style="margin:8px 0 0">„Rynkowe”: transakcje po cenach rynkowych (wolny rynek, nowe mieszkania od dewelopera). „Do wyceny”: jedna nieruchomość w akcie, pełna własność, znana powierzchnia i sensowna cena. Pominięto ${fmt(nr)} transakcji nierynkowych (bonifikaty, przetargi, egzekucje, sprzedaż z zasobów publicznych).</p>`;
+}
+
 /* ---------- DANE ---------- */
 function viewDane() {
   const n = S.offers.length, fl = S.offers.filter(o => o.flagi && o.flagi.length).length, off = S.offers.filter(o => o.wlaczone === false).length;
-  const meta = S.rcn?.meta, resid = S.tx.filter(t => t.funkcja === 'mieszkalna' && !t.wielolokalowa && t.pelne && t.rok >= now() - 3).length;
+  const meta = S.rcn?.meta;
   const list = S.offers.slice().reverse().slice(0, 40);
   const html = head('Dane', 'Źródła i import') + `
   <div class="card"><div class="eyebrow">Oferty najmu</div><div class="kv"><span>W bazie</span><b>${fmt(n)}</b></div><div class="kv"><span>Podejrzane (pominięte)</span><b>${fl}</b></div><div class="kv"><span>Wyłączone ręcznie</span><b>${off}</b></div>
@@ -279,7 +308,7 @@ function viewDane() {
   <div class="card"><div class="eyebrow">Własne umowy najmu</div><p class="small muted" style="margin:0 0 10px">Prawdziwe umowy Twojego biura lub najmy, które znasz z pierwszej ręki. Mają największą wagę w wycenie i pozwalają zmierzyć standard, meble i budynek, których nie ma w ogłoszeniach.</p>
     ${(S.wlasne || []).map(w => `<button class="off" data-own="${w.id}"><div><b>${esc([w.ulica, w.dzielnica].filter(Boolean).join(', ') || 'Najem')}</b></div><div class="p">${fmt(w.cena)} zł</div><div class="m">${w.m2} m² · ${w.pokoje} pok.${w.rok ? ' · rok ' + w.rok : ''}${w.standard ? ' · ' + ({ remont: 'do remontu', dobry: 'dobry', wysoki: 'wysoki' })[w.standard] : ''}${w.meble === 'tak' ? ' · meble' : ''}</div><div class="m" style="text-align:right">${fmt(w.cena / w.m2)} zł/m²</div></button>`).join('')}
     <div class="gap"></div><button class="btn" data-act="own">Dodaj umowę najmu</button></div>
-  <div class="card"><div class="eyebrow">Transakcje (RCN)</div>${meta ? `<div class="kv"><span>Rekordów</span><b>${fmt(S.tx.length)}</b></div><div class="kv"><span>Mieszkań z ostatnich 3 lat (użytecznych)</span><b>${fmt(resid)}</b></div><div class="kv"><span>Pobrano</span><b>${esc(meta.pobrano || '—')}</b></div><div class="kv"><span>Bez współrzędnych</span><b>${fmt(meta.bez_wspolrzednych ?? 0)}</b></div>` : '<p class="muted small" style="margin:0 0 10px">Brak danych. Wygeneruj plik skryptem na serwerze (tools/rcn_export.py) i wgraj poniżej.</p>'}
+  <div class="card"><div class="eyebrow">Transakcje (RCN)</div>${meta ? `<div class="kv"><span>Lokale (mieszkania, użytkowe, garaże): rekordów</span><b>${fmt(S.tx.length)}</b></div><div class="kv"><span>Domy, obiekty i grunty: transakcji</span><b>${fmt(S.inne.length)}</b></div><div class="kv"><span>Pobrano</span><b>${esc(meta.pobrano || '—')}</b></div><div class="kv"><span>Bez współrzędnych</span><b>${fmt((meta.bez_wspolrzednych ?? 0) + (S.rcnInne?.meta?.bez_wspolrzednych ?? 0))}</b></div>${katalogHTML()}${S.rcnInne ? '' : '<p class="tiny muted" style="margin:10px 0 0">Brak pliku z domami, obiektami i gruntami. Serwer przygotuje go przy najbliższym odświeżeniu; potem użyj „Sprawdź nowe dane teraz”.</p>'}` : '<p class="muted small" style="margin:0 0 10px">Brak danych. Wygeneruj plik skryptem na serwerze (tools/rcn_export.py) i wgraj poniżej.</p>'}
     ${S.ust.rcnUrl ? '<div class="gap"></div><button class="btn ghost" data-act="rcncheck">Sprawdź nowe dane teraz</button><p class="tiny muted" style="margin:8px 0 0">Aplikacja sama sprawdza nowe dane przy każdym otwarciu (serwer odświeża je codziennie w nocy) i pobiera je na wszystkie urządzenia.</p>' : ''}<div class="gap"></div><label class="field"><span>Adres pliku z serwera</span><input class="in" id="rurl" value="${esc(S.ust.rcnUrl)}" placeholder="https://…/rcn_lublin.json"></label>
     <button class="btn" data-act="rcnurl">Pobierz z serwera</button><div class="gap"></div><button class="btn ghost" data-act="rcnfile">Wczytaj plik JSON</button><input type="file" id="frcn" accept=".json,application/json" hidden></div>
   <div class="card"><div class="eyebrow">Oferty w bazie (ostatnie ${list.length})</div>${list.length ? list.map(o => `<button class="off ${o.wlaczone === false ? 'dis' : ''}" data-id="${o.id}"><div><b>${esc([o.ulica, o.dzielnica].filter(Boolean).join(', ') || o.tytul)}</b></div><div class="p">${fmt(o.cena)} zł</div><div class="m">${o.m2} m² · ${o.pokoje} pok.${o.pietro != null ? ' · ' + (o.pietro === 0 ? 'parter' : o.pietro + '. p.') : ''}${o.czynsz ? ' · czynsz ' + fmt(o.czynsz) : ''}</div><div class="m" style="text-align:right">${fmt(o.cena / o.m2)} zł/m²</div>${o.flagi?.length ? `<div class="flag">⚠ ${esc(o.flagi.join(', ').replace(/_/g, ' '))}</div>` : ''}</button>`).join('') : '<div class="empty">Brak ofert.</div>'}
@@ -294,7 +323,7 @@ function viewDane() {
     $('[data-act="own"]', v).onclick = () => ownSheet(null);
     $$('[data-own]', v).forEach(b => b.onclick = () => ownSheet(b.dataset.own));
     $$('.off', v).forEach(b => b.onclick = () => { const o = S.offers.find(x => x.id === b.dataset.id); o.wlaczone = o.wlaczone === false; save.offers(); b.classList.toggle('dis', o.wlaczone === false); });
-    $('[data-act="rcnurl"]', v).onclick = async () => { const u = $('#rurl', v).value.trim(); if (!u) return toast('Wpisz adres pliku'); S.ust.rcnUrl = u; save.ust(); toast('Pobieram…'); try { const r = await fetch(u, { cache: 'no-store' }); if (!r.ok) throw new Error('HTTP ' + r.status); await setRcn(await r.json()); } catch (e) { toast('Nie udało się: ' + e.message); } };
+    $('[data-act="rcnurl"]', v).onclick = async () => { const u = $('#rurl', v).value.trim(); if (!u) return toast('Wpisz adres pliku'); S.ust.rcnUrl = u; save.ust(); toast('Pobieram…'); try { const r = await fetch(u, { cache: 'no-store' }); if (!r.ok) throw new Error('HTTP ' + r.status); await setRcn(await r.json(), true); try { const r2 = await fetch(innePath(u), { cache: 'no-store' }); if (r2.ok) await setRcnInne(await r2.json(), true); } catch {} toast(`Wczytano ${fmt(S.tx.length)} lokali${S.inne.length ? ' i ' + fmt(S.inne.length) + ' domów, obiektów i gruntów' : ''}`); render(); } catch (e) { toast('Nie udało się: ' + e.message); } };
     const rc = $('[data-act="rcncheck"]', v); if (rc) rc.onclick = () => checkRcn(true);
     const fr = $('#frcn', v); $('[data-act="rcnfile"]', v).onclick = () => fr.click(); fr.onchange = async () => { try { await setRcn(JSON.parse(await fr.files[0].text())); } catch (e) { toast('Błędny plik: ' + e.message); } };
     $('[data-act="exp"]', v).onclick = async () => { const blob = new Blob([JSON.stringify({ v: 1, offers: S.offers, wlasne: S.wlasne, budynki: S.budynki, wyceny: S.wyceny, ust: S.ust })], { type: 'application/json' }); await saveFile(blob, 'kopia-wycena-' + new Date().toISOString().slice(0, 10) + '.json'); };
@@ -308,22 +337,31 @@ async function setRcn(pack, quiet) {
   S.rcn = pack; setTx(); await store.set('rcn', pack);
   if (!quiet) { toast(`Wczytano ${fmt(S.tx.length)} transakcji`); render(); }
 }
-// Automatyczna aktualizacja RCN: serwer odświeża plik codziennie i zapisuje mały rcn_meta.json z wersją danych.
-// Każde urządzenie sprawdza ten mały plik (przy starcie, po powrocie do aplikacji, co kilka godzin) i pobiera duży plik tylko gdy wersja się zmieniła.
+async function setRcnInne(pack, quiet) {
+  if (!pack || !Array.isArray(pack.cols) || !Array.isArray(pack.rows) || !pack.cols.includes('nier')) throw new Error('nieznany format pliku domów i gruntów');
+  S.rcnInne = pack; setTx(); await store.set('rcnInne', pack);
+  if (!quiet) { toast(`Wczytano ${fmt(S.inne.length)} transakcji domów, obiektów i gruntów`); render(); }
+}
+const innePath = url => url.replace(/[^/]*$/, 'rcn_inne.json');
+// Automatyczna aktualizacja RCN: serwer odświeża pliki codziennie i zapisuje mały rcn_meta.json z wersjami danych (mieszkania i lokale + domy, obiekty, grunty).
+// Każde urządzenie sprawdza ten mały plik (przy starcie, po powrocie do aplikacji, co kilka godzin) i pobiera duże pliki tylko gdy wersja się zmieniła.
 let rcnBusy = false;
 async function checkRcn(force) {
   const url = S.ust.rcnUrl; if (!url || rcnBusy) return;
-  if (!force && S.rcn) { if (navigator.connection?.saveData) return; if (Date.now() - (await store.get('rcncheck', 0)) < 3 * 3600e3) return; }
+  if (!force && S.rcn && S.rcnInne) { if (navigator.connection?.saveData) return; if (Date.now() - (await store.get('rcncheck', 0)) < 3 * 3600e3) return; }
   rcnBusy = true;
   try {
     const r = await fetch(url.replace(/[^/]*$/, 'rcn_meta.json'), { cache: 'no-store' });
     if (!r.ok) throw new Error('serwer nie ma jeszcze pliku z wersją danych (HTTP ' + r.status + ')');
     const m = await r.json(); await store.set('rcncheck', Date.now());
-    if (S.rcn?.meta?.wersja && S.rcn.meta.wersja === m.wersja) { if (force) toast('Dane RCN są aktualne'); return; }
+    const needA = !(S.rcn?.meta?.wersja && S.rcn.meta.wersja === m.wersja), needB = !!m.inne && S.rcnInne?.meta?.wersja !== m.inne.wersja;
+    if (!needA && !needB) { if (force) toast('Dane RCN są aktualne'); return; }
     toast('Pobieram nowe dane RCN…');
-    const f = await fetch(url, { cache: 'no-store' }); if (!f.ok) throw new Error('HTTP ' + f.status);
-    const before = S.tx.length; await setRcn(await f.json(), true);
-    toast(`Dane RCN zaktualizowane: ${fmt(S.rcn.meta.rekordow)} rekordów (${S.tx.length - before >= 0 ? '+' : ''}${fmt(S.tx.length - before)} użytecznych)`);
+    const before = S.tx.length + S.inne.length;
+    if (needA) { const f = await fetch(url, { cache: 'no-store' }); if (!f.ok) throw new Error('HTTP ' + f.status); await setRcn(await f.json(), true); }
+    if (needB) { const f = await fetch(innePath(url), { cache: 'no-store' }); if (!f.ok) throw new Error('domy i grunty: HTTP ' + f.status); await setRcnInne(await f.json(), true); }
+    const d = S.tx.length + S.inne.length - before;
+    toast(`Dane RCN zaktualizowane: ${fmt(S.rcn.meta.rekordow)} lokali${S.rcnInne ? ' + ' + fmt(S.rcnInne.meta.rekordow) + ' domów, obiektów i gruntów' : ''} (${d >= 0 ? '+' : ''}${fmt(d)} użytecznych)`);
     if (location.hash.replace(/^#\/?/, '').split('/')[0] === 'dane') render();
   } catch (e) { if (force) toast('RCN: ' + e.message); }
   finally { rcnBusy = false; }
@@ -476,9 +514,17 @@ async function syncCard(v) {
 
 
 /* ---------- MAPA ---------- */
-S.mapa = { mode: 'tx', rynek: '', lata: 3, pokoje: '', metraz: '' };
-const M2 = { '': [0, 1e9], '0-20': [0, 20], '20-30': [20, 30], '30-40': [30, 40], '40-50': [40, 50], '50+': [50, 1e9] };   // od (włącznie) do (bez)
-const M2_CHIPS = [['', 'Wszystkie'], ['0-20', 'do 20'], ['20-30', '20–30'], ['30-40', '30–40'], ['40-50', '40–50'], ['50+', 'powyżej 50']];
+S.mapa = { mode: 'tx', kat: 'mieszkanie', rynek: '', lata: 3, pokoje: '', metraz: '' };
+// Przedziały powierzchni dla filtra mapy (od włącznie do bez): klucz „a-b" lub „a+"
+const rangeOf = k => { if (!k) return [0, 1e9]; const [a, b] = String(k).split(/[-+]/); return [+a, String(k).includes('+') ? 1e9 : +b]; };
+const M2S = {
+  mieszkanie: ['Metraż mieszkania (m²)', [['', 'Wszystkie'], ['0-20', 'do 20'], ['20-30', '20–30'], ['30-40', '30–40'], ['40-50', '40–50'], ['50+', 'powyżej 50']]],
+  dom: ['Powierzchnia użytkowa budynku (m²)', [['', 'Wszystkie'], ['0-100', 'do 100'], ['100-150', '100–150'], ['150-200', '150–200'], ['200-300', '200–300'], ['300+', 'powyżej 300']]],
+  dzialka: ['Powierzchnia działki (m²)', [['', 'Wszystkie'], ['0-600', 'do 600'], ['600-1000', '600–1000'], ['1000-2000', '1000–2000'], ['2000-5000', '2000–5000'], ['5000+', 'powyżej 5000']]],
+  lokal: ['Powierzchnia lokalu (m²)', [['', 'Wszystkie'], ['0-30', 'do 30'], ['30-60', '30–60'], ['60-100', '60–100'], ['100-200', '100–200'], ['200+', 'powyżej 200']]],
+  obiekt: ['Powierzchnia obiektu (m²)', [['', 'Wszystkie'], ['0-200', 'do 200'], ['200-500', '200–500'], ['500-1000', '500–1000'], ['1000-3000', '1000–3000'], ['3000+', 'powyżej 3000']]],
+  garaz: ['Powierzchnia garażu (m²)', [['', 'Wszystkie'], ['0-15', 'do 15'], ['15-20', '15–20'], ['20-30', '20–30'], ['30+', 'powyżej 30']]],
+};
 let centersCache = null;
 const centersOf = () => { if (!centersCache || centersCache.for !== S.tx) centersCache = { for: S.tx, map: streetCenters(S.tx) }; return centersCache.map; };
 const legendHTML = (cls, unit) => cls.labels.length ? `<div class="legend">${cls.labels.map(l => `<span><i style="background:${l.c}"></i>${l.t}</span>`).join('')}</div><p class="tiny muted" style="margin:6px 0 0">${unit}</p>` : '';
@@ -497,22 +543,24 @@ async function resMap(el, r, v) {
 function viewMapa() {
   const m = S.mapa, MODES = [['tx', 'Transakcje'], ['grid', 'Ceny okolic'], ['najem', 'Najem']];
   const chips = (key, opts) => `<div class="chips" data-mf="${key}">${opts.map(([val, n]) => `<button type="button" class="chip ${String(m[key]) === String(val) ? 'on' : ''}" data-v="${val}">${n}</button>`).join('')}</div>`;
-  const metrazF = `<div class="field"><span>Metraż mieszkania (m²)</span>${chips('metraz', M2_CHIPS)}<p class="tiny muted" style="margin:6px 0 0">Przedział od wartości włącznie do kolejnej wyłącznie: np. „30–40” to od 30,0 do 39,9 m².</p></div>`;
+  const metrazF = k => `<div class="field"><span>${M2S[k][0]}</span>${chips('metraz', M2S[k][1])}<p class="tiny muted" style="margin:6px 0 0">Przedział od wartości włącznie do kolejnej wyłącznie: np. „30–40” to od 30,0 do 39,9.</p></div>`;
   const filters = () => m.mode === 'najem'
-    ? `<div class="field"><span>Liczba pokoi</span>${chips('pokoje', [['', 'Wszystkie'], ['1', '1 pokój'], ['2', '2 pokoje'], ['3', '3 i więcej']])}</div>${metrazF}`
-    : `<div class="field"><span>Rynek</span>${chips('rynek', [['', 'Wszystkie'], ['wtorny', 'Wtórny'], ['pierwotny', 'Pierwotny']])}</div><div class="field"><span>Transakcje z ostatnich</span>${chips('lata', [[1, '1 roku'], [3, '3 lat'], [5, '5 lat']])}</div>${metrazF}`;
+    ? `<div class="field"><span>Liczba pokoi</span>${chips('pokoje', [['', 'Wszystkie'], ['1', '1 pokój'], ['2', '2 pokoje'], ['3', '3 i więcej']])}</div>${metrazF('mieszkanie')}`
+    : `<div class="field"><span>Rodzaj nieruchomości</span>${chips('kat', KAT_ORDER.filter(k => k !== 'zabudowana').map(k => [k, KAT[k].n]))}</div>
+      ${['mieszkanie', 'dom', 'obiekt', 'lokal'].includes(m.kat) ? `<div class="field"><span>Rynek</span>${chips('rynek', [['', 'Wszystkie'], ['wtorny', 'Wtórny'], ['pierwotny', 'Pierwotny']])}</div>` : ''}
+      <div class="field"><span>Transakcje z ostatnich</span>${chips('lata', [[1, '1 roku'], [3, '3 lat'], [5, '5 lat'], [8, '8 lat']])}</div>${metrazF(m.kat)}`;
   const html = head('Mapa', 'Ceny i oferty w Lublinie') + `
   <div class="seg" data-n="3" data-v="${MODES.findIndex(x => x[0] === m.mode)}"><i></i>${MODES.map(([k, n]) => `<button data-mode="${k}" class="${m.mode === k ? 'on' : ''}">${n}</button>`).join('')}</div>
   <div class="card"><div id="mapfilters">${filters()}</div></div>
   <div class="card mapcard"><div class="mapbox" id="mapbox"><div class="empty">Ładuję mapę…</div></div><div id="maplegend" style="margin-top:10px"></div></div>
   <div class="card"><div id="mapstat" class="small muted"></div></div>`;
   return [html, async v => {
-    let ctl = null, subj = S.last.sprzedaz?.res?.ok ? S.last.sprzedaz.res.subLL : null;
+    let ctl = null, subj = S.last.sprzedaz?.res?.ok && (S.last.sprzedaz.subj.kat || 'mieszkanie') === 'mieszkanie' ? S.last.sprzedaz.res.subLL : null;
     const stat = t => { $('#mapstat', v).innerHTML = t; };
     const draw = fit => {
       ctl.clear(); let pts = [], cls, unit = '';
       if (m.mode === 'najem') {
-        const offers = allOffers().filter(o => o.wlaczone !== false && !(o.flagi && o.flagi.length) && o.m2 > 0 && o.cena > 0 && (m.pokoje === '' || (m.pokoje === '3' ? o.pokoje >= 3 : o.pokoje === +m.pokoje)) && o.m2 >= M2[m.metraz][0] && o.m2 < M2[m.metraz][1]);
+        const [r0, r1] = rangeOf(m.metraz), offers = allOffers().filter(o => o.wlaczone !== false && !(o.flagi && o.flagi.length) && o.m2 > 0 && o.cena > 0 && (m.pokoje === '' || (m.pokoje === '3' ? o.pokoje >= 3 : o.pokoje === +m.pokoje)) && o.m2 >= r0 && o.m2 < r1);
         if (!S.tx.length) { $('#maplegend', v).innerHTML = ''; return stat('Do ustawienia ofert na mapie potrzebne są dane RCN: środek ulicy wyliczamy z pozycji transakcji. Pobierz je w zakładce <b>Dane</b>.'); }
         const { placed, none } = placeOffers(offers, centersOf());
         cls = makeClasses(placed.map(p => p.o.cena / p.o.m2)); unit = 'Czynsz najmu za m² miesięcznie (zł). Pełny punkt: środek ulicy; pusta obwódka: środek dzielnicy (przybliżenie).';
@@ -520,25 +568,26 @@ function viewMapa() {
         const md = median(placed.map(p => p.o.cena / p.o.m2));
         stat(placed.length ? `Na mapie: <b>${fmt(placed.length)}</b> z ${fmt(offers.length)} ofert najmu, mediana <b>${fmt(md)} zł/m²</b> miesięcznie. ${fmt(placed.filter(p => p.approx).length)} ofert ma położenie przybliżone do dzielnicy${none ? `, ${fmt(none)} nie ma ani znanej ulicy, ani dzielnicy` : ''}. Położenie ofert to środek ulicy, nie adres.` : 'Brak ofert z rozpoznanym położeniem. Dodaj oferty w zakładce <b>Dane</b>.');
       } else {
-        if (!S.tx.length) { $('#maplegend', v).innerHTML = ''; return stat('Brak danych RCN. Pobierz je w zakładce <b>Dane</b>.'); }
-        const sales = usableSales(S.tx, { years: +m.lata, rynek: m.rynek, m2min: M2[m.metraz][0], m2max: M2[m.metraz][1] });
+        if (!S.pool.length) { $('#maplegend', v).innerHTML = ''; return stat('Brak danych RCN. Pobierz je w zakładce <b>Dane</b>.'); }
+        const [r0, r1] = rangeOf(m.metraz), minN = m.kat === 'mieszkanie' ? 5 : 3;
+        const sales = usableSales(S.pool, { years: +m.lata, rynek: ['mieszkanie', 'dom', 'obiekt', 'lokal'].includes(m.kat) ? m.rynek : '', m2min: r0, m2max: r1, kat: m.kat });
         if (m.mode === 'tx') {
           cls = makeClasses(sales.map(s => s.pm2)); unit = 'Cena transakcyjna za m² (zł) z aktów notarialnych.';
           pts = ctl.dots(sales.map(s => ({ ...s, v: s.pm2 })), cls.color, popupSale);
-          stat(`Na mapie: <b>${fmt(sales.length)}</b> transakcji mieszkań, mediana <b>${fmt(median(sales.map(s => s.pm2)) || 0)} zł/m²</b>. Każdy punkt to jedna sprzedaż; dotknij, aby zobaczyć szczegóły.`);
+          stat(!sales.length ? `Brak transakcji z kategorii „${KAT[m.kat].n}” dla tych filtrów. Poszerz okres albo przedział powierzchni.` : `Na mapie: <b>${fmt(sales.length)}</b> transakcji (${KAT[m.kat].m}), mediana <b>${fmt(median(sales.map(s => s.pm2)) || 0)} zł/m²</b>. Każdy punkt to jedna sprzedaż; dotknij, aby zobaczyć szczegóły.`);
         } else {
-          const cells = buildGrid(sales); cls = makeClasses(cells.map(c => c.med)); unit = 'Mediana ceny za m² (zł) w kwadracie ok. 500 × 500 m. Pokazane tylko kwadraty z min. 5 transakcjami.';
+          const cells = buildGrid(sales, minN); cls = makeClasses(cells.map(c => c.med)); unit = `Mediana ceny za m² (zł) w kwadracie ok. 500 × 500 m. Pokazane tylko kwadraty z min. ${minN} transakcjami.`;
           ctl.cells(cells, cls.color, c => `<b>${fmt(c.med)} zł/m²</b> (mediana)<br>środkowe 50%: ${fmt(c.p25)}–${fmt(c.p75)} zł/m²<br><span class="tiny">${c.n} transakcji w tym kwadracie</span>`);
           pts = cells.flatMap(c => c.bounds);
-          stat(`<b>${fmt(cells.length)}</b> kwadratów z min. 5 transakcjami (z ${fmt(sales.length)} transakcji). Mediana ceny w kwadracie jest wskazówką, nie wyceną: różni się z wiekiem budynku i standardem.`);
+          stat(`<b>${fmt(cells.length)}</b> kwadratów z min. ${minN} transakcjami (z ${fmt(sales.length)} transakcji, ${KAT[m.kat].m}). Mediana ceny w kwadracie jest wskazówką, nie wyceną: różni się ${m.kat === 'dzialka' ? 'z przeznaczeniem i wielkością działki' : 'ze standardem i wielkością'}.`);
         }
       }
       $('#maplegend', v).innerHTML = legendHTML(cls, unit);
-      ctl.subject(subj, 'Ostatnio wyceniane mieszkanie');
+      { const ls = S.last.sprzedaz; const sj = m.mode !== 'najem' && ls?.res?.ok && (ls.subj.kat || 'mieszkanie') === m.kat ? ls.res.subLL : m.mode === 'najem' ? subj : null; ctl.subject(sj, 'Ostatnio wyceniana nieruchomość'); }
       if (fit && pts.length) ctl.fit(pts);
     };
     const redrawFilters = () => { $('#mapfilters', v).innerHTML = filters(); bindFilters(); };
-    const bindFilters = () => $$('[data-mf]', v).forEach(g => $$('button', g).forEach(b => b.onclick = () => { m[g.dataset.mf] = b.dataset.v; $$('button', g).forEach(x => x.classList.toggle('on', x === b)); draw(false); }));
+    const bindFilters = () => $$('[data-mf]', v).forEach(g => $$('button', g).forEach(b => b.onclick = () => { m[g.dataset.mf] = b.dataset.v; if (g.dataset.mf === 'kat') { m.metraz = ''; m.rynek = ''; redrawFilters(); draw(true); return; } $$('button', g).forEach(x => x.classList.toggle('on', x === b)); draw(false); }));
     $$('.seg button', v).forEach(b => b.onclick = () => { m.mode = b.dataset.mode; const sg = $('.seg', v); sg.dataset.v = MODES.findIndex(x => x[0] === m.mode); $$('button', sg).forEach(x => x.classList.toggle('on', x === b)); redrawFilters(); draw(true); });
     bindFilters();
     try { ctl = await createMap($('#mapbox', v)); } catch (e) { $('#mapbox', v).innerHTML = `<div class="empty"><b>Mapa niedostępna</b>${esc(e.message)}</div>`; return; }
