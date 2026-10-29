@@ -8,7 +8,7 @@ import argparse, json, math, re, sys, time, urllib.parse, urllib.request, xml.et
 
 BASE = "https://mapy.geoportal.gov.pl/wss/service/rcn"
 BBOX = (51.15, 22.38, 51.33, 22.73)   # lat_min, lon_min, lat_max, lon_max — Lublin z otoczeniem
-COLS = ['id', 'tran', 'cena', 'rynek', 'rodzaj', 'rok', 'funkcja', 'izby', 'kond', 'm2', 'm2p', 'ulica', 'nr', 'udzial', 'lat', 'lon']
+COLS = ['id', 'tran', 'cena', 'rynek', 'rodzaj', 'rok', 'funkcja', 'izby', 'kond', 'm2', 'm2p', 'ulica', 'nr', 'udzial', 'lat', 'lon', 'sprz', 'data', 'cena_nier', 'cena_lok']
 UA = {"User-Agent": "am-operat-rcn-export/1.0 (dane publiczne RCN)"}
 
 def local(t): return t.split('}')[-1]
@@ -80,13 +80,16 @@ def parse(raw):
             d = {}
             for c in f:
                 if len(c) == 0: d[local(c.tag)] = (c.text or '').strip()
+                elif local(c.tag) == 'DOK_DATA':
+                    d['DOK_DATA'] = next(((x.text or '').strip() for x in c.iter() if local(x.tag) == 'timePosition'), '')
             la, lo = centroid(f)
             ul, nr = addr(d.get('LOK_ADRES'))
             rok = re.search(r'/(20\d\d|19\d\d)\s*$', d.get('DOK_OZNACZENIE', ''))
             rows.append([d.get('LOK_ID_LOKALU'), d.get('TRAN_OZNACZENIE_TRANS'), num(d.get('TRAN_CENA_BRUTTO')),
                          d.get('TRAN_RODZAJ_RYNKU'), d.get('TRAN_RODZAJ_TRANS'), int(rok.group(1)) if rok else None,
                          d.get('LOK_FUNKCJA'), num(d.get('LOK_LICZBA_IZB')), num(d.get('LOK_NR_KOND')),
-                         num(d.get('LOK_POW_UZYT')), num(d.get('LOK_POW_PRZYN')), ul, nr, d.get('NIER_UDZIAL') or None, la, lo])
+                         num(d.get('LOK_POW_UZYT')), num(d.get('LOK_POW_PRZYN')), ul, nr, d.get('NIER_UDZIAL') or None, la, lo,
+                         d.get('TRAN_SPRZEDAJACY') or None, d.get('DOK_DATA') or None, num(d.get('NIER_CENA_BRUTTO')), num(d.get('LOK_CENA_BRUTTO'))])
     return rows
 
 def main():
