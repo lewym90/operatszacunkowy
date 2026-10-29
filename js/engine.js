@@ -351,6 +351,13 @@ export function estimateSaleKat(tx, subject, opts = {}) {
 }
 const fmtN = n => Math.round(n).toLocaleString('pl-PL');
 
+// Miejsce postojowe wynajmowane osobno: opłata z ofert, które ją podają wprost (stan „dodatkowo” + kwota). Poniżej 5 takich ofert kwoty nie podajemy.
+export function parkingExtra(offers) {
+  const v = offers.filter(o => o.wlaczone !== false && o.parking && o.parking.stan === 'dodatkowo' && o.parking.kwota > 0).map(o => o.parking.kwota);
+  if (v.length < 5) return { ok: false, n: v.length };
+  return { ok: true, n: v.length, lo: pctile(v, .25), mid: median(v), hi: pctile(v, .75) };
+}
+
 const avgLL = a => [a.reduce((s, x) => s + x.lat, 0) / a.length, a.reduce((s, x) => s + x.lon, 0) / a.length];
 
 // Orientacyjna rentowność brutto: roczny najem / wartość. Tylko przy obu wynikach.

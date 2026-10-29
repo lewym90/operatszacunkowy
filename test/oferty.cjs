@@ -1,0 +1,40 @@
+const { chromium } = require('/opt/npm-tools/node_modules/playwright'); const { spawn } = require('child_process');
+const SP = process.argv[2]; const assert = require('assert');
+(async () => {
+  const srv = spawn('python3', ['-m', 'http.server', '8766', '-d', '/home/claude/operat'], { stdio: 'ignore' }); await new Promise(r => setTimeout(r, 800));
+  const b = await chromium.launch(); const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
+  const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push(e.message));
+  await p.goto('http://localhost:8766/index.html#/oferty'); await p.waitForTimeout(1500);
+  const mk = (i, x = {}) => ({ portalId: 'P' + i, url: 'https://www.otodom.pl/pl/oferta/test-' + i, cena: 2000 + i * 100, czynsz: 400, pokoje: 1 + i % 3, m2: 25 + i * 5, pietro: i % 4, ulica: 'Test' + i, dzielnica: i % 2 ? 'Śródmieście' : 'Czuby', miasto: 'Lublin', ...x });
+  const r1 = await p.evaluate(m => { const f = [1, 2, 3, 4, 5, 6].map((i) => window.__am.S && null); return null; }, null);
+  const A = [1, 2, 3, 4, 5, 6].map(i => mk(i));
+  await p.evaluate(f => window.__am.importOffers(f, { pelne: true }), A);
+  let st = await p.evaluate(() => { const s = window.__am.statusFn(); return window.__am.S.offers.map(o => s(o)); });
+  assert(st.every(x => x === 'aktualne'), 'pierwsze zebranie: wszystko aktualne ' + st);
+  // drugie zebranie (inny dzień): symulacja przez cofnięcie ts zebrania
+  await p.evaluate(() => { const z = window.__am.S.ust.zebrania; z[0].ts -= 86400000 * 7; });
+  const B = [1, 2, 3, 4].map(i => mk(i, i === 1 ? { cena: 2500, parking: { stan: 'wliczony' } } : i === 2 ? { parking: { stan: 'dodatkowo', kwota: 300 } } : {})).concat([mk(7), mk(8, { parking: { stan: 'dodatkowo', kwota: 250 } })]);
+  const res = await p.evaluate(f => window.__am.importOffers(f, { pelne: true }), B);
+  assert.strictEqual(res.added, 2); assert.strictEqual(res.updated, 4);
+  const sm = await p.evaluate(() => { const s = window.__am.statusFn(); const o = window.__am.S.offers; return o.map(x => x.portalId + ':' + s(x)).join(','); });
+  console.log(sm);
+  assert(sm.includes('P7:nowe') && sm.includes('P8:nowe') && sm.includes('P5:nieaktualne') && sm.includes('P6:nieaktualne') && sm.includes('P1:aktualne'), sm);
+  const o1 = await p.evaluate(() => window.__am.S.offers.find(o => o.portalId === 'P1')); assert.strictEqual(o1.cena, 2500); assert.strictEqual(o1.attrs.garaz, 1);
+  const o2 = await p.evaluate(() => window.__am.S.offers.find(o => o.portalId === 'P2')); assert.strictEqual(o2.attrs.garaz, 0);
+  await p.evaluate(() => window.__am.render()); await p.waitForTimeout(500);
+  const rows = await p.$$eval('.orow', a => a.length); assert.strictEqual(rows, 8);
+  const links = await p.$$eval('.orow a.oin', a => a.map(x => [x.href, x.target, x.rel])); assert.strictEqual(links.length, 8); assert(links[0][1] === '_blank' && /noopener/.test(links[0][2]));
+  const first = await p.$eval('.orow .bd', e => e.textContent); assert.strictEqual(first, 'nowe');
+  await p.click('[data-of=status] [data-v=nieaktualne]'); assert.strictEqual(await p.$$eval('.orow', a => a.length), 2);
+  await p.click('[data-of=status] [data-v=""]'); await p.click('[data-of=parking] [data-v=dodatkowo]'); assert.strictEqual(await p.$$eval('.orow', a => a.length), 2);
+  await p.click('[data-of=parking] [data-v=""]'); await p.selectOption('#of-dz', 'Czuby'); const cz = await p.$$eval('.orow', a => a.length); assert.strictEqual(cz, 4, 'Czuby ' + cz);
+  await p.selectOption('#of-dz', ''); await p.click('[data-of=pokoje] [data-v="1"]'); const k1 = await p.$$eval('.orow', a => a.length); console.log('1 pok', k1);
+  await p.screenshot({ path: SP + '/shots/oferty.png', fullPage: true });
+  await p.click('.orow .otg'); assert.strictEqual(await p.$$eval('.orow.dis', a => a.length), 1);
+  // parking osobno: karta wyniku
+  await p.evaluate(() => { const S = window.__am.S; for (let i = 0; i < 6; i++) S.offers.push({ id: 'x' + i, typ: 'najem', ts: Date.now(), wlaczone: true, cena: 2400, pokoje: 2, m2: 40, pietro: 1, dzielnica: 'Czuby', miasto: 'Lublin', flagi: [], ost: S.ust.zebrania.at(-1).id, parking: { stan: 'dodatkowo', kwota: 200 + i * 20 }, attrs: { garaz: 0 } }); });
+  await p.goto('http://localhost:8766/index.html#/wycena'); await p.waitForTimeout(600); await p.click('.seg button[data-t=najem]'); await p.waitForTimeout(400);
+  await p.fill('[name=dzielnica]', 'Czuby'); await p.fill('[name=m2]', '40'); await p.click('[data-chips=parking] [data-v=osobno]'); await p.click('#f .btn'); await p.waitForTimeout(2000);
+  const txt = await p.textContent('body'); assert(/Parking płatny osobno/.test(txt), 'karta parkingu'); await p.screenshot({ path: SP + '/shots/oferty-parking.png', fullPage: true });
+  console.log('BŁĘDY:', errs.length ? errs : 'brak'); assert(!errs.length); await b.close(); srv.kill(); console.log('OK');
+})().catch(e => { console.error('TEST PADŁ', e); process.exit(1); });

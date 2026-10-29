@@ -1,13 +1,14 @@
 import * as store from './store.js';
-import { estimateRent, estimateSale, estimateSaleKat, crossCheckRent, inferDistrict, ATTRS, learnPremiums, grossYield, addrKey, normStreet, YEAR_BANDS, yearBand } from './engine.js';
+import { estimateRent, estimateSale, estimateSaleKat, parkingExtra, crossCheckRent, inferDistrict, ATTRS, learnPremiums, grossYield, addrKey, normStreet, YEAR_BANDS, yearBand } from './engine.js';
 import { rcnToObjects, inneToObjects, katalog, KAT, KAT_ORDER, POD_TXT } from './rcn.js';
 import { linesFromPdf, offersFromLines, offerKey } from './pdfimport.js';
+import { flags as offerFlags } from './parseOtodom.js';
 import { esc, $, $$, fmt, roundTo, toast, openSheet, closeSheet, countUp, saveFile, ICON } from './ui.js';
 import { buildReport, makePdf } from './report.js';
 import { createSync, DEFAULT_URL, encodeCode, decodeCode } from './sync.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer } from './mapa.js';
 
-const VERSION = '1.10.1';
+const VERSION = '1.11.0';
 const S = { wlasne: [],
   offers: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -62,7 +63,7 @@ let syncOn = false;
 const sync = createSync({ kv: store, adapters,
   hooks: {
     onStatus: st => { syncOn = st.state !== 'off'; paintSync(st); },
-    onRemote: changed => { if (changed) checkRcn(); if (changed && ['dane', 'historia'].includes(location.hash.replace(/^#\/?/, '').split('/')[0])) render(); },
+    onRemote: changed => { if (changed) checkRcn(); if (changed && ['dane', 'historia', 'oferty'].includes(location.hash.replace(/^#\/?/, '').split('/')[0])) render(); },
   } });
 const agoTxt = ts => { if (!ts) return ''; const s = Math.round((Date.now() - ts) / 1000); return s < 20 ? 'przed chwilą' : s < 3600 ? Math.round(s / 60) + ' min temu' : new Date(ts).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' }); };
 function paintSync(st) {
@@ -72,7 +73,7 @@ function paintSync(st) {
 }
 
 /* ---------- router ---------- */
-const TABS = [['wycena', 'Wycena'], ['mapa', 'Mapa'], ['dane', 'Dane'], ['historia', 'Historia'], ['ust', 'Ustawienia']];
+const TABS = [['wycena', 'Wycena'], ['mapa', 'Mapa'], ['oferty', 'Oferty'], ['dane', 'Dane'], ['historia', 'Historia'], ['ust', 'Ustawienia']];
 function tabs(active) {
   $('#tabs').innerHTML = '<div class="in-tabs"><div class="brand"><img src="icons/logo-am.png" alt=""><b>OPERAT SZACUNKOWY</b><span>AM Nieruchomości</span></div>' + TABS.map(([k, n]) => `<a href="#/${k}" class="${k === active ? 'on' : ''}">${ICON[k === 'wycena' ? 'wycena' : k]}<span>${n}</span></a>`).join('') + '</div>';
 }
@@ -82,13 +83,14 @@ function render() {
   closeSheet(); if (mapCtl) { try { mapCtl.destroy(); } catch { } mapCtl = null; }
   if (p[0] === 'mapa') [html, mount] = viewMapa();
   else if (p[0] === 'wycena') [html, mount] = viewWycena();
+  else if (p[0] === 'oferty') [html, mount] = viewOferty();
   else if (p[0] === 'dane') [html, mount] = viewDane();
   else if (p[0] === 'historia') [html, mount] = viewHistoria();
   else if (p[0] === 'ust') [html, mount] = viewUst();
   else if (p[0] === 'wynik') { tab = 'wycena'; [html, mount] = viewWynik(p); }
   else if (p[0] === 'raport') { tab = 'wycena'; [html, mount] = viewRaport(p); }
   else [html, mount] = viewWycena();
-  const v = $('#view'); v.innerHTML = html; v.dataset.view = ['wycena', 'mapa', 'dane', 'historia', 'ust', 'wynik', 'raport'].includes(p[0]) ? p[0] : 'wycena';
+  const v = $('#view'); v.innerHTML = html; v.dataset.view = ['wycena', 'mapa', 'oferty', 'dane', 'historia', 'ust', 'wynik', 'raport'].includes(p[0]) ? p[0] : 'wycena';
   const topEl = v.querySelector(':scope > .top');   // reszta widoku w osobnym bloku: na szerokim ekranie układa się w kolumny
   if (topEl) { const body = document.createElement('div'); body.className = 'body'; while (topEl.nextSibling) body.appendChild(topEl.nextSibling); v.appendChild(body); }
   v.classList.remove('enter'); void v.offsetWidth; v.classList.add('enter');
@@ -134,7 +136,8 @@ function viewWycena() {
     ${po ? `<div class="field"><span>${po[0]}</span>${chipsHTML('pod', po[1], f.pod || '')}</div>` : ''}
     ${sale && ['mieszkanie', 'dom', 'obiekt', 'lokal'].includes(kat) ? `<div class="field"><span>Rynek</span>${chipsHTML('rynek', [['', 'Dowolny'], ['wtorny', 'Wtórny'], ['pierwotny', 'Pierwotny']], f.rynek)}</div>` : ''}
     ${kat === 'garaz' || kat === 'dzialka' ? '' : `<div class="field"><span>Standard (informacyjnie)</span>${chipsHTML('standard', [['', 'Nie wiem'], ['remont', 'Do remontu'], ['dobry', 'Dobry'], ['wysoki', 'Wysoki']], f.standard)}</div>`}
-    ${sale || !flat ? '' : `<div class="field"><span>Mieszkanie ma (zaznacz po obejrzeniu)</span><div class="chips" data-multi="ud">${ATTRS.filter(a => a[0] !== 'meble').map(([k, n]) => `<button type="button" class="chip ${(f.ud || []).includes(k) ? 'on' : ''}" data-v="${k}">${n}</button>`).join('')}</div></div>`}
+    ${sale || !flat ? '' : `<div class="field"><span>Mieszkanie ma (zaznacz po obejrzeniu)</span><div class="chips" data-multi="ud">${ATTRS.filter(a => a[0] !== 'meble' && a[0] !== 'garaz').map(([k, n]) => `<button type="button" class="chip ${(f.ud || []).includes(k) ? 'on' : ''}" data-v="${k}">${n}</button>`).join('')}</div></div>
+    <div class="field"><span>Parking / garaż</span>${chipsHTML('parking', [['brak', 'Brak'], ['wliczony', 'Jest w cenie czynszu'], ['osobno', 'Jest osobno płatny']], f.parking || 'brak')}</div>`}
     ${sale || !flat ? '' : `<div class="field"><span>Wyposażenie</span>${chipsHTML('meble', [['', 'Nie wiem'], ['tak', 'Umeblowane'], ['nie', 'Bez mebli']], f.meble)}</div>`}
     ${sale && flat ? `<label class="check"><input type="checkbox" name="zap" ${f.zapamietaj ? 'checked' : ''}> Zapamiętaj rok budowy dla tego adresu</label>` : ''}
     <p class="tiny muted" style="margin:6px 0 14px">${sale ? (flat ? 'Standard trafia do raportu jako informacja i nie zmienia wyniku.' : 'Dla tej kategorii RCN nie zna standardu ani roku budowy, więc trafiają do raportu jako informacja i nie zmieniają wyniku. Wynik zależy od powierzchni, rodzaju, położenia i daty transakcji.') : (flat ? 'Rok budowy i standard zmieniają wynik tylko wtedy, gdy baza ofert pozwala zmierzyć różnicę z przedziałem pewności. Wyposażenie trafia do raportu jako informacja.' : 'Wycena najmu tej kategorii powstaje z ofert najmu zapisanych w bazie dla tej kategorii.')}</p>
@@ -170,7 +173,8 @@ function submitForm() {
   if (f.tryb === 'sprzedaz' && !S.pool.length) return toast('Najpierw zaimportuj dane RCN (zakładka Dane)');
   if (f.tryb === 'najem' && flat && !S.offers.length && !(S.wlasne || []).length) return toast('Najpierw zaimportuj oferty najmu (zakładka Dane)');
   const subj = { tryb: f.tryb, kat, pod: f.pod || null, dzm2, ulica: f.ulica, nr: f.nr, dzielnica: f.dzielnica, m2, pokoje: flat ? f.pokoje : null, pietro: flat ? f.pietro : null, rok: ['mieszkanie', 'dom', 'obiekt'].includes(kat) ? rok : null, rynek: f.rynek || null, standard: f.standard || null, meble: f.meble === '' ? null : f.meble,
-    attrs: f.tryb === 'najem' && flat ? Object.fromEntries(ATTRS.filter(a => a[0] !== 'meble').map(([k]) => [k, (f.ud || []).includes(k) ? 1 : 0])) : null };
+    parking: f.tryb === 'najem' && flat ? (f.parking || 'brak') : null,
+    attrs: f.tryb === 'najem' && flat ? { ...Object.fromEntries(ATTRS.filter(a => a[0] !== 'meble' && a[0] !== 'garaz').map(([k]) => [k, (f.ud || []).includes(k) ? 1 : 0])), garaz: f.parking === 'wliczony' ? 1 : 0 } : null };
   let dzNote = null;
   if (f.tryb === 'najem' && flat && subj.ulica) {
     const inf = inferDistrict(allOffers(), S.tx, subj.ulica);
@@ -184,6 +188,7 @@ function submitForm() {
   const yearOf = k => S.budynki[k] ?? null;
   const res = f.tryb === 'najem' ? (flat ? estimateRent(allOffers(), subj) : { ok: false, reason: `Brak ofert najmu dla kategorii „${KAT[kat].n}”. Baza ofert zawiera dziś tylko mieszkania; najem tej kategorii wyceniam z ofert, więc najpierw trzeba je zaimportować.` }) : flat ? estimateSale(S.tx, subj, { yearOf }) : estimateSaleKat(S.pool, subj, { geo: S.pool });
   if (f.tryb === 'najem' && flat && res.ok) { try { const baseRent = res.adjusted ? estimateRent(allOffers(), { ...subj, rok: null, standard: null }) : res; res.cross = crossCheckRent(allOffers(), S.tx, subj, baseRent.ok ? baseRent : res); const c = res.cross; if (res.adjusted && baseRent.ok) c.vsBase = baseRent.total; if (c.ok && c.agreement === 'rozbieżne' && c.r2 >= 0.3 && res.confidence.score > 1) { res.confidence.score -= 1; res.confidence.level = res.confidence.score === 1 ? 'niska' : 'średnia'; res.confidence.why.push('obniżono: kontrola ze sprzedażą (wiarygodna, R² ≥ 0,3) daje wyraźnie inny czynsz'); } } catch (e) { res.cross = { ok: false, reason: 'Nie udało się policzyć kontroli: ' + e.message }; } }
+  if (subj.parking === 'osobno' && res.ok) res.parking = parkingExtra(allOffers());
   if (dzNote && res.ok) res.notes.unshift(dzNote);
   S.last[f.tryb] = { id: null, ts: Date.now(), subj, res };
   go('#/wynik/' + f.tryb);
@@ -236,6 +241,7 @@ function viewWynik(p) {
   }
   if (!sale) {
     const ls = S.last.sprzedaz, y = ls && ls.res.ok && normStreet(ls.subj.ulica) === normStreet(s.ulica) && ls.subj.m2 === s.m2 ? grossYield(ls.res, r) : null;
+    if (s.parking === 'osobno') html += `<div class="card"><div class="eyebrow">Parking płatny osobno</div>${r.parking && r.parking.ok ? `<div class="kv"><span>Typowo miesięcznie</span><b>${fmt(roundTo(r.parking.lo, 10))} – ${fmt(roundTo(r.parking.hi, 10))} zł</b></div><div class="kv"><span>Mediana</span><b>${fmt(roundTo(r.parking.mid, 10))} zł</b></div><p class="tiny muted" style="margin:8px 0 0">Z ${r.parking.n} ofert, w których ogłoszenie podaje osobną opłatę. Dolicz do czynszu za mieszkanie.</p>` : `<p class="small muted" style="margin:0">Za mało ofert z podaną opłatą za parking (${r.parking ? r.parking.n : 0} z wymaganych 5). Kwotę ustal z właścicielem.</p>`}</div>`;
     if (r.adminTotal) html += `<div class="card"><div class="kv"><span>Czynsz administracyjny (mediana)</span><b>ok. ${fmt(roundTo(r.adminTotal, 10))} zł</b></div></div>`;
     if (y) html += `<div class="card"><div class="eyebrow">Rentowność brutto (orientacyjnie)</div><h3>${y.lo.toFixed(1)}% – ${y.hi.toFixed(1)}%</h3><p class="small muted">Roczny najem do wartości, z dwóch niezależnych szacunków. Bez podatków i kosztów.</p></div>`;
   } else html += `<div class="card"><div class="kv"><span>Źródło</span><b>RCN (akty notarialne)</b></div><div class="kv"><span>Okno czasu</span><b>ostatnie ${r.window || 3} lat</b></div></div>`;
@@ -305,11 +311,101 @@ function katalogHTML() {
     <p class="tiny muted" style="margin:8px 0 0">„Rynkowe”: transakcje po cenach rynkowych (wolny rynek, nowe mieszkania od dewelopera). „Do wyceny”: jedna nieruchomość w akcie, pełna własność, znana powierzchnia i sensowna cena. Pominięto ${fmt(nr)} transakcji nierynkowych (bonifikaty, przetargi, egzekucje, sprzedaż z zasobów publicznych).</p>`;
 }
 
+
+/* ---------- OFERTY: zebrania danych, statusy, lista z linkami ---------- */
+const zebr = () => S.ust.zebrania || [];
+const lastFull = () => { const z = zebr().filter(x => x.pelne); return z.length ? z[z.length - 1] : null; };
+// nieaktualne: jest pełny przegląd, a oferty w nim nie było; nowe: pierwszy raz w ostatnim zebraniu (gdy były wcześniejsze)
+function statusFn() {
+  const z = zebr(), F = lastFull(), L = z[z.length - 1];
+  return o => (F && (o.ost || 0) < F.id) ? 'nieaktualne' : (z.length > 1 && o.pierw && o.pierw === L.id) ? 'nowe' : 'aktualne';
+}
+const parkNote = p => !p ? '' : p.stan === 'wliczony' ? 'parking w czynszu' : p.stan === 'dodatkowo' ? 'parking osobno' + (p.kwota > 0 ? ' +' + fmt(p.kwota) + ' zł' : '') : '';
+function applyCollection(found, opt = {}) {
+  const t = Date.now(), z = (S.ust.zebrania || []).slice(); let c = z[z.length - 1];
+  if (!c || t - c.ts > 12 * 3600000) { c = { id: (c ? c.id : 0) + 1, ts: t, pelne: false, n: 0 }; z.push(c); } else { c = { ...c, ts: t }; z[z.length - 1] = c; }
+  if (opt.pelne) c.pelne = true;
+  const byP = new Map(), byK = new Map(); for (const o of S.offers) { if (o.portalId) byP.set(String(o.portalId), o); byK.set(offerKey(o), o); }
+  const batch = new Set(); let added = 0, updated = 0;
+  for (const r of found) {
+    const ex = (r.portalId && byP.get(String(r.portalId))) || byK.get(offerKey(r));
+    let o;
+    if (ex) { o = ex; updated++; for (const k of ['cena', 'czynsz', 'pokoje', 'm2', 'pietro', 'ulica', 'dzielnica', 'miasto']) if (r[k] != null) o[k] = r[k]; if (r.url) o.url = r.url; if (r.portalId) o.portalId = String(r.portalId); if (r.rokBand) o.rokBand = r.rokBand; if (r.zabudowa) o.zabudowa = r.zabudowa; }
+    else { o = { ...r, flagi: r.flagi || offerFlags(r), id: uid(), typ: 'najem', ts: t, wlaczone: true, pierw: c.id }; if (o.portalId) o.portalId = String(o.portalId); S.offers.push(o); added++; if (o.portalId) byP.set(o.portalId, o); byK.set(offerKey(o), o); }
+    o.ost = c.id; batch.add(o);
+    if (r.parking && r.parking.stan) o.parking = { stan: r.parking.stan, ...(r.parking.kwota > 0 ? { kwota: r.parking.kwota } : {}) };
+    if (r.attrs) o.attrs = { ...(o.attrs || {}), ...r.attrs };
+  }
+  const recent = o => t - (o.ts || 0) < 3 * 86400000;
+  for (const k of opt.attrs || []) {
+    for (const o of S.offers) {
+      const inB = batch.has(o);
+      if (k === 'garaz') {                                  // lista z filtrem „Garaż”: stan rozliczenia ustala się z ogłoszenia
+        if (inB) { if (!o.parking) o.parking = { stan: 'nieznany' }; } else if ((o.ost === c.id || recent(o)) && !o.parking) o.parking = { stan: 'brak' };
+        continue;
+      }
+      o.attrs = o.attrs || {};
+      if (inB) o.attrs[k] = 1; else if ((o.ost === c.id || recent(o)) && o.attrs[k] === undefined) o.attrs[k] = 0;
+    }
+  }
+  for (const o of S.offers) if (o.parking && o.parking.stan !== 'nieznany') { o.attrs = o.attrs || {}; o.attrs.garaz = o.parking.stan === 'wliczony' ? 1 : 0; }
+  c.n = S.offers.filter(o => o.ost === c.id).length;
+  S.ust.zebrania = z; save.ust(); save.offers();
+  return { added, updated, zebranie: c };
+}
+function zebrania() {
+  const z = zebr(), st = statusFn(), cnt = { nowe: 0, aktualne: 0, nieaktualne: 0 }; S.offers.forEach(o => cnt[st(o)]++);
+  const d = ts => new Date(ts).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', year: 'numeric' });
+  return `<div class="kv"><span>Aktualne</span><b>${fmt(cnt.aktualne + cnt.nowe)}</b></div><div class="kv"><span>w tym nowe</span><b>${fmt(cnt.nowe)}</b></div><div class="kv"><span>Nieaktualne (zostają w bazie)</span><b>${fmt(cnt.nieaktualne)}</b></div><div class="kv"><span>Z linkiem do ogłoszenia</span><b>${fmt(S.offers.filter(o => o.url).length)}</b></div>
+    ${z.length ? `<div class="eyebrow" style="margin:12px 0 4px">Ostatnie zebrania</div>${z.slice(-4).reverse().map(x => `<div class="kv"><span>${d(x.ts)} · ${x.pelne ? 'pełny przegląd' : 'częściowe'}</span><b>${fmt(x.n)}</b></div>`).join('')}` : '<p class="tiny muted" style="margin:8px 0 0">Brak zapisanych zebrań. Pierwsze zebranie ofert oznaczy wszystkie jako aktualne.</p>'}
+    <p class="tiny muted" style="margin:8px 0 0">Oferta „nieaktualna” to taka, której nie było w ostatnim pełnym przeglądzie portalu. Zostaje w bazie i nadal pomaga w wycenie.</p>`;
+}
+S.of = { status: '', pokoje: '', metraz: '', dz: '', attrs: [], parking: '', lim: 60 };
+const PARK_F = [['', 'Dowolny'], ['wliczony', 'W cenie czynszu'], ['dodatkowo', 'Osobno płatny'], ['brak', 'Bez parkingu']];
+function viewOferty() {
+  const f = S.of, st = statusFn();
+  const chips = (key, opts) => `<div class="chips" data-of="${key}">${opts.map(([val, n]) => `<button type="button" class="chip ${String(f[key]) === String(val) ? 'on' : ''}" data-v="${val}">${n}</button>`).join('')}</div>`;
+  const dz = [...new Set(S.offers.map(o => o.dzielnica).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pl'));
+  const html = head('Oferty', 'Ogłoszenia najmu w bazie') + safeBanner() + `
+  <div class="card"><div id="of-filters">
+    <div class="field"><span>Status</span>${chips('status', [['', 'Wszystkie'], ['nowe', 'Nowe'], ['aktualne', 'Aktualne'], ['nieaktualne', 'Nieaktualne']])}</div>
+    <div class="field"><span>Liczba pokoi</span>${chips('pokoje', [['', 'Wszystkie'], ['1', '1 pokój'], ['2', '2 pokoje'], ['3', '3 i więcej']])}</div>
+    <div class="field"><span>${M2S.mieszkanie[0]}</span>${chips('metraz', M2S.mieszkanie[1])}</div>
+    <div class="field"><span>Dzielnica</span><select class="in" id="of-dz"><option value="">Wszystkie</option>${dz.map(d => `<option ${f.dz === d ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select></div>
+    <div class="field"><span>Cechy (oferta musi mieć wszystkie zaznaczone)</span><div class="chips" data-ofa>${ATTRS.filter(a => a[0] !== 'garaz').map(([k, n]) => `<button type="button" class="chip ${f.attrs.includes(k) ? 'on' : ''}" data-v="${k}">${n.replace(/ \(.*\)/, '')}</button>`).join('')}</div></div>
+    <div class="field"><span>Parking / garaż</span>${chips('parking', PARK_F)}</div>
+  </div></div>
+  <div class="card" id="of-list"></div>`;
+  return [html, v => {
+    const draw = () => {
+      const [r0, r1] = rangeOf(f.metraz), ord = { nowe: 0, aktualne: 1, nieaktualne: 2 };
+      const all = S.offers.map(o => [o, st(o)]);
+      const rows = all.filter(([o, s]) => (!f.status || s === f.status) && (f.pokoje === '' || (f.pokoje === '3' ? o.pokoje >= 3 : o.pokoje === +f.pokoje)) && (!f.metraz || (o.m2 >= r0 && o.m2 < r1)) && (!f.dz || o.dzielnica === f.dz)
+        && f.attrs.every(k => o.attrs && o.attrs[k] === 1) && (!f.parking || (o.parking && o.parking.stan === f.parking))).sort((a, b) => ord[a[1]] - ord[b[1]] || (b[0].ts || 0) - (a[0].ts || 0));
+      const shown = rows.slice(0, f.lim);
+      const row = ([o, s]) => {
+        const title = esc([o.ulica, o.dzielnica].filter(Boolean).join(', ') || 'Oferta najmu'), pk = parkNote(o.parking);
+        const meta = `${String(o.m2).replace('.', ',')} m² · ${o.pokoje} pok.${o.pietro != null ? ' · ' + (o.pietro === 0 ? 'parter' : o.pietro + '. p.') : ''}${o.czynsz ? ' · czynsz adm. ' + fmt(o.czynsz) + ' zł' : ''}`;
+        const badges = `${s !== 'aktualne' ? `<i class="bd ${s}">${s}</i>` : ''}${pk ? `<i class="bd park">${esc(pk)}</i>` : ''}${o.flagi && o.flagi.length ? '<i class="bd warn">podejrzana</i>' : ''}`;
+        const inner = `<div class="t"><b>${title}</b>${o.url ? '<span class="ext" aria-hidden="true">↗</span>' : ''}</div><div class="p">${fmt(o.cena)} zł</div><div class="m">${meta}</div><div class="b">${badges}</div>`;
+        return `<div class="orow ${o.wlaczone === false ? 'dis' : ''}">${o.url ? `<a class="oin" href="${esc(o.url)}" target="_blank" rel="noopener noreferrer">${inner}</a>` : `<div class="oin">${inner}</div>`}<button type="button" class="otg" data-id="${o.id}" aria-label="${o.wlaczone === false ? 'Włącz ofertę do wycen' : 'Wyłącz ofertę z wycen'}">${o.wlaczone === false ? 'wyłączona' : 'w wycenach'}</button></div>`;
+      };
+      $('#of-list', v).innerHTML = S.offers.length ? `<div class="eyebrow">Pokazano ${fmt(shown.length)} z ${fmt(rows.length)} (w bazie ${fmt(S.offers.length)})</div>${shown.map(row).join('') || '<p class="small muted" style="margin:10px 0 0">Żadna oferta nie spełnia filtrów.</p>'}${rows.length > shown.length ? `<div class="gap"></div><button class="btn ghost" id="of-more">Pokaż więcej</button>` : ''}`
+        : '<div class="empty"><b>Brak ofert</b><span>Dodaj oferty w zakładce Dane.</span></div>';
+      $$('.otg', v).forEach(b => b.onclick = () => { const o = S.offers.find(x => x.id === b.dataset.id); o.wlaczone = o.wlaczone === false; save.offers(); draw(); });
+      const more = $('#of-more', v); if (more) more.onclick = () => { f.lim += 60; draw(); };
+    };
+    $$('[data-of]', v).forEach(g => $$('button', g).forEach(b => b.onclick = () => { f[g.dataset.of] = b.dataset.v; f.lim = 60; $$('button', g).forEach(x => x.classList.toggle('on', x === b)); draw(); }));
+    $$('[data-ofa] button', v).forEach(b => b.onclick = () => { const i = f.attrs.indexOf(b.dataset.v); i < 0 ? f.attrs.push(b.dataset.v) : f.attrs.splice(i, 1); b.classList.toggle('on', i < 0); f.lim = 60; draw(); });
+    $('#of-dz', v).onchange = e => { f.dz = e.target.value; f.lim = 60; draw(); };
+    draw();
+  }];
+}
+
 /* ---------- DANE ---------- */
 function viewDane() {
   const n = S.offers.length, fl = S.offers.filter(o => o.flagi && o.flagi.length).length, off = S.offers.filter(o => o.wlaczone === false).length;
   const meta = S.rcn?.meta;
-  const list = S.offers.slice().reverse().slice(0, 40);
   const html = head('Dane', 'Źródła i import') + safeBanner() + `
   <div class="card"><div class="eyebrow">Oferty najmu</div><div class="kv"><span>W bazie</span><b>${fmt(n)}</b></div><div class="kv"><span>Podejrzane (pominięte)</span><b>${fl}</b></div><div class="kv"><span>Wyłączone ręcznie</span><b>${off}</b></div>
     <div class="gap"></div><button class="btn" data-act="pdf">Wgraj PDF z ofertami</button><div class="gap"></div><button class="btn ghost" data-act="paste">Wklej tekst ofert</button>
@@ -322,8 +418,7 @@ function viewDane() {
   <div class="card"><div class="eyebrow">Transakcje (RCN)</div>${meta ? `<div class="kv"><span>Lokale (mieszkania, użytkowe, garaże): rekordów</span><b>${fmt(S.tx.length)}</b></div><div class="kv"><span>Domy, obiekty i grunty: transakcji</span><b>${fmt(S.inne.length)}</b></div><div class="kv"><span>Pobrano</span><b>${esc(meta.pobrano || '—')}</b></div><div class="kv"><span>Bez współrzędnych</span><b>${fmt((meta.bez_wspolrzednych ?? 0) + (S.rcnInne?.meta?.bez_wspolrzednych ?? 0))}</b></div>${katalogHTML()}${S.rcnInne ? '' : '<p class="tiny muted" style="margin:10px 0 0">Brak pliku z domami, obiektami i gruntami. Serwer przygotuje go przy najbliższym odświeżeniu; potem użyj „Sprawdź nowe dane teraz”.</p>'}` : '<p class="muted small" style="margin:0 0 10px">Brak danych. Wygeneruj plik skryptem na serwerze (tools/rcn_export.py) i wgraj poniżej.</p>'}
     ${S.ust.rcnUrl ? '<div class="gap"></div><button class="btn ghost" data-act="rcncheck">Sprawdź nowe dane teraz</button><p class="tiny muted" style="margin:8px 0 0">Aplikacja sama sprawdza nowe dane przy każdym otwarciu (serwer odświeża je codziennie w nocy) i pobiera je na wszystkie urządzenia.</p>' : ''}<div class="gap"></div><label class="field"><span>Adres pliku z serwera</span><input class="in" id="rurl" value="${esc(S.ust.rcnUrl)}" placeholder="https://…/rcn_lublin.json"></label>
     <button class="btn" data-act="rcnurl">Pobierz z serwera</button><div class="gap"></div><button class="btn ghost" data-act="rcnfile">Wczytaj plik JSON</button><input type="file" id="frcn" accept=".json,application/json" hidden></div>
-  <div class="card"><div class="eyebrow">Oferty w bazie (ostatnie ${list.length})</div>${list.length ? list.map(o => `<button class="off ${o.wlaczone === false ? 'dis' : ''}" data-id="${o.id}"><div><b>${esc([o.ulica, o.dzielnica].filter(Boolean).join(', ') || o.tytul)}</b></div><div class="p">${fmt(o.cena)} zł</div><div class="m">${o.m2} m² · ${o.pokoje} pok.${o.pietro != null ? ' · ' + (o.pietro === 0 ? 'parter' : o.pietro + '. p.') : ''}${o.czynsz ? ' · czynsz ' + fmt(o.czynsz) : ''}</div><div class="m" style="text-align:right">${fmt(o.cena / o.m2)} zł/m²</div>${o.flagi?.length ? `<div class="flag">⚠ ${esc(o.flagi.join(', ').replace(/_/g, ' '))}</div>` : ''}</button>`).join('') : '<div class="empty">Brak ofert.</div>'}
-    ${list.length ? '<p class="tiny muted" style="margin:8px 0 0">Dotknij ofertę, aby ją wyłączyć lub włączyć w wycenach.</p>' : ''}</div>
+  <div class="card"><div class="eyebrow">Oferty w bazie</div>${zebrania()}<div class="gap"></div><a class="btn ghost" href="#/oferty" style="display:block;text-align:center;text-decoration:none">Pokaż listę ofert (${fmt(n)})</a></div>
   <div class="card"><div class="eyebrow">Kopia zapasowa</div><p class="small muted" style="margin-top:0">Oferty, historia wycen i pamięć lat budowy (bez danych RCN).</p><div class="row"><button class="btn ghost" data-act="exp">Zapisz kopię</button><button class="btn ghost" data-act="imp">Przywróć</button></div><input type="file" id="fbak" accept=".json,application/json" hidden>
     <div class="gap"></div><button class="btn danger" data-act="clear">Usuń wszystkie oferty</button></div>`;
   return [html, v => {
@@ -333,7 +428,6 @@ function viewDane() {
     $('[data-act="paste"]', v).onclick = pasteSheet;
     $('[data-act="own"]', v).onclick = () => ownSheet(null);
     $$('[data-own]', v).forEach(b => b.onclick = () => ownSheet(b.dataset.own));
-    $$('.off', v).forEach(b => b.onclick = () => { const o = S.offers.find(x => x.id === b.dataset.id); o.wlaczone = o.wlaczone === false; save.offers(); b.classList.toggle('dis', o.wlaczone === false); });
     $('[data-act="rcnurl"]', v).onclick = async () => { const u = $('#rurl', v).value.trim(); if (!u) return toast('Wpisz adres pliku'); S.ust.rcnUrl = u; save.ust(); toast('Pobieram…'); try { const r = await fetch(u, { cache: 'no-store' }); if (!r.ok) throw new Error('HTTP ' + r.status); await setRcn(await r.json(), true); try { const r2 = await fetch(innePath(u), { cache: 'no-store' }); if (r2.ok) await setRcnInne(await r2.json(), true); } catch {} toast(`Wczytano ${fmt(S.tx.length)} lokali${S.inne.length ? ' i ' + fmt(S.inne.length) + ' domów, obiektów i gruntów' : ''}`); render(); } catch (e) { toast('Nie udało się: ' + e.message); } };
     const rc = $('[data-act="rcncheck"]', v); if (rc) rc.onclick = () => checkRcn(true);
     const fr = $('#frcn', v); $('[data-act="rcnfile"]', v).onclick = () => fr.click(); fr.onchange = async () => { try { await setRcn(JSON.parse(await fr.files[0].text())); } catch (e) { toast('Błędny plik: ' + e.message); } };
@@ -386,23 +480,18 @@ const importFilter = new Set();
 function confirmImport(found, srcNote) {
   const { neu, dup, flagged } = offerSummary(found);
   importFilter.clear();
-  openSheet(`<h3>Wynik odczytu</h3><p class="small muted">${esc(srcNote)}</p><div class="kv"><span>Odczytano ofert</span><b>${found.length}</b></div><div class="kv"><span>Nowych do dodania</span><b>${neu.length}</b></div><div class="kv"><span>Już w bazie / powtórzone</span><b>${dup}</b></div><div class="kv"><span>Podejrzane (zostaną pominięte w wycenach)</span><b>${flagged}</b></div>
+  openSheet(`<h3>Wynik odczytu</h3><p class="small muted">${esc(srcNote)}</p><div class="kv"><span>Odczytano ofert</span><b>${found.length}</b></div><div class="kv"><span>Nowych do dodania</span><b>${neu.length}</b></div><div class="kv"><span>Już w bazie (zostaną odświeżone) / powtórzone</span><b>${dup}</b></div><div class="kv"><span>Podejrzane (zostaną pominięte w wycenach)</span><b>${flagged}</b></div>
     <div class="field"><span>Czy ta lista była wyszukana z filtrem? (jeśli tak, zaznacz)</span><div class="chips" id="flt">${ATTRS.map(([k, n]) => `<button type="button" class="chip" data-v="${k}">${n}</button>`).join('')}</div></div>
-    <p class="tiny muted">Przy filtrze wszystkie oferty z tej listy dostają zaznaczoną cechę, a oferty z bazy z tego samego dnia, których na liście nie ma, dostają jej brak. Dzięki temu aplikacja może zmierzyć, ile ta cecha jest warta.</p>
+    <label class="chk" style="display:flex;gap:10px;align-items:flex-start;margin:10px 0"><input type="checkbox" id="full"><span class="small">To pełny przegląd: wszystkie oferty najmu z portalu, bez filtra. Oferty z bazy, których tu nie ma, dostaną status „nieaktualne”.</span></label>
+    <p class="tiny muted">Przy filtrze wszystkie oferty z tej listy dostają zaznaczoną cechę, a oferty z bazy z tego samego zebrania, których na liście nie ma, dostają jej brak. Dzięki temu aplikacja może zmierzyć, ile ta cecha jest warta.</p>
     <p class="tiny muted">To ceny ofertowe z ogłoszeń. Aplikacja zapisuje tylko dane techniczne (cena, metraż, pokoje, piętro, lokalizacja), bez zdjęć, opisów i danych kontaktowych.</p>
-    <button class="btn" id="ok" ${neu.length ? '' : 'disabled'}>Dodaj ${neu.length} ofert do bazy</button><div class="gap"></div><button class="btn ghost" id="no">Anuluj</button>`, p => {
+    <button class="btn" id="ok" ${found.length ? '' : 'disabled'}>Dodaj ${neu.length} ofert do bazy</button><div class="gap"></div><button class="btn ghost" id="no">Anuluj</button>`, p => {
     $('#no', p).onclick = closeSheet;
-    const okb = $('#ok', p), lbl = () => { okb.disabled = !(neu.length || importFilter.size); okb.textContent = importFilter.size ? `Oznacz oferty z listy${neu.length ? ' i dodaj ' + neu.length + ' nowych' : ''}` : `Dodaj ${neu.length} ofert do bazy`; };
+    const okb = $('#ok', p), lbl = () => { okb.disabled = !found.length; okb.textContent = importFilter.size ? `Oznacz oferty z listy${neu.length ? ' i dodaj ' + neu.length + ' nowych' : ''}` : `Dodaj ${neu.length} ofert do bazy`; };
     $$('#flt button', p).forEach(b => b.onclick = () => { const k = b.dataset.v; importFilter.has(k) ? importFilter.delete(k) : importFilter.add(k); b.classList.toggle('on', importFilter.has(k)); lbl(); });
     $('#ok', p).onclick = () => {
-      const t = Date.now(); const keys = new Set(found.map(offerKey)); let marked = 0, negs = 0;
-      const recent = o => t - (o.ts || 0) < 3 * 86400000;                              // ta sama migawka rynku: oferty zaimportowane w ostatnich 3 dniach
-      S.offers.push(...neu.map(r => ({ ...r, id: uid(), typ: 'najem', ts: t, wlaczone: true })));
-      for (const k of importFilter) for (const o of S.offers) {
-        const inList = keys.has(offerKey(o)); o.attrs = o.attrs || {};
-        if (inList) { if (o.attrs[k] !== 1) marked++; o.attrs[k] = 1; } else if (recent(o) && o.attrs[k] === undefined) { o.attrs[k] = 0; negs++; }
-      }
-      save.offers(); closeSheet(); toast(importFilter.size ? `Dodano ${neu.length} ofert, oznaczono ${marked} jako z cechą` : `Dodano ${neu.length} ofert`); render();
+      const r = applyCollection(found, { pelne: $('#full', p).checked && !importFilter.size, attrs: [...importFilter] });
+      closeSheet(); toast(`Dodano ${r.added}, odświeżono ${r.updated}`); render();
     };
   });
 }
@@ -621,5 +710,5 @@ load().then(() => {
     navigator.serviceWorker.addEventListener('controllerchange', () => { if (had && !done) { done = true; location.reload(); } });   // nowa wersja przejęła kontrolę: odśwież raz
     navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => { });
   }
-  window.__am = { S, render, go, sync, checkRcn, getMap: () => mapCtl };
+  window.__am = { S, render, go, sync, checkRcn, getMap: () => mapCtl, importOffers: (found, opt) => applyCollection(found, opt), statusFn };
 });
