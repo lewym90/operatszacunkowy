@@ -16,8 +16,25 @@ export const THRESH = {
 const norm = s => (s || '').toString().toLowerCase()
   .normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ł/g, 'l')
   .replace(/^(ul\.|al\.|pl\.|os\.|ulica|aleja|plac|osiedle)\s+/i, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
-export const normStreet = norm;
-export const addrKey = (ulica, nr) => norm(ulica) + '|' + norm(nr);
+// Klucz ulicy: rdzeń nazwy bez typu (ul., al., os.), tytułów i imion: „Ks. Wincentego Granata” = „Granata”.
+const MONTHS = new Set(['stycznia', 'lutego', 'marca', 'kwietnia', 'maja', 'czerwca', 'lipca', 'sierpnia', 'wrzesnia', 'pazdziernika', 'listopada', 'grudnia']);
+const ST_TYPE = new Set(['ul', 'al', 'aleja', 'aleje', 'pl', 'plac', 'os', 'osiedle', 'rondo', 'skwer', 'bulwar', 'droga', 'ulica']);
+export function streetKey(s) {
+  let t = norm(s).split(' ').filter(Boolean);
+  while (t.length > 1 && ST_TYPE.has(t[0])) t.shift();
+  // numer domu na końcu („Okrzei 12”, „Nałęczowska 16a”) nie należy do nazwy; wyjątek: „Lipca 80”, „3 Maja”
+  while (t.length > 1 && /^\d+[a-z]?$/.test(t[t.length - 1]) && !MONTHS.has(t[t.length - 2])) t.pop();
+  if (t.length <= 1) return t.join(' ');
+  const last = t[t.length - 1];
+  if (/^\d+[a-z]?$/.test(last) || /^[ivx]+$/.test(last) || MONTHS.has(last) || last.length <= 2) return t.slice(-2).join(' ');
+  return last;
+}
+export const normStreet = streetKey;
+export const normDz = norm;
+export const addrKey = (ulica, nr) => streetKey(ulica) + '|' + norm(nr);
+// klucz zapisany w starej postaci (pełna nazwa ulicy) -> nowa postać
+export const migrateAddrKey = k => { const i = k.lastIndexOf('|'); return i < 0 ? k : streetKey(k.slice(0, i)) + k.slice(i); };
+
 
 export function wquantile(items, q) {            // items: [{v,w}] — kwantyl ważony (pozycje w połowie wag)
   const a = items.slice().sort((x, y) => x.v - y.v);
@@ -186,7 +203,7 @@ export function estimateRent(offers, subject) {
     if (Math.abs(o.pokoje - subject.pokoje) > 1) return null;
     const sameDz = subject.dzielnica && norm(o.dzielnica) === norm(subject.dzielnica);
     if (dzOnly && !sameDz) return null;
-    const sameSt = subject.ulica && o.ulica && norm(o.ulica) === norm(subject.ulica);
+    const sameSt = subject.ulica && o.ulica && streetKey(o.ulica) === streetKey(subject.ulica);
     const loc = sameSt ? 1 : sameDz ? 0.9 : 0.35;
     let w = loc * sizeScore(o.m2, subject.m2) * roomScore(o.pokoje, subject.pokoje) * floorScore(o.pietro, subject.pietro);
     const t = o.tags || segmentTags(o.tytul); let adj = 0, mism = false;
@@ -253,7 +270,7 @@ export function estimateSale(tx, subject, opts = {}) {
     const same = tx.filter(t => t.lat != null && addrKey(t.ulica, t.nr) === k);
     if (same.length) { subLL = avgLL(same); llKind = 'ten sam budynek w RCN'; }
     else {
-      const st = tx.filter(t => t.lat != null && norm(t.ulica) === norm(subject.ulica));
+      const st = tx.filter(t => t.lat != null && streetKey(t.ulica) === streetKey(subject.ulica));
       if (st.length >= 3) { subLL = avgLL(st); llKind = 'środek ulicy wg RCN (przybliżone)'; }
     }
   }
@@ -271,7 +288,7 @@ export function estimateSale(tx, subject, opts = {}) {
       const d = haversine(subLL, [t.lat, t.lon]);
       loc = d < 0.3 ? 1 : d < 0.8 ? 0.85 : d < 1.5 ? 0.65 : d < 3 ? 0.4 : 0.15; local = d < 1.5;
       same = subject.ulica && addrKey(t.ulica, t.nr) === addrKey(subject.ulica, subject.nr);
-    } else if (subject.ulica) { same = norm(t.ulica) === norm(subject.ulica); loc = same ? 1 : 0.3; local = same; }
+    } else if (subject.ulica) { same = streetKey(t.ulica) === streetKey(subject.ulica); loc = same ? 1 : 0.3; local = same; }
     else loc = 0.3;
     const rec = ageY <= 1 ? 1 : ageY <= 2 ? 0.85 : ageY <= 3 ? 0.7 : 0.55;
     const ybuild = yearOfBuilding(addrKey(t.ulica, t.nr));
@@ -312,7 +329,7 @@ export function estimateSaleKat(tx, subject, opts = {}) {
   if (!subLL && subject.ulica) {
     const k = addrKey(subject.ulica, subject.nr), same = geo.filter(t => t.lat != null && addrKey(t.ulica, t.nr) === k);
     if (same.length) { subLL = avgLL(same); llKind = 'ten sam adres w RCN'; }
-    else { const st = geo.filter(t => t.lat != null && norm(t.ulica) === norm(subject.ulica)); if (st.length >= 3) { subLL = avgLL(st); llKind = 'środek ulicy wg RCN (przybliżone)'; } }
+    else { const st = geo.filter(t => t.lat != null && streetKey(t.ulica) === streetKey(subject.ulica)); if (st.length >= 3) { subLL = avgLL(st); llKind = 'środek ulicy wg RCN (przybliżone)'; } }
   }
   const ageOf = t => { const w = (t.ts && t.ts <= nowTs) ? t.ts : (t.rok ? Date.UTC(t.rok, 6, 1) : null); return w == null ? 99 : Math.max(0, (nowTs - w) / 31557600000); };
   const build = (years) => base.map(t => {
@@ -324,7 +341,7 @@ export function estimateSaleKat(tx, subject, opts = {}) {
       const d = haversine(subLL, [t.lat, t.lon]);
       loc = d < 0.3 ? 1 : d < 0.8 ? 0.85 : d < 1.5 ? 0.65 : d < 3 ? 0.4 : d < 6 ? 0.25 : d < 12 ? 0.15 : 0.08; local = d < 1.5;
       same = !!subject.ulica && addrKey(t.ulica, t.nr) === addrKey(subject.ulica, subject.nr);
-    } else if (subject.ulica) { same = norm(t.ulica) === norm(subject.ulica); loc = same ? 1 : 0.3; local = same; }
+    } else if (subject.ulica) { same = streetKey(t.ulica) === streetKey(subject.ulica); loc = same ? 1 : 0.3; local = same; }
     const rec = ageY <= 1 ? 1 : ageY <= 2 ? 0.85 : ageY <= 3 ? 0.7 : ageY <= 5 ? 0.55 : 0.4;
     const pod = subject.pod && t.pod ? (subject.pod === t.pod ? 1 : 0.5) : 0.9;
     const plot = kat === 'dom' && subject.dzm2 && t.dzm2 ? 0.6 + 0.4 * sizeLog(t.dzm2, subject.dzm2, 3) : 1;
@@ -393,9 +410,9 @@ export function crossCheckRent(offers, tx, subject, rentRes, opts = {}) {
   out.sizeEffect = { rent: bR, sale: bS };
   // --- przypisanie dzielnic transakcjom: punkty (ulica -> środek wg RCN) z dzielnicą znaną z ofert
   const streetPts = new Map();
-  for (const t of sales) if (t.ulica && t.lat != null) { const k = norm(t.ulica), p = streetPts.get(k) || streetPts.set(k, { la: 0, lo: 0, n: 0 }).get(k); p.la += t.lat; p.lo += t.lon; p.n++; }
+  for (const t of sales) if (t.ulica && t.lat != null) { const k = streetKey(t.ulica), p = streetPts.get(k) || streetPts.set(k, { la: 0, lo: 0, n: 0 }).get(k); p.la += t.lat; p.lo += t.lon; p.n++; }
   const known = []; const seenSt = new Set();
-  for (const o of rents) if (o.ulica && o.dzielnica) { const k = norm(o.ulica), d = norm(o.dzielnica), key = k + '|' + d, p = streetPts.get(k); if (p && p.n >= 2 && !seenSt.has(key)) { seenSt.add(key); known.push({ la: p.la / p.n, lo: p.lo / p.n, d }); } }
+  for (const o of rents) if (o.ulica && o.dzielnica) { const k = streetKey(o.ulica), d = norm(o.dzielnica), key = k + '|' + d, p = streetPts.get(k); if (p && p.n >= 2 && !seenSt.has(key)) { seenSt.add(key); known.push({ la: p.la / p.n, lo: p.lo / p.n, d }); } }
   const D = new Map(), get = d => D.get(d) || D.set(d, { rent: [], sale: [] }).get(d);
   for (const o of rents) if (o.dzielnica) get(norm(o.dzielnica)).rent.push(stdR(o));
   let assigned = 0;
@@ -421,8 +438,8 @@ export function crossCheckRent(offers, tx, subject, rentRes, opts = {}) {
   } else {
     // zapasowo: ulice (wymaga ulicy w ofertach i transakcjach)
     const S = new Map(), R = new Map();
-    for (const t of sales) if (t.ulica) { const k = norm(t.ulica); (S.get(k) || S.set(k, []).get(k)).push(stdS(t)); }
-    for (const o of rents) if (o.ulica) { const k = norm(o.ulica); (R.get(k) || R.set(k, []).get(k)).push(stdR(o)); }
+    for (const t of sales) if (t.ulica) { const k = streetKey(t.ulica); (S.get(k) || S.set(k, []).get(k)).push(stdS(t)); }
+    for (const o of rents) if (o.ulica) { const k = streetKey(o.ulica); (R.get(k) || R.set(k, []).get(k)).push(stdR(o)); }
     pairs = []; for (const [k, rs] of R) { const ss = S.get(k); if (ss && ss.length >= 3 && rs.length >= 2) pairs.push({ d: k, rent: median(rs), sale: median(ss), nr: rs.length, ns: ss.length }); }
     unit = 'ulic';
     if (pairs.length < 8) { out.pairs = pairs.length; out.unit = unit; out.reason = `Za mało miejsc, w których mamy jednocześnie oferty najmu i transakcje, żeby zmierzyć związek czynszu z ceną kupna (dzielnic: ${dp.length}, ulic: ${pairs.length}; minimum 8). Dodawaj oferty najmu, najlepiej z ulicą.`; return out; }
@@ -449,22 +466,22 @@ export function crossCheckRent(offers, tx, subject, rentRes, opts = {}) {
 // ---------- DZIELNICA Z ULICY ----------
 // 1) oferty z tą samą ulicą (dzielnica większościowa); 2) położenie ulicy wg RCN i najbliższe ulice, dla których dzielnicę znamy z ofert.
 export function inferDistrict(offers, tx, ulica) {
-  const k = norm(ulica); if (!k) return null;
+  const k = streetKey(ulica); if (!k) return null;
   const names = new Map(); const label = d => { const n = norm(d); if (!names.has(n)) names.set(n, d); return n; };
-  const same = offers.filter(o => o.ulica && o.dzielnica && norm(o.ulica) === k);
+  const same = offers.filter(o => o.ulica && o.dzielnica && streetKey(o.ulica) === k);
   if (same.length) {
     const c = new Map(); same.forEach(o => { const n = label(o.dzielnica); c.set(n, (c.get(n) || 0) + 1); });
     const [top, cnt] = [...c.entries()].sort((a, b) => b[1] - a[1])[0];
     if (cnt / same.length >= 0.6) return { name: names.get(top), source: 'oferty', n: same.length, share: cnt / same.length };
   }
   if (!tx || !tx.length) return null;
-  const mine = tx.filter(t => t.lat != null && norm(t.ulica) === k);
+  const mine = tx.filter(t => t.lat != null && streetKey(t.ulica) === k);
   if (mine.length < 2) return null;
   const ctr = [mine.reduce((a, t) => a + t.lat, 0) / mine.length, mine.reduce((a, t) => a + t.lon, 0) / mine.length];
   const pts = new Map();
-  for (const t of tx) if (t.lat != null && t.ulica) { const kk = norm(t.ulica), p = pts.get(kk) || pts.set(kk, { la: 0, lo: 0, n: 0 }).get(kk); p.la += t.lat; p.lo += t.lon; p.n++; }
+  for (const t of tx) if (t.lat != null && t.ulica) { const kk = streetKey(t.ulica), p = pts.get(kk) || pts.set(kk, { la: 0, lo: 0, n: 0 }).get(kk); p.la += t.lat; p.lo += t.lon; p.n++; }
   const known = []; const seen = new Set();
-  for (const o of offers) if (o.ulica && o.dzielnica) { const kk = norm(o.ulica), key = kk + '|' + norm(o.dzielnica), p = pts.get(kk); if (p && p.n >= 2 && !seen.has(key)) { seen.add(key); known.push({ la: p.la / p.n, lo: p.lo / p.n, d: label(o.dzielnica) }); } }
+  for (const o of offers) if (o.ulica && o.dzielnica) { const kk = streetKey(o.ulica), key = kk + '|' + norm(o.dzielnica), p = pts.get(kk); if (p && p.n >= 2 && !seen.has(key)) { seen.add(key); known.push({ la: p.la / p.n, lo: p.lo / p.n, d: label(o.dzielnica) }); } }
   const near = known.map(x => ({ d: x.d, km: haversine(ctr, [x.la, x.lo]) })).filter(x => x.km <= 2).sort((a, b) => a.km - b.km).slice(0, 5);
   if (!near.length) return null;
   const w = new Map(); near.forEach(x => w.set(x.d, (w.get(x.d) || 0) + 1 / (x.km + 0.2)));

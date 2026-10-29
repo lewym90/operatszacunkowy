@@ -1,5 +1,5 @@
 import * as store from './store.js';
-import { estimateRent, estimateSale, estimateSaleKat, parkingExtra, crossCheckRent, inferDistrict, ATTRS, learnPremiums, grossYield, addrKey, normStreet, YEAR_BANDS, yearBand } from './engine.js';
+import { estimateRent, estimateSale, estimateSaleKat, parkingExtra, crossCheckRent, inferDistrict, ATTRS, learnPremiums, grossYield, addrKey, migrateAddrKey, normStreet, normDz, YEAR_BANDS, yearBand } from './engine.js';
 import { rcnToObjects, inneToObjects, katalog, KAT, KAT_ORDER, POD_TXT } from './rcn.js';
 import { linesFromPdf, offersFromLines, offerKey } from './pdfimport.js';
 import { flags as offerFlags } from './parseOtodom.js';
@@ -8,7 +8,7 @@ import { buildReport, makePdf } from './report.js';
 import { createSync, DEFAULT_URL, encodeCode, decodeCode } from './sync.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer } from './mapa.js';
 
-const VERSION = '1.11.3';
+const VERSION = '1.11.4';
 const S = { wlasne: [],
   offers: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -36,6 +36,7 @@ async function safeOff() { S.safe = false; armBoot(); S.rcn = await store.get('r
 document.addEventListener('click', e => { if (e.target.closest('[data-act="safeoff"]')) safeOff(); });
 async function load() {
   S.wlasne = await store.get('wlasne', []); S.offers = await store.get('offers', []); S.budynki = await store.get('budynki', {}); S.wyceny = await store.get('wyceny', []);
+  { const m = {}; let ch = false; for (const [k, v] of Object.entries(S.budynki)) { const nk = migrateAddrKey(k); if (nk !== k) ch = true; m[nk] = v; } if (ch) { S.budynki = m; store.set('budynki', m); } }
   S.ust = { ...S.ust, ...(await store.get('ust', {})) }; S.rcn = S.safe ? null : await store.get('rcn', null); S.rcnInne = S.safe ? null : await store.get('rcnInne', null); setTx();
 }
 function setTx() {
@@ -154,6 +155,17 @@ function viewWycena() {
     }));
     $$('[data-multi]', v).forEach(g => $$('button', g).forEach(b => b.onclick = () => { const k = g.dataset.multi, a = S.form[k] || (S.form[k] = []), i = a.indexOf(b.dataset.v); i < 0 ? a.push(b.dataset.v) : a.splice(i, 1); b.classList.toggle('on', i < 0); }));
     $$('[data-chips]', v).forEach(g => $$('button', g).forEach(b => b.onclick = () => { S.form[g.dataset.chips] = b.dataset.v; $$('button', g).forEach(x => x.classList.toggle('on', x === b)); }));
+    const ulI = $('[name="ulica"]', v), dzI = $('[name="dzielnica"]', v);
+    if (ulI && dzI) {                                            // najem mieszkania: dzielnica dopisuje się od razu po wpisaniu ulicy
+      const hint = document.createElement('small'); hint.className = 'tiny muted'; hint.style.display = 'block'; dzI.parentElement.appendChild(hint);
+      const fill = () => {
+        const u = ulI.value.trim(); if (!u || (dzI.value.trim() && dzI.dataset.auto !== '1')) return;
+        const inf = inferDistrict(allOffers(), S.tx, u);
+        if (inf) { dzI.value = inf.name; dzI.dataset.auto = '1'; hint.textContent = 'Dopisano automatycznie z ulicy. Możesz zmienić.'; } else if (dzI.dataset.auto === '1') { dzI.value = ''; dzI.dataset.auto = ''; hint.textContent = ''; }
+      };
+      ulI.addEventListener('change', fill); ulI.addEventListener('blur', fill); dzI.addEventListener('input', () => { dzI.dataset.auto = ''; hint.textContent = ''; });
+      if (ulI.value.trim() && !dzI.value.trim()) fill();
+    }
     $('#f', v).onsubmit = e => { e.preventDefault(); readForm(v); submitForm(); };
   }];
 }
@@ -181,7 +193,7 @@ function submitForm() {
     if (inf) {
       const src = inf.source === 'oferty' ? `ofert z tej ulicy (${inf.n})` : `położenia ulicy wg RCN i najbliższych ulic ze znaną dzielnicą (${inf.n}, najbliższa ${inf.km.toFixed(1).replace('.', ',')} km)`;
       if (!subj.dzielnica) { subj.dzielnica = inf.name; dzNote = `Dzielnica ustalona automatycznie: ${inf.name}, na podstawie ${src}. Sprawdź, czy się zgadza.`; }
-      else if (normStreet(inf.name) !== normStreet(subj.dzielnica) && inf.share >= 0.7) dzNote = `Uwaga: wpisano dzielnicę ${subj.dzielnica}, a ulica ${subj.ulica} wg ${src} leży w dzielnicy ${inf.name}.`;
+      else if (normDz(inf.name) !== normDz(subj.dzielnica) && inf.share >= 0.7) dzNote = `Uwaga: wpisano dzielnicę ${subj.dzielnica}, a ulica ${subj.ulica} wg ${src} leży w dzielnicy ${inf.name}.`;
     }
   }
   if (rok && flat && f.zapamietaj && f.ulica && f.nr && f.tryb === 'sprzedaz') { S.budynki[addrKey(f.ulica, f.nr)] = rok; save.budynki(); }
