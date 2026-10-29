@@ -202,7 +202,7 @@ export function estimateRent(offers, subject) {
     if (o.own) w *= 2;                              // własna umowa biura: największa waga
     if (w < 0.12) return null;
     const pm2raw = o.cena / o.m2, pm2 = pm2raw * Math.exp(adj);
-    return { id: o.id, kind: 'oferta', pm2, pm2raw, adjPct: Math.exp(adj) - 1, tags: t, cena: o.cena, czynsz: o.czynsz, m2: o.m2, pokoje: o.pokoje, pietro: o.pietro,
+    return { id: o.id, kind: 'oferta', url: o.url || null, pm2, pm2raw, adjPct: Math.exp(adj) - 1, tags: t, cena: o.cena, czynsz: o.czynsz, m2: o.m2, pokoje: o.pokoje, pietro: o.pietro,
       opis: [o.ulica || '', o.dzielnica || ''].filter(Boolean).join(', '), tytul: o.tytul, sprzedawca: o.sprzedawca, own: !!o.own, meble: o.meble, w, local: sameDz || sameSt, src: o.own ? 'własna umowa' : 'ogłoszenia (ceny ofertowe)' };
   }).filter(Boolean).sort((a, b) => b.w - a.w).slice(0, 30);
   let sc = build(0.3, true);

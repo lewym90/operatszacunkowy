@@ -8,7 +8,7 @@ import { buildReport, makePdf } from './report.js';
 import { createSync, DEFAULT_URL, encodeCode, decodeCode } from './sync.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer } from './mapa.js';
 
-const VERSION = '1.11.0';
+const VERSION = '1.11.1';
 const S = { wlasne: [],
   offers: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -265,7 +265,7 @@ function viewWynik(p) {
 const subj_m2 = e => e.subj.m2;
 function compHTML(c, i, sale) {
   const w = Math.max(6, Math.round(c.w * 100));
-  return `<div class="comp" style="animation-delay:${Math.min(i, 12) * 40}ms"><div><b>${esc(c.opis || '—')}</b>${c.sameBuilding ? '<span class="badge g">ten sam budynek</span>' : ''}${c.own ? '<span class="badge g">własna umowa</span>' : ''}<span class="badge">${c.kind}</span></div><div class="p">${fmt(c.cena)} zł</div>
+  return `<div class="comp" style="animation-delay:${Math.min(i, 12) * 40}ms"><div>${c.url ? `<a class="clink" href="${esc(c.url)}" target="_blank" rel="noopener noreferrer"><b>${esc(c.opis || '—')}</b> <span class="ext" aria-hidden="true">↗</span></a>` : `<b>${esc(c.opis || '—')}</b>`}${c.sameBuilding ? '<span class="badge g">ten sam budynek</span>' : ''}${c.own ? '<span class="badge g">własna umowa</span>' : ''}<span class="badge">${c.kind}</span></div><div class="p">${fmt(c.cena)} zł</div>
     <div class="m">${String(c.m2).replace('.', ',')} m²${c.pokoje != null ? ' · ' + c.pokoje + ' pok.' : ''}${c.dzm2 ? ' · działka ' + fmt(c.dzm2) + ' m²' : ''}${c.pietro != null ? ' · ' + (c.pietro === 0 ? 'parter' : c.pietro + '. p.') : ''}${c.data ? ' · akt ' + c.data : c.rok ? ' · akt ' + c.rok : ''}${c.rokBudowy ? ' · bud. ' + c.rokBudowy : ''}</div><div class="m r">${fmt(c.pm2raw ?? c.pm2)} zł/m²${c.adjPct && Math.abs(c.adjPct) >= 0.005 ? `<br><small>po korekcie ${fmt(c.pm2)} (${c.adjPct > 0 ? '+' : '−'}${Math.abs(c.adjPct * 100).toFixed(0)}%)</small>` : ''}</div><div class="wbar"><i style="width:${w}%"></i></div></div>`;
 }
 function mapSVG(r) {

@@ -275,3 +275,4 @@ ul.clean li:first-child { border-top: 0; } ul.clean li::before { content: ''; po
 .bd { font-style: normal; font-size: 11px; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line2); color: var(--ash); }
 .bd.nowe { color: var(--gold-l); border-color: var(--gold-l); } .bd.nieaktualne { color: var(--ash); } .bd.warn { color: var(--warn); border-color: var(--warn); } .bd.park { color: var(--ink2, var(--ash)); }
 .otg { font-size: 11px; color: var(--ash); border: 1px solid var(--line2); border-radius: 99px; padding: 4px 10px; white-space: nowrap; align-self: center; }
+.clink { color: inherit; text-decoration: none; } .clink .ext { color: var(--gold-l); font-size: 13px; }

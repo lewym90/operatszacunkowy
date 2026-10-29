@@ -35,6 +35,7 @@ const SP = process.argv[2]; const assert = require('assert');
   await p.evaluate(() => { const S = window.__am.S; for (let i = 0; i < 6; i++) S.offers.push({ id: 'x' + i, typ: 'najem', ts: Date.now(), wlaczone: true, cena: 2400, pokoje: 2, m2: 40, pietro: 1, dzielnica: 'Czuby', miasto: 'Lublin', flagi: [], ost: S.ust.zebrania.at(-1).id, parking: { stan: 'dodatkowo', kwota: 200 + i * 20 }, attrs: { garaz: 0 } }); });
   await p.goto('http://localhost:8766/index.html#/wycena'); await p.waitForTimeout(600); await p.click('.seg button[data-t=najem]'); await p.waitForTimeout(400);
   await p.fill('[name=dzielnica]', 'Czuby'); await p.fill('[name=m2]', '40'); await p.click('[data-chips=parking] [data-v=osobno]'); await p.click('#f .btn'); await p.waitForTimeout(2000);
+  const nl = await p.$$eval('.comp a.clink', a => a.length); assert(nl > 0, 'linki w porównaniach'); console.log('linki w porównaniach', nl);
   const txt = await p.textContent('body'); assert(/Parking płatny osobno/.test(txt), 'karta parkingu'); await p.screenshot({ path: SP + '/shots/oferty-parking.png', fullPage: true });
   console.log('BŁĘDY:', errs.length ? errs : 'brak'); assert(!errs.length); await b.close(); srv.kill(); console.log('OK');
 })().catch(e => { console.error('TEST PADŁ', e); process.exit(1); });
