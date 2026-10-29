@@ -9,10 +9,17 @@ print('rekordów:', len(R)); print('rodzaj transakcji:', top('rodzaj')); print('
 tc = Counter(g(r, 'tran') for r in R); print('transakcje z >1 lokalem:', sum(1 for v in tc.values() if v > 1), 'z', len(tc))
 W = [r for r in R if g(r, 'rodzaj') == 'wolnyRynek' and g(r, 'funkcja') == 'mieszkalna' and (g(r, 'm2') or 0) >= 12]
 print('wolny rynek + mieszkalna:', len(W), '| z ulicą:', sum(1 for r in W if g(r, 'ulica')), '| z ceną:', sum(1 for r in W if g(r, 'cena')), '| z izbami:', sum(1 for r in W if g(r, 'izby')))
-print('lata aktów (mieszkalna, wolny rynek):', ', '.join(f"{k}={v}" for k, v in sorted(Counter(g(r, 'rok') for r in W).items())))
+print('lata aktów (mieszkalna, wolny rynek):', ', '.join(f"{k}={v}" for k, v in sorted(Counter(g(r, 'rok') for r in W).items(), key=lambda x: (x[0] is None, x[0] or 0))))
 print('piętro (kond):', ', '.join(f"{k}={v}" for k, v in sorted(Counter(g(r, 'kond') for r in W).items(), key=lambda x: (x[0] is None, x[0] or 0))[:12]))
 print('udział ≠ 1/1:', sum(1 for r in W if g(r, 'udzial') not in (None, '', '1/1')))
 pm = sorted(g(r, 'cena') / g(r, 'm2') for r in W if g(r, 'cena') and g(r, 'm2') and g(r, 'rok') in (2025, 2026))
 if pm: print('zł/m² 2025-26: 10%%=%d  mediana=%d  90%%=%d  (n=%d)' % (pm[len(pm) // 10], pm[len(pm) // 2], pm[len(pm) * 9 // 10], len(pm)))
 la = [g(r, 'lat') for r in W if g(r, 'ulica')]
 print('próbka adresów:', [(g(r, 'ulica'), g(r, 'nr')) for r in W[:: max(1, len(W) // 6)] if g(r, 'ulica')][:6])
+
+print('\n--- ceny za m² wg rodzaju transakcji i rynku (mieszkalna, 1 lokal w transakcji, akty 2025-26) ---')
+M = [r for r in R if g(r, 'funkcja') == 'mieszkalna' and tc[g(r, 'tran')] == 1 and g(r, 'cena') and (g(r, 'm2') or 0) >= 12 and g(r, 'rok') in (2025, 2026)]
+grp = {}
+for r in M: grp.setdefault((g(r, 'rodzaj'), g(r, 'rynek') or '-'), []).append(g(r, 'cena') / g(r, 'm2'))
+for k, v in sorted(grp.items(), key=lambda x: -len(x[1])):
+    v.sort(); print(f"{k[0]:34s} {k[1]:15s} n={len(v):5d}  10%={v[len(v) // 10]:6.0f}  mediana={v[len(v) // 2]:6.0f}  90%={v[len(v) * 9 // 10]:6.0f}")
