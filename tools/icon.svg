@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="g" x1="0.15" y1="0" x2="0.85" y2="1">
+      <stop offset="0" stop-color="#F3E3B3"/><stop offset=".38" stop-color="#E0C27A"/><stop offset=".7" stop-color="#C8A44D"/><stop offset="1" stop-color="#8A6C2A"/>
+    </linearGradient>
+    <linearGradient id="gu" gradientUnits="userSpaceOnUse" x1="160" y1="0" x2="352" y2="0"><stop offset="0" stop-color="#F3E3B3"/><stop offset=".5" stop-color="#D9B867"/><stop offset="1" stop-color="#B08D3C"/></linearGradient>
+    <linearGradient id="g2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#E6CE94"/><stop offset="1" stop-color="#9C7B31"/></linearGradient>
+    <radialGradient id="bg" cx="50%" cy="38%" r="75%"><stop offset="0" stop-color="#1C1B1A"/><stop offset=".55" stop-color="#101012"/><stop offset="1" stop-color="#08080A"/></radialGradient>
+    <radialGradient id="glow" cx="50%" cy="46%" r="42%"><stop offset="0" stop-color="#C8A44D" stop-opacity=".20"/><stop offset="1" stop-color="#C8A44D" stop-opacity="0"/></radialGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <rect width="512" height="512" fill="url(#glow)"/>
+  <g id="art" transform-origin="256 256">
+    <!-- pieczęć: podwójny pierścień + ząbki -->
+    <circle cx="256" cy="256" r="196" fill="none" stroke="url(#g)" stroke-width="5"/>
+    <circle cx="256" cy="256" r="182" fill="none" stroke="url(#g)" stroke-width="1.6" opacity=".7"/>
+    <circle cx="256" cy="256" r="166" fill="none" stroke="url(#g)" stroke-width="1.2" stroke-dasharray="2 7.2" opacity=".85"/>
+    <!-- dom -->
+    <path d="M148 262 L256 168 L364 262" fill="none" stroke="url(#g)" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M176 246 V332 H336 V246" fill="none" stroke="url(#g)" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M232 332 V282 a24 24 0 0 1 48 0 V332" fill="none" stroke="url(#g2)" stroke-width="8" stroke-linecap="round" opacity=".95"/>
+    <!-- linia wymiarowa = przedział -->
+    <g stroke="url(#gu)" stroke-linecap="round" fill="none">
+      <path d="M160 372 H352" stroke-width="5"/>
+      <path d="M160 358 V386 M352 358 V386" stroke-width="5"/>
+      <path d="M256 362 V382" stroke-width="3.2" opacity=".9"/>
+    </g>
+    <circle cx="256" cy="372" r="7" fill="#E6CE94"/>
+  </g>
+</svg>

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0B0B0D">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Operat szacunkowy">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="format-detection" content="telephone=no">
+<title>Operat szacunkowy</title>
+<link rel="preload" href="fonts/Marcellus-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/Archivo-400_700.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div id="splash" aria-hidden="true"><img src="icons/icon-512.png" alt=""><b>OPERAT SZACUNKOWY</b><span>AM Nieruchomości</span></div>
+<div id="glow" aria-hidden="true"></div>
+<main id="view" tabindex="-1"></main>
+<nav id="tabs" aria-label="Główna nawigacja"></nav>
+<div id="sheet" aria-hidden="true"><div class="scrim"></div><div class="pane" role="dialog" aria-modal="true"></div></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
