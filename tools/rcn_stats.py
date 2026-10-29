@@ -23,3 +23,19 @@ grp = {}
 for r in M: grp.setdefault((g(r, 'rodzaj'), g(r, 'rynek') or '-'), []).append(g(r, 'cena') / g(r, 'm2'))
 for k, v in sorted(grp.items(), key=lambda x: -len(x[1])):
     v.sort(); print(f"{k[0]:34s} {k[1]:15s} n={len(v):5d}  10%={v[len(v) // 10]:6.0f}  mediana={v[len(v) // 2]:6.0f}  90%={v[len(v) * 9 // 10]:6.0f}")
+
+if 'sprz' in I:
+    print('\n--- typ sprzedającego (mieszkalna, 1 lokal, akty 2025-26) ---')
+    g2 = {}
+    for r in M: g2.setdefault((g(r, 'rodzaj'), g(r, 'rynek') or '-', g(r, 'sprz') or '-'), []).append(g(r, 'cena') / g(r, 'm2'))
+    for k, v in sorted(g2.items(), key=lambda x: -len(x[1]))[:8]:
+        v.sort(); print(f"{k[0][:22]:22s} {k[1]:14s} {k[2]:14s} n={len(v):5d}  10%={v[len(v)//10]:6.0f}  mediana={v[len(v)//2]:6.0f}  90%={v[len(v)*9//10]:6.0f}")
+    print('\n--- data aktu ---')
+    dt = [g(r, 'data') for r in R if g(r, 'data')]
+    print('z datą:', len(dt), 'z', len(R), '| zakres:', min(dt) if dt else None, '–', max(dt) if dt else None)
+    print('ostatnie 12 miesięcy (mieszkalna, wolny rynek+pierwotny bezprzetargowa):', sum(1 for r in R if g(r, 'data') and g(r, 'data') >= '2025-11-01' and g(r, 'funkcja') == 'mieszkalna'))
+    print('\n--- ceny samego lokalu/nieruchomości ---')
+    multi = [r for r in R if tc[g(r, 'tran')] > 1 and g(r, 'funkcja') == 'mieszkalna']
+    print('mieszkalna w transakcjach wielolokalowych:', len(multi), '| z ceną lokalu:', sum(1 for r in multi if g(r, 'cena_lok')), '| z ceną nieruchomości:', sum(1 for r in multi if g(r, 'cena_nier')))
+    one = [r for r in R if tc[g(r, 'tran')] == 1 and g(r, 'funkcja') == 'mieszkalna' and g(r, 'cena')]
+    eq = sum(1 for r in one if g(r, 'cena_nier') and abs(g(r, 'cena_nier') - g(r, 'cena')) < 1); print('1 lokal: cena nieruchomości = cena transakcji w', eq, 'z', len(one), 'przypadków')
