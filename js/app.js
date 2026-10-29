@@ -6,7 +6,7 @@ import { esc, $, $$, fmt, roundTo, toast, openSheet, closeSheet, countUp, saveFi
 import { buildReport, makePdf } from './report.js';
 import { createSync, DEFAULT_URL, encodeCode, decodeCode } from './sync.js';
 
-const VERSION = '1.7.0';
+const VERSION = '1.8.0';
 const S = { wlasne: [],
   offers: [], rcn: null, tx: [], streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -49,7 +49,7 @@ let syncOn = false;
 const sync = createSync({ kv: store, adapters,
   hooks: {
     onStatus: st => { syncOn = st.state !== 'off'; paintSync(st); },
-    onRemote: changed => { if (changed && ['dane', 'historia'].includes(location.hash.replace(/^#\/?/, '').split('/')[0])) render(); },
+    onRemote: changed => { if (changed) checkRcn(); if (changed && ['dane', 'historia'].includes(location.hash.replace(/^#\/?/, '').split('/')[0])) render(); },
   } });
 const agoTxt = ts => { if (!ts) return ''; const s = Math.round((Date.now() - ts) / 1000); return s < 20 ? 'przed chwilą' : s < 3600 ? Math.round(s / 60) + ' min temu' : new Date(ts).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' }); };
 function paintSync(st) {
@@ -276,7 +276,7 @@ function viewDane() {
     ${(S.wlasne || []).map(w => `<button class="off" data-own="${w.id}"><div><b>${esc([w.ulica, w.dzielnica].filter(Boolean).join(', ') || 'Najem')}</b></div><div class="p">${fmt(w.cena)} zł</div><div class="m">${w.m2} m² · ${w.pokoje} pok.${w.rok ? ' · rok ' + w.rok : ''}${w.standard ? ' · ' + ({ remont: 'do remontu', dobry: 'dobry', wysoki: 'wysoki' })[w.standard] : ''}${w.meble === 'tak' ? ' · meble' : ''}</div><div class="m" style="text-align:right">${fmt(w.cena / w.m2)} zł/m²</div></button>`).join('')}
     <div class="gap"></div><button class="btn" data-act="own">Dodaj umowę najmu</button></div>
   <div class="card"><div class="eyebrow">Transakcje (RCN)</div>${meta ? `<div class="kv"><span>Rekordów</span><b>${fmt(S.tx.length)}</b></div><div class="kv"><span>Mieszkań z ostatnich 3 lat (użytecznych)</span><b>${fmt(resid)}</b></div><div class="kv"><span>Pobrano</span><b>${esc(meta.pobrano || '—')}</b></div><div class="kv"><span>Bez współrzędnych</span><b>${fmt(meta.bez_wspolrzednych ?? 0)}</b></div>` : '<p class="muted small" style="margin:0 0 10px">Brak danych. Wygeneruj plik skryptem na serwerze (tools/rcn_export.py) i wgraj poniżej.</p>'}
-    <div class="gap"></div><label class="field"><span>Adres pliku z serwera</span><input class="in" id="rurl" value="${esc(S.ust.rcnUrl)}" placeholder="https://…/rcn_lublin.json"></label>
+    ${S.ust.rcnUrl ? '<div class="gap"></div><button class="btn ghost" data-act="rcncheck">Sprawdź nowe dane teraz</button><p class="tiny muted" style="margin:8px 0 0">Aplikacja sama sprawdza nowe dane przy każdym otwarciu (serwer odświeża je codziennie w nocy) i pobiera je na wszystkie urządzenia.</p>' : ''}<div class="gap"></div><label class="field"><span>Adres pliku z serwera</span><input class="in" id="rurl" value="${esc(S.ust.rcnUrl)}" placeholder="https://…/rcn_lublin.json"></label>
     <button class="btn" data-act="rcnurl">Pobierz z serwera</button><div class="gap"></div><button class="btn ghost" data-act="rcnfile">Wczytaj plik JSON</button><input type="file" id="frcn" accept=".json,application/json" hidden></div>
   <div class="card"><div class="eyebrow">Oferty w bazie (ostatnie ${list.length})</div>${list.length ? list.map(o => `<button class="off ${o.wlaczone === false ? 'dis' : ''}" data-id="${o.id}"><div><b>${esc([o.ulica, o.dzielnica].filter(Boolean).join(', ') || o.tytul)}</b></div><div class="p">${fmt(o.cena)} zł</div><div class="m">${o.m2} m² · ${o.pokoje} pok.${o.pietro != null ? ' · ' + (o.pietro === 0 ? 'parter' : o.pietro + '. p.') : ''}${o.czynsz ? ' · czynsz ' + fmt(o.czynsz) : ''}</div><div class="m" style="text-align:right">${fmt(o.cena / o.m2)} zł/m²</div>${o.flagi?.length ? `<div class="flag">⚠ ${esc(o.flagi.join(', ').replace(/_/g, ' '))}</div>` : ''}</button>`).join('') : '<div class="empty">Brak ofert.</div>'}
     ${list.length ? '<p class="tiny muted" style="margin:8px 0 0">Dotknij ofertę, aby ją wyłączyć lub włączyć w wycenach.</p>' : ''}</div>
@@ -291,6 +291,7 @@ function viewDane() {
     $$('[data-own]', v).forEach(b => b.onclick = () => ownSheet(b.dataset.own));
     $$('.off', v).forEach(b => b.onclick = () => { const o = S.offers.find(x => x.id === b.dataset.id); o.wlaczone = o.wlaczone === false; save.offers(); b.classList.toggle('dis', o.wlaczone === false); });
     $('[data-act="rcnurl"]', v).onclick = async () => { const u = $('#rurl', v).value.trim(); if (!u) return toast('Wpisz adres pliku'); S.ust.rcnUrl = u; save.ust(); toast('Pobieram…'); try { const r = await fetch(u, { cache: 'no-store' }); if (!r.ok) throw new Error('HTTP ' + r.status); await setRcn(await r.json()); } catch (e) { toast('Nie udało się: ' + e.message); } };
+    const rc = $('[data-act="rcncheck"]', v); if (rc) rc.onclick = () => checkRcn(true);
     const fr = $('#frcn', v); $('[data-act="rcnfile"]', v).onclick = () => fr.click(); fr.onchange = async () => { try { await setRcn(JSON.parse(await fr.files[0].text())); } catch (e) { toast('Błędny plik: ' + e.message); } };
     $('[data-act="exp"]', v).onclick = async () => { const blob = new Blob([JSON.stringify({ v: 1, offers: S.offers, wlasne: S.wlasne, budynki: S.budynki, wyceny: S.wyceny, ust: S.ust })], { type: 'application/json' }); await saveFile(blob, 'kopia-wycena-' + new Date().toISOString().slice(0, 10) + '.json'); };
     const fb = $('#fbak', v); $('[data-act="imp"]', v).onclick = () => fb.click();
@@ -298,9 +299,30 @@ function viewDane() {
     $('[data-act="clear"]', v).onclick = () => { if (confirm(syncOn ? 'Usunąć wszystkie oferty z bazy? Zniknie też z serwera i z pozostałych urządzeń.' : 'Usunąć wszystkie oferty z bazy?')) { S.offers = []; save.offers(); render(); } };
   }];
 }
-async function setRcn(pack) {
+async function setRcn(pack, quiet) {
   if (!pack || !Array.isArray(pack.cols) || !Array.isArray(pack.rows) || !pack.cols.includes('cena')) throw new Error('nieznany format');
-  S.rcn = pack; setTx(); await store.set('rcn', pack); toast(`Wczytano ${fmt(S.tx.length)} transakcji`); render();
+  S.rcn = pack; setTx(); await store.set('rcn', pack);
+  if (!quiet) { toast(`Wczytano ${fmt(S.tx.length)} transakcji`); render(); }
+}
+// Automatyczna aktualizacja RCN: serwer odświeża plik codziennie i zapisuje mały rcn_meta.json z wersją danych.
+// Każde urządzenie sprawdza ten mały plik (przy starcie, po powrocie do aplikacji, co kilka godzin) i pobiera duży plik tylko gdy wersja się zmieniła.
+let rcnBusy = false;
+async function checkRcn(force) {
+  const url = S.ust.rcnUrl; if (!url || rcnBusy) return;
+  if (!force && S.rcn) { if (navigator.connection?.saveData) return; if (Date.now() - (await store.get('rcncheck', 0)) < 3 * 3600e3) return; }
+  rcnBusy = true;
+  try {
+    const r = await fetch(url.replace(/[^/]*$/, 'rcn_meta.json'), { cache: 'no-store' });
+    if (!r.ok) throw new Error('serwer nie ma jeszcze pliku z wersją danych (HTTP ' + r.status + ')');
+    const m = await r.json(); await store.set('rcncheck', Date.now());
+    if (S.rcn?.meta?.wersja && S.rcn.meta.wersja === m.wersja) { if (force) toast('Dane RCN są aktualne'); return; }
+    toast('Pobieram nowe dane RCN…');
+    const f = await fetch(url, { cache: 'no-store' }); if (!f.ok) throw new Error('HTTP ' + f.status);
+    const before = S.tx.length; await setRcn(await f.json(), true);
+    toast(`Dane RCN zaktualizowane: ${fmt(S.rcn.meta.rekordow)} rekordów (${S.tx.length - before >= 0 ? '+' : ''}${fmt(S.tx.length - before)} użytecznych)`);
+    if (location.hash.replace(/^#\/?/, '').split('/')[0] === 'dane') render();
+  } catch (e) { if (force) toast('RCN: ' + e.message); }
+  finally { rcnBusy = false; }
 }
 function offerSummary(found) {
   const have = new Set(S.offers.map(offerKey)); const seen = new Set(); let neu = [], dup = 0;
@@ -452,11 +474,13 @@ async function syncCard(v) {
 window.addEventListener('hashchange', render);
 document.addEventListener('click', e => { const b = e.target.closest('[data-back]'); if (b && !b.onclick) history.length > 1 ? history.back() : go('#/wycena'); });
 load().then(() => {
-  render(); sync.start();
+  render(); sync.start(); checkRcn();
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkRcn(); });
+  setInterval(() => { if (document.visibilityState === 'visible') checkRcn(); }, 30 * 60e3);
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
     const had = !!navigator.serviceWorker.controller; let done = false;
     navigator.serviceWorker.addEventListener('controllerchange', () => { if (had && !done) { done = true; location.reload(); } });   // nowa wersja przejęła kontrolę: odśwież raz
     navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => { });
   }
-  window.__am = { S, render, go, sync };
+  window.__am = { S, render, go, sync, checkRcn };
 });

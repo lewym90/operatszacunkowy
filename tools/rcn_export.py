@@ -4,7 +4,7 @@ Uruchamiać NA SERWERZE (tylko biblioteka standardowa):
     python3 rcn_export.py --out /var/www/operat-data/rcn_lublin.json
 Nie zapisuje danych osobowych (sprzedający/kupujący są pomijani). Dane są publiczne (RCN, bezpłatnie od 13.02.2026).
 Nic tu nie jest zgadywane: pola brane są wprost z odpowiedzi usługi; gdy współrzędnych nie da się odczytać, lat/lon = null."""
-import argparse, json, math, re, sys, time, urllib.parse, urllib.request, xml.etree.ElementTree as ET
+import argparse, hashlib, json, math, re, sys, time, urllib.parse, urllib.request, xml.etree.ElementTree as ET
 
 BASE = "https://mapy.geoportal.gov.pl/wss/service/rcn"
 BBOX = (51.15, 22.38, 51.33, 22.73)   # lat_min, lon_min, lat_max, lon_max — Lublin z otoczeniem
@@ -127,7 +127,8 @@ def main():
         time.sleep(1)
     no_geo = sum(1 for r in rows if r[14] is None)
     pack = dict(meta=dict(zrodlo="RCN, GUGiK (mapy.geoportal.gov.pl/wss/service/rcn), warstwa ms:lokale", pobrano=time.strftime('%Y-%m-%d'),
-                          obszar="Lublin i otoczenie (prostokąt)", rekordow=len(rows), bez_wspolrzednych=no_geo), cols=COLS, rows=rows)
+                          obszar="Lublin i otoczenie (prostokąt)", rekordow=len(rows), bez_wspolrzednych=no_geo,
+                          wersja=hashlib.sha1(json.dumps(rows, ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()[:16]), cols=COLS, rows=rows)
     json.dump(pack, open(a.out, 'w', encoding='utf-8'), ensure_ascii=False, separators=(',', ':'))
     print(f"zapisano {a.out}: {len(rows)} rekordów, bez współrzędnych: {no_geo}", file=sys.stderr)
 
