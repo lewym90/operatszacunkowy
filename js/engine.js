@@ -361,3 +361,30 @@ export function crossCheckRent(offers, tx, subject, rentRes, opts = {}) {
   }
   return out;
 }
+
+// ---------- DZIELNICA Z ULICY ----------
+// 1) oferty z tą samą ulicą (dzielnica większościowa); 2) położenie ulicy wg RCN i najbliższe ulice, dla których dzielnicę znamy z ofert.
+export function inferDistrict(offers, tx, ulica) {
+  const k = norm(ulica); if (!k) return null;
+  const names = new Map(); const label = d => { const n = norm(d); if (!names.has(n)) names.set(n, d); return n; };
+  const same = offers.filter(o => o.ulica && o.dzielnica && norm(o.ulica) === k);
+  if (same.length) {
+    const c = new Map(); same.forEach(o => { const n = label(o.dzielnica); c.set(n, (c.get(n) || 0) + 1); });
+    const [top, cnt] = [...c.entries()].sort((a, b) => b[1] - a[1])[0];
+    if (cnt / same.length >= 0.6) return { name: names.get(top), source: 'oferty', n: same.length, share: cnt / same.length };
+  }
+  if (!tx || !tx.length) return null;
+  const mine = tx.filter(t => t.lat != null && norm(t.ulica) === k);
+  if (mine.length < 2) return null;
+  const ctr = [mine.reduce((a, t) => a + t.lat, 0) / mine.length, mine.reduce((a, t) => a + t.lon, 0) / mine.length];
+  const pts = new Map();
+  for (const t of tx) if (t.lat != null && t.ulica) { const kk = norm(t.ulica), p = pts.get(kk) || pts.set(kk, { la: 0, lo: 0, n: 0 }).get(kk); p.la += t.lat; p.lo += t.lon; p.n++; }
+  const known = []; const seen = new Set();
+  for (const o of offers) if (o.ulica && o.dzielnica) { const kk = norm(o.ulica), key = kk + '|' + norm(o.dzielnica), p = pts.get(kk); if (p && p.n >= 2 && !seen.has(key)) { seen.add(key); known.push({ la: p.la / p.n, lo: p.lo / p.n, d: label(o.dzielnica) }); } }
+  const near = known.map(x => ({ d: x.d, km: haversine(ctr, [x.la, x.lo]) })).filter(x => x.km <= 2).sort((a, b) => a.km - b.km).slice(0, 5);
+  if (!near.length) return null;
+  const w = new Map(); near.forEach(x => w.set(x.d, (w.get(x.d) || 0) + 1 / (x.km + 0.2)));
+  const tot = [...w.values()].reduce((a, b) => a + b, 0), [top, tw] = [...w.entries()].sort((a, b) => b[1] - a[1])[0];
+  if (tw / tot < 0.5) return null;
+  return { name: names.get(top), source: 'rcn', n: near.length, share: tw / tot, km: near[0].km };
+}

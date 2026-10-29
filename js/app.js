@@ -1,11 +1,11 @@
 import * as store from './store.js';
-import { estimateRent, estimateSale, crossCheckRent, grossYield, addrKey, normStreet, YEAR_BANDS, yearBand } from './engine.js';
+import { estimateRent, estimateSale, crossCheckRent, inferDistrict, grossYield, addrKey, normStreet, YEAR_BANDS, yearBand } from './engine.js';
 import { rcnToObjects } from './rcn.js';
 import { linesFromPdf, offersFromLines, offerKey } from './pdfimport.js';
 import { esc, $, $$, fmt, roundTo, toast, openSheet, closeSheet, countUp, saveFile, ICON } from './ui.js';
 import { buildReport, makePdf } from './report.js';
 
-const VERSION = '1.2.4';
+const VERSION = '1.3.0';
 const S = {
   offers: [], rcn: null, tx: [], streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -66,8 +66,8 @@ function viewWycena() {
   <form class="card" id="f" autocomplete="off" novalidate>
     ${sale ? `<div class="grid3"><label class="field"><span>Ulica</span><input class="in" name="ulica" list="dl-st" value="${esc(f.ulica)}" placeholder="np. Bluszczowa"></label>
       <label class="field"><span>Nr</span><input class="in" name="nr" value="${esc(f.nr)}" inputmode="text" placeholder="13"></label></div>`
-      : `<label class="field"><span>Dzielnica</span><input class="in" name="dzielnica" list="dl-dz" value="${esc(f.dzielnica)}" placeholder="np. Śródmieście"></label>
-      <label class="field"><span>Ulica (opcjonalnie)</span><input class="in" name="ulica" value="${esc(f.ulica)}" placeholder="np. Jasna"></label>`}
+      : `<label class="field"><span>Dzielnica (opcjonalnie)</span><input class="in" name="dzielnica" list="dl-dz" value="${esc(f.dzielnica)}" placeholder="np. Śródmieście"></label>
+      <label class="field"><span>Ulica (opcjonalnie; dzielnica uzupełni się sama)</span><input class="in" name="ulica" list="dl-st" value="${esc(f.ulica)}" placeholder="np. Granata"></label>`}
     <datalist id="dl-st">${S.streets.map(s => `<option value="${esc(s)}">`).join('')}</datalist><datalist id="dl-dz">${dz.map(s => `<option value="${esc(s)}">`).join('')}</datalist>
     <div class="grid2"><label class="field"><span>Powierzchnia (m²)</span><input class="in" name="m2" inputmode="decimal" value="${esc(f.m2)}" placeholder="45,5"></label>
       <label class="field"><span>Rok budowy (opcj.)</span><input class="in" name="rok" inputmode="numeric" maxlength="4" value="${esc(f.rok)}" placeholder="np. 1978"></label></div>
@@ -104,10 +104,20 @@ function submitForm() {
   if (f.tryb === 'sprzedaz' && !S.tx.length) return toast('Najpierw zaimportuj dane RCN (zakładka Dane)');
   if (f.tryb === 'najem' && !S.offers.length) return toast('Najpierw zaimportuj oferty najmu (zakładka Dane)');
   const subj = { tryb: f.tryb, ulica: f.ulica, nr: f.nr, dzielnica: f.dzielnica, m2, pokoje: f.pokoje, pietro: f.pietro, rok, rynek: f.rynek || null, standard: f.standard || null, meble: f.meble === '' ? null : f.meble };
+  let dzNote = null;
+  if (f.tryb === 'najem' && subj.ulica) {
+    const inf = inferDistrict(S.offers, S.tx, subj.ulica);
+    if (inf) {
+      const src = inf.source === 'oferty' ? `ofert z tej ulicy (${inf.n})` : `położenia ulicy wg RCN i najbliższych ulic ze znaną dzielnicą (${inf.n}, najbliższa ${inf.km.toFixed(1).replace('.', ',')} km)`;
+      if (!subj.dzielnica) { subj.dzielnica = inf.name; dzNote = `Dzielnica ustalona automatycznie: ${inf.name}, na podstawie ${src}. Sprawdź, czy się zgadza.`; }
+      else if (normStreet(inf.name) !== normStreet(subj.dzielnica) && inf.share >= 0.7) dzNote = `Uwaga: wpisano dzielnicę ${subj.dzielnica}, a ulica ${subj.ulica} wg ${src} leży w dzielnicy ${inf.name}.`;
+    }
+  }
   if (rok && f.zapamietaj && f.ulica && f.nr && f.tryb === 'sprzedaz') { S.budynki[addrKey(f.ulica, f.nr)] = rok; save.budynki(); }
   const yearOf = k => S.budynki[k] ?? null;
   const res = f.tryb === 'najem' ? estimateRent(S.offers, subj) : estimateSale(S.tx, subj, { yearOf });
   if (f.tryb === 'najem' && res.ok) { try { const baseRent = res.adjusted ? estimateRent(S.offers, { ...subj, rok: null, standard: null }) : res; res.cross = crossCheckRent(S.offers, S.tx, subj, baseRent.ok ? baseRent : res); const c = res.cross; if (res.adjusted && baseRent.ok) c.vsBase = baseRent.total; if (c.ok && c.agreement === 'rozbieżne' && c.r2 >= 0.3 && res.confidence.score > 1) { res.confidence.score -= 1; res.confidence.level = res.confidence.score === 1 ? 'niska' : 'średnia'; res.confidence.why.push('obniżono: kontrola ze sprzedażą (wiarygodna, R² ≥ 0,3) daje wyraźnie inny czynsz'); } } catch (e) { res.cross = { ok: false, reason: 'Nie udało się policzyć kontroli: ' + e.message }; } }
+  if (dzNote && res.ok) res.notes.unshift(dzNote);
   S.last[f.tryb] = { id: null, ts: Date.now(), subj, res };
   go('#/wynik/' + f.tryb);
 }

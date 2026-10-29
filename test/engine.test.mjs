@@ -1,5 +1,5 @@
 import fs from 'fs'; import assert from 'assert';
-import { estimateRent, estimateSale, crossCheckRent, wquantile, grossYield, THRESH } from '../js/engine.js';
+import { estimateRent, estimateSale, crossCheckRent, inferDistrict, wquantile, grossYield, THRESH } from '../js/engine.js';
 import { rcnToObjects, RCN_COLS } from '../js/rcn.js';
 
 // 1) kwantyle
@@ -99,4 +99,9 @@ const txE=rcnToObjects({cols:C,rows:rowsE}); const subE={tryb:'najem',ulica:'',n
 const ce=crossCheckRent(offE,txE,subE,null,{nowTs:Date.parse('2026-10-29')}); const tr=trueRent(5,30);
 console.log('KONTROLA (metraż 30 m2):', ce.ok, 'implied:', Math.round(ce.implied.mid), 'prawdziwy:', Math.round(tr), 'efekt metrażu:', ce.sizeEffect.rent.toFixed(2), ce.sizeEffect.sale.toFixed(2));
 assert.ok(Math.abs(ce.implied.mid-tr)/tr<0.12,'po standaryzacji metrażu blisko prawdy');
+// 8) dzielnica z ulicy: ulica bez ofert, ale z transakcjami RCN obok ulic o znanej dzielnicy
+const infA=inferDistrict(offD,txD,'S5b'); const infB=inferDistrict(offD,txD,'Nieistniejąca');
+console.log('DZIELNICA z ulicy S5b (bez ofert, tylko RCN):', infA&&infA.name, infA&&infA.source, '| nieznana ulica:', infB);
+assert.ok(infA&&infA.name==='D5'&&infB===null);
+assert.equal(inferDistrict(offD,txD,'S3a').name,'D3'); assert.equal(inferDistrict(offD,txD,'S3a').source,'oferty');
 console.log('TESTY OK');
