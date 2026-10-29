@@ -79,4 +79,15 @@ console.log('KONTROLA:', cc.ok, 'par:', cc.pairs, 'rentowność %:', cc.grossYie
 assert.ok(cc.ok && Math.abs(cc.grossYieldPct-6)<0.7,'odzyskana rentowność ~6%'); assert.ok(cc.r2>0.7);
 assert.ok(!crossCheckRent(offX,txX,{...subX,ulica:''},rentX).ok,'bez ulicy brak kontroli');
 assert.ok(!crossCheckRent(offX.slice(0,6),txX,subX,rentX).ok,'za mało par = brak kontroli');
+// 6) kontrola po DZIELNICACH: 12 dzielnic, czynsz = 0,55% wartości/m² miesięcznie; transakcje bez dzielnicy, przypisane po ulicach znanych z ofert
+const rowsD=[],offD=[]; const pmD=i=>6500+i*400;
+for(let i=0;i<12;i++){ for(let k=0;k<40;k++){ const m2=35+(k%10)*3, u='S'+i+(k%2?'a':'b'); const r=mk('D'+i+'_'+k,'TD'+i+'_'+k,Math.round(m2*pmD(i)*(0.93+rn()*0.14)),'wolnyRynek','rynekWtorny',2026,'mieszkalna',m2,null,'2026-06-01');
+    r[C.indexOf('ulica')]=u; r[C.indexOf('lat')]=51.15+i*0.012+rn()*0.002; r[C.indexOf('lon')]=22.5+rn()*0.002; rowsD.push(r); }
+  for(let k=0;k<9;k++){ const m2=36+k*3; offD.push({id:'od'+i+'_'+k,wlaczone:true,flagi:[],ulica:k<3?'S'+i+'a':null,dzielnica:'D'+i,m2,pokoje:2,pietro:1,cena:Math.round(m2*pmD(i)*0.0055*(0.9+rn()*0.2)),tytul:'x'}); } }
+const txD=rcnToObjects({cols:C,rows:rowsD});
+const subD={tryb:'najem',ulica:'',nr:'',dzielnica:'D5',m2:44,pokoje:2,pietro:1};
+const rentD=estimateRent(offD,subD); const cd=crossCheckRent(offD,txD,subD,rentD,{nowTs:Date.parse('2026-10-29')});
+console.log('KONTROLA (dzielnice):', cd.ok, cd.unit, cd.pairs, 'przypisano transakcji:', cd.assigned, 'rentowność %:', cd.grossYieldPct?.toFixed(2), 'R2:', cd.r2?.toFixed(2), 'implied:', cd.implied&&Object.values(cd.implied).map(Math.round), 'z ofert:', rentD.ok&&Object.values(rentD.total).map(Math.round), cd.agreement);
+assert.ok(cd.ok && cd.unit==='dzielnic' && cd.pairs>=10); assert.ok(Math.abs(cd.grossYieldPct-6.6)<0.8); assert.ok(cd.r2>0.8);
+const trueMid=44*pmD(5)*0.0055; assert.ok(Math.abs(cd.implied.mid-trueMid)/trueMid<0.12,'wyliczony czynsz blisko prawdziwego');
 console.log('TESTY OK');

@@ -5,7 +5,7 @@ import { linesFromPdf, offersFromLines, offerKey } from './pdfimport.js';
 import { esc, $, $$, fmt, roundTo, toast, openSheet, closeSheet, countUp, saveFile, ICON } from './ui.js';
 import { buildReport, makePdf } from './report.js';
 
-const VERSION = '1.2.0';
+const VERSION = '1.2.1';
 const S = {
   offers: [], rcn: null, tx: [], streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -107,7 +107,7 @@ function submitForm() {
   if (rok && f.zapamietaj && f.ulica && f.nr && f.tryb === 'sprzedaz') { S.budynki[addrKey(f.ulica, f.nr)] = rok; save.budynki(); }
   const yearOf = k => S.budynki[k] ?? null;
   const res = f.tryb === 'najem' ? estimateRent(S.offers, subj) : estimateSale(S.tx, subj, { yearOf });
-  if (f.tryb === 'najem' && res.ok) { try { res.cross = crossCheckRent(S.offers, S.tx, subj, res); } catch (e) { res.cross = { ok: false, reason: 'Nie udało się policzyć kontroli: ' + e.message }; } }
+  if (f.tryb === 'najem' && res.ok) { try { res.cross = crossCheckRent(S.offers, S.tx, subj, res); const c = res.cross; if (c.ok && c.agreement === 'rozbieżne' && c.r2 >= 0.3 && res.confidence.score > 1) { res.confidence.score -= 1; res.confidence.level = res.confidence.score === 1 ? 'niska' : 'średnia'; res.confidence.why.push('obniżono: kontrola ze sprzedażą (wiarygodna, R² ≥ 0,3) daje wyraźnie inny czynsz'); } } catch (e) { res.cross = { ok: false, reason: 'Nie udało się policzyć kontroli: ' + e.message }; } }
   S.last[f.tryb] = { id: null, ts: Date.now(), subj, res };
   go('#/wynik/' + f.tryb);
 }
@@ -147,10 +147,11 @@ function viewWynik(p) {
     const c = r.cross;
     html += c.ok ? `<div class="card"><div class="eyebrow">Kontrola ze sprzedażą</div>
       <h3>${fmt(roundTo(c.implied.lo, 10))} – ${fmt(roundTo(c.implied.hi, 10))} zł</h3>
-      <p class="small muted" style="margin:6px 0 0">Czynsz wyliczony z szacunkowej wartości mieszkania (${fmt(roundTo(c.sale.total.lo, 1000))} – ${fmt(roundTo(c.sale.total.hi, 1000))} zł, RCN) i zmierzonego w Twoich danych stosunku czynszu do wartości: rentowność brutto ok. ${c.grossYieldPct.toFixed(1).replace('.', ',')}% rocznie (${c.pairs} ulic z ofertami i transakcjami).</p>
-      <div class="kv" style="margin-top:8px"><span>Zgodność z wynikiem z ofert</span><b>${c.overlap ? 'zgodne' : 'rozbieżne'}${c.diffPct != null ? ` (${c.diffPct > 0 ? '+' : '−'}${Math.abs(c.diffPct).toFixed(0)}%)` : ''}</b></div>
-      ${c.r2 != null ? `<p class="tiny muted" style="margin:8px 0 0">Czy cena kupna tłumaczy czynsz? Między ulicami: R² = ${c.r2.toFixed(2).replace('.', ',')}${c.slope != null ? `, czynsz rośnie o ${c.slope.toFixed(2).replace('.', ',')}% na każdy 1% wyższej ceny kupna` : ''}. ${c.r2 < 0.3 ? 'To słaby związek: traktuj kontrolę ostrożnie.' : c.r2 < 0.6 ? 'Związek umiarkowany.' : 'Związek wyraźny.'}</p>` : ''}
-      ${c.overlap ? '' : '<p class="small" style="margin:8px 0 0;color:var(--gold-l)">Obie oceny się nie pokrywają: zweryfikuj porównania ręcznie, pewność wyniku jest niższa.</p>'}</div>`
+      <p class="small muted" style="margin:6px 0 0">Czynsz wyliczony z szacunkowej wartości mieszkania (${fmt(roundTo(c.sale.total.lo, 1000))} – ${fmt(roundTo(c.sale.total.hi, 1000))} zł, RCN) i zmierzonego w Twoich danych stosunku czynszu do wartości: rentowność brutto ok. ${c.grossYieldPct.toFixed(1).replace('.', ',')}% rocznie (zmierzone na ${c.pairs} ${c.unit} z ofertami i transakcjami).</p>
+      <div class="kv" style="margin-top:8px"><span>Zgodność z wynikiem z ofert</span><b>${c.agreement || '—'}${c.diffPct != null ? ` (środek ${c.diffPct > 0 ? '+' : '−'}${Math.abs(c.diffPct).toFixed(0)}%)` : ''}</b></div>
+      <div class="kv"><span>Podstawa stosunku czynsz/wartość</span><b>${esc(c.basis || '')}</b></div>
+      ${c.r2 != null ? `<p class="tiny muted" style="margin:8px 0 0">Czy cena kupna tłumaczy czynsz? Między ${c.unit === 'dzielnic' ? 'dzielnicami' : 'ulicami'}: R² = ${c.r2.toFixed(2).replace('.', ',')}${c.slope != null ? `, czynsz rośnie o ${c.slope.toFixed(2).replace('.', ',')}% na każdy 1% wyższej ceny kupna` : ''}. ${c.r2 < 0.3 ? 'To słaby związek: traktuj kontrolę ostrożnie.' : c.r2 < 0.6 ? 'Związek umiarkowany.' : 'Związek wyraźny.'}</p>` : ''}
+      ${c.agreement === 'rozbieżne' ? '<p class="small" style="margin:8px 0 0;color:var(--gold-l)">Obie oceny wyraźnie się różnią: zweryfikuj porównania ręcznie.</p>' : ''}</div>`
       : `<div class="card"><div class="eyebrow">Kontrola ze sprzedażą</div><p class="small muted" style="margin:0">${esc(c.reason || 'Niedostępna.')}</p></div>`;
   }
   if (!sale) {
