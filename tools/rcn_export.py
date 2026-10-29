@@ -73,25 +73,29 @@ def main():
     la0, lo0, la1, lo1 = BBOX
     orders = {"latlon": "%s,%s,%s,%s,urn:ogc:def:crs:EPSG::4326" % (la0, lo0, la1, lo1),
               "lonlat": "%s,%s,%s,%s,urn:ogc:def:crs:EPSG::4326" % (lo0, la0, lo1, la1)}
-    def req(order, sort, start, count):
-        q = dict(service="WFS", version="2.0.0", request="GetFeature", typeNames="ms:lokale", bbox=orders[order],
-                 srsName="urn:ogc:def:crs:EPSG::4326", count=count, startIndex=start)
+    def req(order, sort, start, count, srs=True):
+        q = dict(service="WFS", version="2.0.0", request="GetFeature", typeNames="ms:lokale", bbox=orders[order], count=count, startIndex=start)
+        if srs: q["srsName"] = "urn:ogc:def:crs:EPSG::4326"
         if sort: q["sortBy"] = "gid"
         return fetch(q)
     # Pierwsza strona: sprawdzamy warianty (kolejność osi bbox, sortowanie) i wybieramy pierwszy, który zwraca rekordy.
     chosen = None
-    for order in ("latlon", "lonlat"):
-        for sort in (True, False):
-            raw = req(order, sort, 0, min(a.page, 50)); got = parse(raw)
-            print(f"próba {order}, sortBy={sort}: {len(got)} rekordów", file=sys.stderr)
-            if got: chosen = (order, sort); break
-            print("  odpowiedź usługi: " + re.sub(r"\s+", " ", raw.decode('utf-8', 'replace'))[:400], file=sys.stderr)
+    for srs in (False, True):
+        for order in ("latlon", "lonlat"):
+            for sort in (False, True):
+                raw = req(order, sort, 0, min(a.page, 50), srs); got = parse(raw)
+                txt = re.sub(r"\s+", " ", raw.decode('utf-8', 'replace'))
+                nm = re.search(r'numberMatched="(\w+)"', txt); nr = re.search(r'numberReturned="(\w+)"', txt)
+                print(f"próba srsName={srs}, bbox={order}, sortBy={sort}: {len(got)} rekordów (matched={nm and nm.group(1)}, returned={nr and nr.group(1)})", file=sys.stderr)
+                if got: chosen = (order, sort, srs); break
+                if 'xception' in txt: print("  BŁĄD USŁUGI: " + txt[:500], file=sys.stderr)
+            if chosen: break
         if chosen: break
     if not chosen: sys.exit("Usługa nie zwróciła żadnych rekordów w żadnym wariancie. Wklej mi powyższe linie.")
     print(f"używam: {chosen}", file=sys.stderr)
     rows, start = [], 0
     while True:
-        batch = parse(req(chosen[0], chosen[1], start, a.page)); rows += batch; start += a.page
+        batch = parse(req(chosen[0], chosen[1], start, a.page, chosen[2])); rows += batch; start += a.page
         print(f"pobrano {len(rows)}", file=sys.stderr)
         if len(batch) < a.page or (a.max and len(rows) >= a.max): break
         time.sleep(1)
