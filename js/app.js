@@ -8,7 +8,7 @@ import { buildReport, makePdf } from './report.js';
 import { createSync, DEFAULT_URL, encodeCode, decodeCode } from './sync.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer } from './mapa.js';
 
-const VERSION = '1.11.1';
+const VERSION = '1.11.2';
 const S = { wlasne: [],
   offers: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -433,8 +433,8 @@ function viewDane() {
     const fr = $('#frcn', v); $('[data-act="rcnfile"]', v).onclick = () => fr.click(); fr.onchange = async () => { try { await setRcn(JSON.parse(await fr.files[0].text())); } catch (e) { toast('Błędny plik: ' + e.message); } };
     $('[data-act="exp"]', v).onclick = async () => { const blob = new Blob([JSON.stringify({ v: 1, offers: S.offers, wlasne: S.wlasne, budynki: S.budynki, wyceny: S.wyceny, ust: S.ust })], { type: 'application/json' }); await saveFile(blob, 'kopia-wycena-' + new Date().toISOString().slice(0, 10) + '.json'); };
     const fb = $('#fbak', v); $('[data-act="imp"]', v).onclick = () => fb.click();
-    fb.onchange = async () => { try { const d = JSON.parse(await fb.files[0].text()); if (!Array.isArray(d.offers)) throw new Error('to nie jest kopia'); S.offers = d.offers; S.wlasne = d.wlasne || []; save.wlasne(); S.budynki = d.budynki || {}; S.wyceny = d.wyceny || []; S.ust = { ...S.ust, ...(d.ust || {}) }; save.offers(); save.budynki(); save.wyceny(); save.ust(); toast('Przywrócono'); render(); } catch (e) { toast('Błąd: ' + e.message); } };
-    $('[data-act="clear"]', v).onclick = () => { if (confirm(syncOn ? 'Usunąć wszystkie oferty z bazy? Zniknie też z serwera i z pozostałych urządzeń.' : 'Usunąć wszystkie oferty z bazy?')) { S.offers = []; save.offers(); render(); } };
+    fb.onchange = async () => { try { const d = JSON.parse(await fb.files[0].text()); if (!Array.isArray(d.offers)) throw new Error('to nie jest kopia'); S.offers = d.offers; sync.allowMassDelete(); S.wlasne = d.wlasne || []; save.wlasne(); S.budynki = d.budynki || {}; S.wyceny = d.wyceny || []; S.ust = { ...S.ust, ...(d.ust || {}) }; save.offers(); save.budynki(); save.wyceny(); save.ust(); toast('Przywrócono'); render(); } catch (e) { toast('Błąd: ' + e.message); } };
+    $('[data-act="clear"]', v).onclick = () => { if (confirm(syncOn ? 'Usunąć wszystkie oferty z bazy? Zniknie też z serwera i z pozostałych urządzeń.' : 'Usunąć wszystkie oferty z bazy?')) { S.offers = []; sync.allowMassDelete(); save.offers(); render(); } };
   }];
 }
 async function setRcn(pack, quiet) {

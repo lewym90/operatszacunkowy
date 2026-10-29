@@ -26,7 +26,7 @@ export function decodeCode(s) {
  */
 export function createSync({ kv, adapters, hooks = {}, fetchFn = (...a) => fetch(...a), now = () => Date.now() }) {
   const status = { state: 'off', last: 0, error: '', pushed: 0, pulled: 0 };
-  let busy = false, again = false, timer = null, poll = null;
+  let busy = false, again = false, timer = null, poll = null, massOK = false;
   const emit = patch => { Object.assign(status, patch); hooks.onStatus && hooks.onStatus({ ...status }); };
 
   async function call(cfg, path, body) {
@@ -85,12 +85,22 @@ export function createSync({ kv, adapters, hooks = {}, fetchFn = (...a) => fetch
         // 1) najpierw pobierz cudze zmiany (mniej konfliktów)
         if (await pull(cfg, m, ctx)) changed = true;
         // 2) policz własne zmiany względem stanu z ostatniej wymiany
-        const ts = startedDirty || now(), out = [];
-        for (const c of Object.keys(adapters)) {
-          const cur = new Map(adapters[c].read()), base = (m.base[c] ||= {});
-          for (const [id, d] of cur) { const h = hash(d); if (!base[id] || base[id].h !== h) { out.push({ c, id, ts, d }); ctx.pushed[c + '\u0000' + id] = h; } }
-          for (const id of Object.keys(base)) if (!cur.has(id)) { out.push({ c, id, ts, del: true }); ctx.pushed[c + '\u0000' + id] = null; }
+        const ts = startedDirty || now(); let out = [];
+        for (let pass = 0; pass < 2; pass++) {
+          out = []; const sus = [];
+          for (const c of Object.keys(adapters)) {
+            const cur = new Map(adapters[c].read()), base = (m.base[c] ||= {});
+            const dels = Object.keys(base).filter(id => !cur.has(id));
+            // ochrona: nagłe usunięcie większości kolekcji bez świadomej decyzji (przycisk „Usuń wszystkie”) to zwykle nieaktualny stan tego urządzenia, a nie wola użytkownika
+            if (pass === 0 && !massOK && dels.length >= 20 && dels.length >= 0.5 * Object.keys(base).length) { sus.push([c, dels]); continue; }
+            for (const [id, d] of cur) { const h = hash(d); if (!base[id] || base[id].h !== h) { out.push({ c, id, ts, d }); ctx.pushed[c + '\u0000' + id] = h; } }
+            for (const id of dels) { out.push({ c, id, ts, del: true }); ctx.pushed[c + '\u0000' + id] = null; }
+          }
+          if (!sus.length) break;
+          for (const [c, dels] of sus) for (const id of dels) delete m.base[c][id];
+          m.cursor = 0; await kv.set('syncmeta', m); await pull(cfg, m, ctx); changed = true;   // odtwórz z serwera zamiast kasować tam
         }
+        massOK = false;
         // 3) wyślij paczkami; odpowiedź zawiera też wersje, które wygrały z naszymi
         for (let i = 0; i < out.length; i += BATCH) {
           const res = await call(cfg, '/v1/sync', { since: m.cursor, changes: out.slice(i, i + BATCH) });
@@ -135,5 +145,5 @@ export function createSync({ kv, adapters, hooks = {}, fetchFn = (...a) => fetch
     if (typeof document !== 'undefined') document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') run(); });
     if (typeof window !== 'undefined') window.addEventListener('online', () => run());
   }
-  return { run, schedule, connect, disconnect, start, status: () => ({ ...status }), config: () => kv.get('sync', null) };
+  return { allowMassDelete: () => { massOK = true; }, run, schedule, connect, disconnect, start, status: () => ({ ...status }), config: () => kv.get('sync', null) };
 }

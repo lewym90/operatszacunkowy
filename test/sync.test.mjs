@@ -72,9 +72,20 @@ assert.equal(C.S.offers.length, A.S.offers.length, `C ma ${C.S.offers.length}, A
 console.log('6 OK: 4500 ofert przeszło paczkami, trzecie urządzenie ma komplet (' + C.S.offers.length + ')');
 
 // --- usunięcie wszystkiego na C propaguje się; ponowna synchronizacja nic nie wskrzesza
-C.edit(S => { S.offers = []; }); tick(); await C.sy.run(); tick(); await A.sy.run(); tick(); await B.sy.run(); await A.sy.run();
+C.edit(S => { S.offers = []; }); C.sy.allowMassDelete(); tick(); await C.sy.run(); tick(); await A.sy.run(); tick(); await B.sy.run(); await A.sy.run();
 assert.equal(A.S.offers.length, 0); assert.equal(B.S.offers.length, 0); assert.equal(C.S.offers.length, 0);
 console.log('7 OK: usunięcie wszystkich ofert przeszło na pozostałe urządzenia i nic nie wróciło');
+
+// --- ochrona: urządzenie z nieaktualnym stanem (puste, choć baza mówi inaczej) nie kasuje ofert innych
+const P = device('P'); P.S.offers = Array.from({ length: 60 }, (_, i) => offer('p' + i, 1500 + i));
+await P.sy.connect(URL, KEY); tick(); await P.sy.run(); tick();
+const Q = device('Q'); await Q.sy.connect(URL, KEY); tick(); assert.equal(Q.S.offers.length, 60);
+P.S.offers = [];                                   // „nieaktualna pamięć”: ids są w bazie synchronizacji, lecz nie ma ich lokalnie
+P.sy.schedule(60_000); tick(); await P.sy.run(); tick();
+assert.equal(P.S.offers.length, 60, 'P odtworzył oferty z serwera zamiast je usunąć');
+await Q.sy.run(); assert.equal(Q.S.offers.length, 60, 'Q nadal ma oferty');
+const R = device('R'); await R.sy.connect(URL, KEY); assert.equal(R.S.offers.length, 60, 'serwer nadal ma oferty');
+console.log('7b OK: masowe usunięcie z nieaktualnego urządzenia zostało wycofane, oferty zostały wszędzie');
 
 // --- błędy
 const bad = device('X'); let msg = ''; try { await bad.sy.connect(URL, 'zlyklucz1234567890'); } catch (e) { msg = e.message; }
