@@ -39,3 +39,16 @@ if 'sprz' in I:
     print('mieszkalna w transakcjach wielolokalowych:', len(multi), '| z ceną lokalu:', sum(1 for r in multi if g(r, 'cena_lok')), '| z ceną nieruchomości:', sum(1 for r in multi if g(r, 'cena_nier')))
     one = [r for r in R if tc[g(r, 'tran')] == 1 and g(r, 'funkcja') == 'mieszkalna' and g(r, 'cena')]
     eq = sum(1 for r in one if g(r, 'cena_nier') and abs(g(r, 'cena_nier') - g(r, 'cena')) < 1); print('1 lokal: cena nieruchomości = cena transakcji w', eq, 'z', len(one), 'przypadków')
+
+if 'cena_nier' in I:
+    print('\n--- CZY cena_nier TO CENA SAMEGO LOKALU? (mieszkalna, akty 2025-26, rynek pierwotny/wolny) ---')
+    MM = [r for r in R if g(r, 'funkcja') == 'mieszkalna' and tc[g(r, 'tran')] > 1 and (g(r, 'm2') or 0) >= 12 and g(r, 'rok') in (2025, 2026) and g(r, 'cena_nier')]
+    same = sum(1 for r in MM if abs(g(r, 'cena_nier') - g(r, 'cena')) < 1)
+    print('wielolokalowe: n=', len(MM), '| cena_nier = cena całej transakcji:', same)
+    a = sorted(g(r, 'cena_nier') / g(r, 'm2') for r in MM); b = sorted(g(r, 'cena') / g(r, 'm2') for r in MM)
+    if a: print('zł/m² wg ceny nieruchomości: 10%%=%d mediana=%d 90%%=%d' % (a[len(a)//10], a[len(a)//2], a[len(a)*9//10]))
+    if b: print('zł/m² wg ceny całej transakcji: 10%%=%d mediana=%d 90%%=%d' % (b[len(b)//10], b[len(b)//2], b[len(b)*9//10]))
+    ex = [r for r in MM if g(r, 'rodzaj') == 'sprzedazBezprzetargowa'][:3]
+    for r in ex:
+        t = [x for x in R if g(x, 'tran') == g(r, 'tran')]
+        print('przykład transakcji:', [(g(x, 'funkcja'), g(x, 'm2'), g(x, 'cena_nier'), g(x, 'cena')) for x in t])
