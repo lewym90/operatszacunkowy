@@ -88,6 +88,35 @@ const dt = ts => ts ? new Date(ts).toLocaleDateString('pl-PL', { year: 'numeric'
 export const popupSale = s => `<b>${esc([s.ulica, s.nr].filter(Boolean).join(' ') || (s.kat && s.kat !== 'mieszkanie' ? KAT[s.kat].n : 'Transakcja'))}</b><br>${fmt(s.cena)} zł · ${String(s.m2).replace('.', ',')} m²${s.izby ? ' · ' + s.izby + ' pok.' : ''}${s.dzm2 ? ' · działka ' + fmt(s.dzm2) + ' m²' : ''}<br><b>${fmt(s.pm2)} zł/m²</b><br><span class="tiny">akt: ${dt(s.ts)}${s.kat === 'mieszkanie' || s.kat === 'dom' || s.kat === 'obiekt' ? ' · rynek ' + rynekTxt(s.rynek) : ''}${s.pod ? ' · ' + esc(POD_TXT[s.pod] || s.pod) : ''}</span>`;
 export const popupOffer = (o, approx) => `<b>${esc([o.ulica, o.dzielnica].filter(Boolean).join(', ') || 'Oferta najmu')}</b><br>${fmt(o.cena)} zł/mies. · ${String(o.m2).replace('.', ',')} m² · ${o.pokoje} pok.${o.pietro != null ? ' · ' + (o.pietro === 0 ? 'parter' : o.pietro + '. p.') : ''}<br><b>${fmt(o.cena / o.m2)} zł/m²</b>${o.czynsz ? `<br><span class="tiny">czynsz adm. ${fmt(o.czynsz)} zł</span>` : ''}<br><span class="tiny">${approx ? 'położenie przybliżone (środek dzielnicy)' : 'położenie: środek ulicy'}</span>`;
 
+// Warstwa punktów rysowana na jednej kanwie. Kliknięcie szuka najbliższego punktu w promieniu ok. 14 px.
+function DotsLayer(L, items, color, popup) {
+  const Cls = L.Layer.extend({
+    initialize() { this._it = items; this._col = items.map(it => color(it.v)); },
+    onAdd(map) {
+      this._m = map; this._c = L.DomUtil.create('canvas', 'am-dots leaflet-zoom-hide'); map.getPanes().overlayPane.appendChild(this._c);
+      map.on('moveend zoomend resize', this._draw, this); map.on('click', this._click, this); this._draw();
+    },
+    onRemove(map) { this._c.remove(); map.off('moveend zoomend resize', this._draw, this); map.off('click', this._click, this); },
+    _draw() {
+      const m = this._m, s = m.getSize(), dpr = Math.min(window.devicePixelRatio || 1, 2), c = this._c;
+      L.DomUtil.setPosition(c, m.containerPointToLayerPoint([0, 0]));
+      c.width = Math.round(s.x * dpr); c.height = Math.round(s.y * dpr); c.style.width = s.x + 'px'; c.style.height = s.y + 'px';
+      const x = c.getContext('2d'); x.setTransform(dpr, 0, 0, dpr, 0, 0); x.lineWidth = .6; x.strokeStyle = 'rgba(11,11,13,.85)'; x.globalAlpha = .82;
+      const r = Math.max(2.2, Math.min(5, (m.getZoom() - 8) * .55 + 1.6));
+      for (let i = 0; i < this._it.length; i++) {
+        const it = this._it[i], p = m.latLngToContainerPoint([it.lat, it.lon]); if (p.x < -8 || p.y < -8 || p.x > s.x + 8 || p.y > s.y + 8) continue;
+        x.fillStyle = this._col[i]; x.beginPath(); x.arc(p.x, p.y, r, 0, 6.2832); x.fill(); x.stroke();
+      }
+    },
+    _click(e) {
+      const m = this._m; let best = null, bd = 14 * 14;
+      for (const it of this._it) { const p = m.latLngToContainerPoint([it.lat, it.lon]), d = (p.x - e.containerPoint.x) ** 2 + (p.y - e.containerPoint.y) ** 2; if (d < bd) { bd = d; best = it; } }
+      if (best) L.popup().setLatLng([best.lat, best.lon]).setContent(popup(best)).openOn(m);
+    },
+  });
+  return new Cls();
+}
+
 // Kontroler mapy: jedna mapa, wymienialne warstwy
 export async function createMap(el, opts = {}) {
   const L = await loadLeaflet();
@@ -99,6 +128,10 @@ export async function createMap(el, opts = {}) {
     L, map,
     clear() { layer.remove(); layer = L.layerGroup().addTo(map); },
     dots(items, color, popup) {   // items: [{lat,lon,v,...}]
+      api.items = items;
+      if (items.length > 1500) {   // duże zbiory: jedna kanwa zamiast tysięcy osobnych obiektów (mniej pamięci, płynne przesuwanie na tabletach)
+        const lyr = new DotsLayer(L, items, color, popup); lyr.addTo(layer); return items.map(it => [it.lat, it.lon]);
+      }
       const pts = [];
       for (const it of items) { L.circleMarker([it.lat, it.lon], { radius: it.r || 4.5, weight: it.approx ? 1.2 : .6, dashArray: it.approx ? '2 2' : null, color: it.approx ? color(it.v) : 'rgba(11,11,13,.85)', fillColor: color(it.v), fillOpacity: it.approx ? .35 : .8 }).bindPopup(() => popup(it)).addTo(layer); pts.push([it.lat, it.lon]); }
       return pts;

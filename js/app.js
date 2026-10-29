@@ -7,7 +7,7 @@ import { buildReport, makePdf } from './report.js';
 import { createSync, DEFAULT_URL, encodeCode, decodeCode } from './sync.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer } from './mapa.js';
 
-const VERSION = '1.10.0';
+const VERSION = '1.10.1';
 const S = { wlasne: [],
   offers: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -22,9 +22,20 @@ const now = () => new Date().getFullYear();
 const LV = { 'niska': 'Niska', 'średnia': 'Średnia', 'wysoka': 'Wysoka' };
 const LVTXT = { 'niska': 'Traktuj wynik wyłącznie orientacyjnie: danych jest mało lub są mocno rozrzucone.', 'średnia': 'Dobra podstawa do rozmowy z klientem. Zweryfikuj porównania przed podaniem liczby.', 'wysoka': 'Dużo zbliżonych porównań o podobnej cenie. To nadal szacunek, nie wycena.' };
 
+// Tryb awaryjny: jeśli poprzednie uruchomienie nie dotrwało do końca (przeglądarka padła przy wczytywaniu danych lub mapy), duże dane RCN nie wczytują się same.
+// Znacznik zdejmujemy po 20 s pracy albo gdy aplikacja trafi do tła/zostanie zamknięta normalnie.
+const BOOT = 'am-boot';
+const ls = { get: k => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { } }, del: k => { try { localStorage.removeItem(k); } catch { } } };
+S.safe = ls.get(BOOT) === '1';
+const armBoot = () => { ls.set(BOOT, '1'); setTimeout(() => ls.del(BOOT), 20000); };
+armBoot();
+addEventListener('pagehide', () => ls.del(BOOT)); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') ls.del(BOOT); });
+const safeBanner = () => S.safe ? '<div class="banner warn"><span>!</span><span>Poprzednie uruchomienie aplikacji nie zakończyło się poprawnie, więc dane RCN (transakcje) nie zostały wczytane. <button class="chip" data-act="safeoff" style="margin-top:8px">Wczytaj dane RCN</button></span></div>' : '';
+async function safeOff() { S.safe = false; armBoot(); S.rcn = await store.get('rcn', null); S.rcnInne = await store.get('rcnInne', null); setTx(); render(); checkRcn(); }
+document.addEventListener('click', e => { if (e.target.closest('[data-act="safeoff"]')) safeOff(); });
 async function load() {
   S.wlasne = await store.get('wlasne', []); S.offers = await store.get('offers', []); S.budynki = await store.get('budynki', {}); S.wyceny = await store.get('wyceny', []);
-  S.ust = { ...S.ust, ...(await store.get('ust', {})) }; S.rcn = await store.get('rcn', null); S.rcnInne = await store.get('rcnInne', null); setTx();
+  S.ust = { ...S.ust, ...(await store.get('ust', {})) }; S.rcn = S.safe ? null : await store.get('rcn', null); S.rcnInne = S.safe ? null : await store.get('rcnInne', null); setTx();
 }
 function setTx() {
   const st = {}; S.tx = S.rcn ? rcnToObjects(S.rcn, st) : [];
@@ -105,7 +116,7 @@ function viewWycena() {
   const stat = sale ? (S.pool.length ? `Baza RCN: ${fmt(S.pool.length)} transakcji${flat ? '' : `, w tym ${fmt(katN)} z kategorii „${KAT[kat].n}”`}` : '') : (S.offers.length ? `Baza ofert najmu: ${fmt(S.offers.length)}` : '');
   const chipsHTML = (name, opts, cur) => `<div class="chips" data-chips="${name}">${opts.map(([v, n]) => `<button type="button" class="chip ${cur === v ? 'on' : ''}" data-v="${v}">${n}</button>`).join('')}</div>`;
   const po = POD_OPT[kat];
-  const html = head('Wycena', 'Szacunek wartości rynkowej') + `
+  const html = head('Wycena', 'Szacunek wartości rynkowej') + safeBanner() + `
   <div class="seg" data-v="${sale ? 0 : 1}"><i></i><button data-t="sprzedaz" class="${sale ? 'on' : ''}">Sprzedaż</button><button data-t="najem" class="${sale ? '' : 'on'}">Najem</button></div>
   <div class="field" style="margin-top:14px"><span>Rodzaj nieruchomości</span><div class="chips" data-katsel>${KAT_ORDER.filter(k => k !== 'zabudowana').map(k => `<button type="button" class="chip ${kat === k ? 'on' : ''}" data-v="${k}">${KAT[k].n}</button>`).join('')}</div></div>
   ${ready ? `<div class="banner"><span>◈</span><span>${stat}. Wynik zawsze jako przedział z oceną pewności.</span></div>`
@@ -299,7 +310,7 @@ function viewDane() {
   const n = S.offers.length, fl = S.offers.filter(o => o.flagi && o.flagi.length).length, off = S.offers.filter(o => o.wlaczone === false).length;
   const meta = S.rcn?.meta;
   const list = S.offers.slice().reverse().slice(0, 40);
-  const html = head('Dane', 'Źródła i import') + `
+  const html = head('Dane', 'Źródła i import') + safeBanner() + `
   <div class="card"><div class="eyebrow">Oferty najmu</div><div class="kv"><span>W bazie</span><b>${fmt(n)}</b></div><div class="kv"><span>Podejrzane (pominięte)</span><b>${fl}</b></div><div class="kv"><span>Wyłączone ręcznie</span><b>${off}</b></div>
     <div class="gap"></div><button class="btn" data-act="pdf">Wgraj PDF z ofertami</button><div class="gap"></div><button class="btn ghost" data-act="paste">Wklej tekst ofert</button>
     <input type="file" id="fpdf" accept="application/pdf" multiple hidden>
@@ -347,7 +358,7 @@ const innePath = url => url.replace(/[^/]*$/, 'rcn_inne.json');
 // Każde urządzenie sprawdza ten mały plik (przy starcie, po powrocie do aplikacji, co kilka godzin) i pobiera duże pliki tylko gdy wersja się zmieniła.
 let rcnBusy = false;
 async function checkRcn(force) {
-  const url = S.ust.rcnUrl; if (!url || rcnBusy) return;
+  const url = S.ust.rcnUrl; if (!url || rcnBusy || S.safe) return;
   if (!force && S.rcn && S.rcnInne) { if (navigator.connection?.saveData) return; if (Date.now() - (await store.get('rcncheck', 0)) < 3 * 3600e3) return; }
   rcnBusy = true;
   try {
@@ -549,10 +560,10 @@ function viewMapa() {
     : `<div class="field"><span>Rodzaj nieruchomości</span>${chips('kat', KAT_ORDER.filter(k => k !== 'zabudowana').map(k => [k, KAT[k].n]))}</div>
       ${['mieszkanie', 'dom', 'obiekt', 'lokal'].includes(m.kat) ? `<div class="field"><span>Rynek</span>${chips('rynek', [['', 'Wszystkie'], ['wtorny', 'Wtórny'], ['pierwotny', 'Pierwotny']])}</div>` : ''}
       <div class="field"><span>Transakcje z ostatnich</span>${chips('lata', [[1, '1 roku'], [3, '3 lat'], [5, '5 lat'], [8, '8 lat']])}</div>${metrazF(m.kat)}`;
-  const html = head('Mapa', 'Ceny i oferty w Lublinie') + `
+  const html = head('Mapa', 'Ceny i oferty w Lublinie') + safeBanner() + `
   <div class="seg" data-n="3" data-v="${MODES.findIndex(x => x[0] === m.mode)}"><i></i>${MODES.map(([k, n]) => `<button data-mode="${k}" class="${m.mode === k ? 'on' : ''}">${n}</button>`).join('')}</div>
   <div class="card"><div id="mapfilters">${filters()}</div></div>
-  <div class="card mapcard"><div class="mapbox" id="mapbox"><div class="empty">Ładuję mapę…</div></div><div id="maplegend" style="margin-top:10px"></div></div>
+  <div class="card mapcard"><div class="mapbox" id="mapbox"><div class="empty">Ładuję mapę…</div></div><div id="maplegend" style="margin-top:10px"></div><button class="tilesw" id="tilesw" type="button"></button></div>
   <div class="card"><div id="mapstat" class="small muted"></div></div>`;
   return [html, async v => {
     let ctl = null, subj = S.last.sprzedaz?.res?.ok && (S.last.sprzedaz.subj.kat || 'mieszkanie') === 'mieszkanie' ? S.last.sprzedaz.res.subLL : null;
@@ -589,6 +600,8 @@ function viewMapa() {
     const redrawFilters = () => { $('#mapfilters', v).innerHTML = filters(); bindFilters(); };
     const bindFilters = () => $$('[data-mf]', v).forEach(g => $$('button', g).forEach(b => b.onclick = () => { m[g.dataset.mf] = b.dataset.v; if (g.dataset.mf === 'kat') { m.metraz = ''; m.rynek = ''; redrawFilters(); draw(true); return; } $$('button', g).forEach(x => x.classList.toggle('on', x === b)); draw(false); }));
     $$('.seg button', v).forEach(b => b.onclick = () => { m.mode = b.dataset.mode; const sg = $('.seg', v); sg.dataset.v = MODES.findIndex(x => x[0] === m.mode); $$('button', sg).forEach(x => x.classList.toggle('on', x === b)); redrawFilters(); draw(true); });
+    const tilesBtn = $('#tilesw', v), applyTiles = () => { const light = ls.get('am-tiles') === 'light'; $('#mapbox', v).classList.toggle('light-tiles', light); tilesBtn.textContent = light ? 'Podkład mapy: jasny (zmień na ciemny)' : 'Podkład mapy: ciemny (zmień na jasny)'; };
+    tilesBtn.onclick = () => { ls.set('am-tiles', ls.get('am-tiles') === 'light' ? 'dark' : 'light'); applyTiles(); }; applyTiles();
     bindFilters();
     try { ctl = await createMap($('#mapbox', v)); } catch (e) { $('#mapbox', v).innerHTML = `<div class="empty"><b>Mapa niedostępna</b>${esc(e.message)}</div>`; return; }
     if (!$('#mapbox', v).isConnected) { ctl.destroy(); return; }

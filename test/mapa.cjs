@@ -18,7 +18,7 @@ const VP = [['phone', 390, 844, true], ['tablet', 820, 1180, true], ['desktop', 
     await p.goto(U + '#/mapa'); await p.waitForSelector('.leaflet-container', { timeout: 10000 }); await p.waitForTimeout(1200);
     const nDots = () => p.evaluate(() => document.querySelector('#mapstat').textContent); const st = await nDots(); console.log(name, 'transakcje:', st.slice(0, 90));
     await p.screenshot({ path: `${OUT}/${name}-1-transakcje.png` });
-    const pop = await p.evaluate(() => { const ctl = window.__am.getMap(); let n = 0, done = null; ctl.map.eachLayer(l => { if (!done && l.getLatLng && l.options && l.options.radius === 4.5) { l.fire('click', { latlng: l.getLatLng() }); done = true; } }); return new Promise(r => setTimeout(() => r(document.querySelector('.leaflet-popup-content')?.textContent || ''), 300)); });
+    const pop = await p.evaluate(() => { const ctl = window.__am.getMap(), it = ctl.items[0], L = ctl.L; ctl.map.setView([it.lat, it.lon], 16, { animate: false }); return new Promise(r => setTimeout(() => { ctl.map.fire('click', { latlng: L.latLng(it.lat, it.lon), containerPoint: ctl.map.latLngToContainerPoint([it.lat, it.lon]) }); setTimeout(() => r(document.querySelector('.leaflet-popup-content')?.textContent || ''), 300); }, 400)); });
     console.log(name, 'okienko punktu:', pop.slice(0, 100)); if (!/zł\/m²/.test(pop)) errs.push('BRAK OKIENKA PUNKTU');
     await p.click('[data-mode=grid]'); await p.waitForTimeout(900); console.log(name, 'siatka:', (await nDots()).slice(0, 90)); await p.screenshot({ path: `${OUT}/${name}-2-ceny-okolic.png` });
     await p.click('[data-mode=najem]'); await p.waitForTimeout(900); console.log(name, 'najem:', (await nDots()).slice(0, 110)); await p.screenshot({ path: `${OUT}/${name}-3-najem.png` });
