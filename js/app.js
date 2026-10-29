@@ -1,15 +1,15 @@
 import * as store from './store.js';
-import { estimateRent, estimateSale, crossCheckRent, inferDistrict, grossYield, addrKey, normStreet, YEAR_BANDS, yearBand } from './engine.js';
+import { estimateRent, estimateSale, crossCheckRent, inferDistrict, ATTRS, learnPremiums, grossYield, addrKey, normStreet, YEAR_BANDS, yearBand } from './engine.js';
 import { rcnToObjects } from './rcn.js';
 import { linesFromPdf, offersFromLines, offerKey } from './pdfimport.js';
 import { esc, $, $$, fmt, roundTo, toast, openSheet, closeSheet, countUp, saveFile, ICON } from './ui.js';
 import { buildReport, makePdf } from './report.js';
 
-const VERSION = '1.4.0';
+const VERSION = '1.5.0';
 const S = { wlasne: [],
   offers: [], rcn: null, tx: [], streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
-  form: { tryb: 'sprzedaz', ulica: '', nr: '', dzielnica: '', m2: '', pokoje: 2, pietro: null, rok: '', rynek: '', standard: '', meble: '', zapamietaj: true },
+  form: { tryb: 'sprzedaz', ulica: '', nr: '', dzielnica: '', m2: '', pokoje: 2, pietro: null, rok: '', rynek: '', standard: '', meble: '', zapamietaj: true, ud: [] },
 };
 // Własne umowy najmu biura -> ta sama postać co oferty, z jawnymi cechami (nie ze słów w tytule) i dużą wagą
 const ownToOffer = w => ({ id: 'w' + w.id, own: true, ulica: w.ulica, dzielnica: w.dzielnica, miasto: 'Lublin', m2: w.m2, pokoje: w.pokoje, pietro: w.pietro, cena: w.cena, czynsz: w.czynsz || null, meble: w.meble,
@@ -78,7 +78,8 @@ function viewWycena() {
     <div class="grid2">${stepHTML('pokoje', f.pokoje, 'Pokoje')}${stepHTML('pietro', floorLbl(f.pietro), 'Piętro')}</div>
     ${sale ? `<div class="field"><span>Rynek</span><div class="chips" data-chips="rynek">${[['', 'Dowolny'], ['wtorny', 'Wtórny'], ['pierwotny', 'Pierwotny']].map(([v, n]) => `<button type="button" class="chip ${f.rynek === v ? 'on' : ''}" data-v="${v}">${n}</button>`).join('')}</div></div>` : ''}
     <div class="field"><span>Standard (informacyjnie)</span><div class="chips" data-chips="standard">${[['', 'Nie wiem'], ['remont', 'Do remontu'], ['dobry', 'Dobry'], ['wysoki', 'Wysoki']].map(([v, n]) => `<button type="button" class="chip ${f.standard === v ? 'on' : ''}" data-v="${v}">${n}</button>`).join('')}</div></div>
-    ${sale ? '' : `<div class="field"><span>Wyposażenie (informacyjnie)</span><div class="chips" data-chips="meble">${[['', 'Nie wiem'], ['tak', 'Umeblowane'], ['nie', 'Bez mebli']].map(([v, n]) => `<button type="button" class="chip ${f.meble === v ? 'on' : ''}" data-v="${v}">${n}</button>`).join('')}</div></div>`}
+    ${sale ? '' : `<div class="field"><span>Mieszkanie ma (zaznacz po obejrzeniu)</span><div class="chips" data-multi="ud">${ATTRS.filter(a => a[0] !== 'meble').map(([k, n]) => `<button type="button" class="chip ${(f.ud || []).includes(k) ? 'on' : ''}" data-v="${k}">${n}</button>`).join('')}</div></div>`}
+    ${sale ? '' : `<div class="field"><span>Wyposażenie</span><div class="chips" data-chips="meble">${[['', 'Nie wiem'], ['tak', 'Umeblowane'], ['nie', 'Bez mebli']].map(([v, n]) => `<button type="button" class="chip ${f.meble === v ? 'on' : ''}" data-v="${v}">${n}</button>`).join('')}</div></div>`}
     ${sale ? `<label class="check"><input type="checkbox" name="zap" ${f.zapamietaj ? 'checked' : ''}> Zapamiętaj rok budowy dla tego adresu</label>` : ''}
     <p class="tiny muted" style="margin:6px 0 14px">${sale ? 'Standard trafia do raportu jako informacja i nie zmienia wyniku.' : 'Rok budowy i standard zmieniają wynik tylko wtedy, gdy baza ofert pozwala zmierzyć różnicę z przedziałem pewności. Wyposażenie trafia do raportu jako informacja.'}</p>
     <button class="btn" type="submit">Oszacuj wartość</button>
@@ -91,6 +92,7 @@ function viewWycena() {
       else { const c = S.form.pietro; S.form.pietro = c == null ? (d > 0 ? 0 : null) : (c + d < 0 ? null : Math.min(30, c + d)); }
       $('output', st).textContent = id === 'pokoje' ? S.form.pokoje : floorLbl(S.form.pietro);
     }));
+    $$('[data-multi]', v).forEach(g => $$('button', g).forEach(b => b.onclick = () => { const k = g.dataset.multi, a = S.form[k] || (S.form[k] = []), i = a.indexOf(b.dataset.v); i < 0 ? a.push(b.dataset.v) : a.splice(i, 1); b.classList.toggle('on', i < 0); }));
     $$('[data-chips]', v).forEach(g => $$('button', g).forEach(b => b.onclick = () => { S.form[g.dataset.chips] = b.dataset.v; $$('button', g).forEach(x => x.classList.toggle('on', x === b)); }));
     $('#f', v).onsubmit = e => { e.preventDefault(); readForm(v); submitForm(); };
   }];
@@ -107,7 +109,8 @@ function submitForm() {
   if (f.rok && !(rok >= 1700 && rok <= now() + 3)) return toast('Rok budowy wygląda błędnie');
   if (f.tryb === 'sprzedaz' && !S.tx.length) return toast('Najpierw zaimportuj dane RCN (zakładka Dane)');
   if (f.tryb === 'najem' && !S.offers.length && !(S.wlasne || []).length) return toast('Najpierw zaimportuj oferty najmu (zakładka Dane)');
-  const subj = { tryb: f.tryb, ulica: f.ulica, nr: f.nr, dzielnica: f.dzielnica, m2, pokoje: f.pokoje, pietro: f.pietro, rok, rynek: f.rynek || null, standard: f.standard || null, meble: f.meble === '' ? null : f.meble };
+  const subj = { tryb: f.tryb, ulica: f.ulica, nr: f.nr, dzielnica: f.dzielnica, m2, pokoje: f.pokoje, pietro: f.pietro, rok, rynek: f.rynek || null, standard: f.standard || null, meble: f.meble === '' ? null : f.meble,
+    attrs: f.tryb === 'najem' ? Object.fromEntries(ATTRS.filter(a => a[0] !== 'meble').map(([k]) => [k, (f.ud || []).includes(k) ? 1 : 0])) : null };
   let dzNote = null;
   if (f.tryb === 'najem' && subj.ulica) {
     const inf = inferDistrict(allOffers(), S.tx, subj.ulica);
@@ -239,6 +242,7 @@ function viewDane() {
     <div class="gap"></div><button class="btn" data-act="pdf">Wgraj PDF z ofertami</button><div class="gap"></div><button class="btn ghost" data-act="paste">Wklej tekst ofert</button>
     <input type="file" id="fpdf" accept="application/pdf" multiple hidden>
     <p class="tiny muted" style="margin:10px 0 0">W Safari: lista ofert → Udostępnij → Drukuj → pinch na podglądzie → Zapisz do Plików. Plik wgrywasz tutaj. Odczyt dzieje się w telefonie, bez internetu i bez AI.</p></div>
+  <div class="card"><div class="eyebrow">Cechy ofert (z filtrów portalu)</div>${attrCard()}</div>
   <div class="card"><div class="eyebrow">Własne umowy najmu</div><p class="small muted" style="margin:0 0 10px">Prawdziwe umowy Twojego biura lub najmy, które znasz z pierwszej ręki. Mają największą wagę w wycenie i pozwalają zmierzyć standard, meble i budynek, których nie ma w ogłoszeniach.</p>
     ${(S.wlasne || []).map(w => `<button class="off" data-own="${w.id}"><div><b>${esc([w.ulica, w.dzielnica].filter(Boolean).join(', ') || 'Najem')}</b></div><div class="p">${fmt(w.cena)} zł</div><div class="m">${w.m2} m² · ${w.pokoje} pok.${w.rok ? ' · rok ' + w.rok : ''}${w.standard ? ' · ' + ({ remont: 'do remontu', dobry: 'dobry', wysoki: 'wysoki' })[w.standard] : ''}${w.meble === 'tak' ? ' · meble' : ''}</div><div class="m" style="text-align:right">${fmt(w.cena / w.m2)} zł/m²</div></button>`).join('')}
     <div class="gap"></div><button class="btn" data-act="own">Dodaj umowę najmu</button></div>
@@ -274,13 +278,28 @@ function offerSummary(found) {
   for (const r of found) { const k = offerKey(r); if (have.has(k) || seen.has(k)) { dup++; continue; } seen.add(k); neu.push(r); }
   return { neu, dup, flagged: neu.filter(r => r.flagi.length).length };
 }
+const importFilter = new Set();
 function confirmImport(found, srcNote) {
   const { neu, dup, flagged } = offerSummary(found);
+  importFilter.clear();
   openSheet(`<h3>Wynik odczytu</h3><p class="small muted">${esc(srcNote)}</p><div class="kv"><span>Odczytano ofert</span><b>${found.length}</b></div><div class="kv"><span>Nowych do dodania</span><b>${neu.length}</b></div><div class="kv"><span>Już w bazie / powtórzone</span><b>${dup}</b></div><div class="kv"><span>Podejrzane (zostaną pominięte w wycenach)</span><b>${flagged}</b></div>
+    <div class="field"><span>Czy ta lista była wyszukana z filtrem? (jeśli tak, zaznacz)</span><div class="chips" id="flt">${ATTRS.map(([k, n]) => `<button type="button" class="chip" data-v="${k}">${n}</button>`).join('')}</div></div>
+    <p class="tiny muted">Przy filtrze wszystkie oferty z tej listy dostają zaznaczoną cechę, a oferty z bazy z tego samego dnia, których na liście nie ma, dostają jej brak. Dzięki temu aplikacja może zmierzyć, ile ta cecha jest warta.</p>
     <p class="tiny muted">To ceny ofertowe z ogłoszeń. Aplikacja zapisuje tylko dane techniczne (cena, metraż, pokoje, piętro, lokalizacja), bez zdjęć, opisów i danych kontaktowych.</p>
     <button class="btn" id="ok" ${neu.length ? '' : 'disabled'}>Dodaj ${neu.length} ofert do bazy</button><div class="gap"></div><button class="btn ghost" id="no">Anuluj</button>`, p => {
     $('#no', p).onclick = closeSheet;
-    $('#ok', p).onclick = () => { const t = Date.now(); S.offers.push(...neu.map(r => ({ ...r, id: uid(), typ: 'najem', ts: t, wlaczone: true }))); save.offers(); closeSheet(); toast(`Dodano ${neu.length} ofert`); render(); };
+    const okb = $('#ok', p), lbl = () => { okb.disabled = !(neu.length || importFilter.size); okb.textContent = importFilter.size ? `Oznacz oferty z listy${neu.length ? ' i dodaj ' + neu.length + ' nowych' : ''}` : `Dodaj ${neu.length} ofert do bazy`; };
+    $$('#flt button', p).forEach(b => b.onclick = () => { const k = b.dataset.v; importFilter.has(k) ? importFilter.delete(k) : importFilter.add(k); b.classList.toggle('on', importFilter.has(k)); lbl(); });
+    $('#ok', p).onclick = () => {
+      const t = Date.now(); const keys = new Set(found.map(offerKey)); let marked = 0, negs = 0;
+      const recent = o => t - (o.ts || 0) < 3 * 86400000;                              // ta sama migawka rynku: oferty zaimportowane w ostatnich 3 dniach
+      S.offers.push(...neu.map(r => ({ ...r, id: uid(), typ: 'najem', ts: t, wlaczone: true })));
+      for (const k of importFilter) for (const o of S.offers) {
+        const inList = keys.has(offerKey(o)); o.attrs = o.attrs || {};
+        if (inList) { if (o.attrs[k] !== 1) marked++; o.attrs[k] = 1; } else if (recent(o) && o.attrs[k] === undefined) { o.attrs[k] = 0; negs++; }
+      }
+      save.offers(); closeSheet(); toast(importFilter.size ? `Dodano ${neu.length} ofert, oznaczono ${marked} jako z cechą` : `Dodano ${neu.length} ofert`); render();
+    };
   });
 }
 // nagłówek listy ma dwukropek („Mieszkania na wynajem: Lublin…”); linki w stopce strony go nie mają
@@ -299,6 +318,16 @@ async function importPdfs(files) {
   if (sale) { closeSheet(); return toast('To lista ofert sprzedaży. Tu importujemy tylko najem.'); }
   if (!all.length) { closeSheet(); return toast('Nie znaleziono ofert w tym pliku'); }
   confirmImport(all, `Odczytano ${files.length} plik(ów).`);
+}
+function attrCard() {
+  const pool = S.offers.filter(o => o.wlaczone !== false && !(o.flagi && o.flagi.length) && o.m2 > 0 && o.cena > 0), L = learnPremiums(pool);
+  const pc = p => `${p >= 0 ? '+' : '−'}${Math.abs(p * 100).toFixed(0)}%`;
+  const rows = ATTRS.map(([k, n]) => {
+    const n1 = pool.filter(o => o.attrs && o.attrs[k] === 1).length, n0 = pool.filter(o => o.attrs && o.attrs[k] === 0).length, A = L.ok ? L.attr[k] : null;
+    const st = A && A.sig ? `<b>${pc(A.pct)}</b> <small>(${pc(A.pctLo)} do ${pc(A.pctHi)})</small>` : A && A.supported ? '<b>brak wyraźnej różnicy</b>' : `<b>${n1 + n0 ? n1 + ' z, ' + n0 + ' bez' : 'brak danych'}</b>`;
+    return `<div class="kv"><span>${n}</span>${st}</div>`;
+  }).join('');
+  return rows + `<p class="tiny muted" style="margin:10px 0 0">Aplikacja mierzy cechę, gdy ma co najmniej 15 ofert z nią i 15 bez niej. Jak oznaczyć: na portalu ustaw filtr (np. Klimatyzacja) i wyeksportuj listę najmu do PDF tak samo jak zwykle. Przy wgrywaniu zaznacz ten filtr. Najlepiej w tym samym dniu co zwykłe listy.</p>`;
 }
 function ownSheet(id) {
   const w = id ? S.wlasne.find(x => x.id === id) : null, d = { standard: w?.standard || '', meble: w?.meble || '' };

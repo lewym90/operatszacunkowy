@@ -1,5 +1,5 @@
 import fs from 'fs'; import assert from 'assert';
-import { estimateRent, estimateSale, crossCheckRent, inferDistrict, wquantile, grossYield, THRESH } from '../js/engine.js';
+import { estimateRent, estimateSale, crossCheckRent, inferDistrict, learnPremiums, wquantile, grossYield, THRESH } from '../js/engine.js';
 import { rcnToObjects, RCN_COLS } from '../js/rcn.js';
 
 // 1) kwantyle
@@ -111,4 +111,14 @@ const subG={tryb:'najem',dzielnica:'Wrotków',m2:52,pokoje:3,pietro:1,rok:2005,s
 const g0=estimateRent(offers,subG), g1=estimateRent([...offers,...own],subG);
 console.log('WŁASNE UMOWY: bez:',Math.round(g0.total.mid),'z umowami:',Math.round(g1.total.mid),'| własne wśród porównań:',g1.comps.filter(c=>c.own).length);
 assert.ok(g1.comps.some(c=>c.own)&&g1.total.mid>g0.total.mid,'własna umowa podnosi wynik ku swojej wartości'); assert.ok(g1.total.mid<3500,'nie przejmuje całkowicie wyniku');
+// 10) cechy z filtrów: syntetycznie klimatyzacja +10%, meble +12%, winda 0%; pomiar ma to odzyskać, a bez oznaczeń nie wolno mierzyć
+const offA=[]; for(let i=0;i<320;i++){ const m2=30+Math.floor(rn()*40), kl=rn()<0.4?1:0, mb=rn()<0.5?1:0, wd=rn()<0.5?1:0;
+  offA.push({id:'oa'+i,wlaczone:true,flagi:[],dzielnica:'D'+(i%5),ulica:null,m2,pokoje:m2<38?1:m2<55?2:3,pietro:1,cena:Math.round(m2*55*Math.pow(m2/40,-0.5)*(kl?1.10:1)*(mb?1.12:1)*(0.92+rn()*0.16)),tytul:'x',attrs:{klima:kl,meble:mb,winda:wd}}); }
+const LA=learnPremiums(offA);
+console.log('CECHY: klima', (LA.attr.klima.pct*100).toFixed(1)+'%', LA.attr.klima.sig, '| meble', (LA.attr.meble.pct*100).toFixed(1)+'%', LA.attr.meble.sig, '| winda', (LA.attr.winda.pct*100).toFixed(1)+'%', LA.attr.winda.sig, '| garaż wspierany:', LA.attr.garaz.supported);
+assert.ok(LA.attr.klima.sig&&LA.attr.klima.pct>0.04&&LA.attr.klima.pct<0.17); assert.ok(LA.attr.meble.sig&&LA.attr.meble.pct>0.06&&LA.attr.meble.pct<0.2); assert.ok(!LA.attr.winda.sig,'cecha bez wpływu nie jest istotna'); assert.ok(!LA.attr.garaz.supported);
+const sub0={tryb:'najem',dzielnica:'D2',m2:50,pokoje:2,pietro:1}, rA0=estimateRent(offA,{...sub0,attrs:{klima:0,winda:0},meble:'nie'}), rA1=estimateRent(offA,{...sub0,attrs:{klima:1,winda:0},meble:'tak'});
+console.log('MIESZKANIE bez klimy i mebli:',Math.round(rA0.total.mid),'| z klimą i meblami:',Math.round(rA1.total.mid),'| iloraz',(rA1.total.mid/rA0.total.mid).toFixed(2));
+assert.ok(rA1.total.mid/rA0.total.mid>1.12&&rA1.total.mid/rA0.total.mid<1.30);
+const noTag=offA.map(o=>({...o,attrs:undefined})); assert.ok(!learnPremiums(noTag).attr.klima.supported,'bez oznaczeń nie mierzymy');
 console.log('TESTY OK');

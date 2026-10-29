@@ -47,7 +47,7 @@ export async function buildReport(e, ust) {
   // dane nieruchomości
   const lok = sale ? [s.ulica, s.nr].filter(Boolean).join(' ') : [s.dzielnica, s.ulica].filter(Boolean).join(', ');
   const rows = [['Lokalizacja', (lok || 'Lublin') + (sale ? '' : ', Lublin')], ['Powierzchnia', String(s.m2).replace('.', ',') + ' m²'], ['Liczba pokoi', String(s.pokoje)], ['Piętro', s.pietro == null ? '—' : s.pietro === 0 ? 'parter' : String(s.pietro)],
-    ['Rok budowy', s.rok ? String(s.rok) : 'nie podano'], ['Standard (wg zgłoszenia)', ({ remont: 'do remontu', dobry: 'dobry', wysoki: 'wysoki' })[s.standard] || 'nie podano'], ...(sale ? [['Rynek', ({ wtorny: 'wtórny', pierwotny: 'pierwotny' })[s.rynek] || 'dowolny']] : [['Wyposażenie (wg zgłoszenia)', ({ tak: 'umeblowane', nie: 'bez mebli' })[s.meble] || 'nie podano']])];
+    ['Rok budowy', s.rok ? String(s.rok) : 'nie podano'], ['Standard (wg zgłoszenia)', ({ remont: 'do remontu', dobry: 'dobry', wysoki: 'wysoki' })[s.standard] || 'nie podano'], ...(sale ? [['Rynek', ({ wtorny: 'wtórny', pierwotny: 'pierwotny' })[s.rynek] || 'dowolny']] : [['Wyposażenie (wg zgłoszenia)', ({ tak: 'umeblowane', nie: 'bez mebli' })[s.meble] || 'nie podano'], ...(s.attrs && Object.values(s.attrs).some(Boolean) ? [['Udogodnienia', Object.entries(s.attrs).filter(e => e[1]).map(e => ({ klima: 'klimatyzacja', winda: 'winda', balkon: 'balkon', taras: 'taras', ogrod: 'ogród', garaz: 'garaż' })[e[0]]).join(', ')]] : [])])];
   const cw = (W - 2 * M) / 2;
   rows.forEach((rw, i) => { const x = M + (i % 2) * cw, yy = y + Math.floor(i / 2) * 78; ctx.font = '400 21px Archivo'; ctx.fillStyle = C.ink2; ctx.fillText(rw[0].toUpperCase(), x, yy); ctx.font = '700 30px Archivo'; ctx.fillStyle = C.ink; ctx.fillText(rw[1], x, yy + 38); });
   y += Math.ceil(rows.length / 2) * 78 + 24;
@@ -61,7 +61,8 @@ export async function buildReport(e, ust) {
   text(sale ? `Metoda porównawcza. Podstawą są ceny z aktów notarialnych zapisane w Rejestrze Cen Nieruchomości (RCN) dla lokali o zbliżonej powierzchni, liczbie pokoi, piętrze i położeniu. Podany przedział to ${r.rangeKind}. Starsze transakcje mają mniejszą wagę.`
     : `Metoda porównawcza. Podstawą są ceny ofertowe lokali na wynajem z ogłoszeń o zbliżonej powierzchni, liczbie pokoi, piętrze i dzielnicy. Podany przedział to ${r.rangeKind}. Ceny ofertowe mogą być wyższe od faktycznie uzgodnionych czynszów.`, 25, C.ink2); y += 8;
   if (r.adminTotal) { text(`Czynsz administracyjny w porównywalnych ofertach: ok. ${money(round(r.adminTotal, 10))} zł miesięcznie (nie wlicza się do powyższego przedziału).`, 25, C.ink2); y += 8; }
-  const nts = r.notes.filter(n => !/^Lokalizacja podmiotu/.test(n)).slice(0, 4); nts.forEach(n => text('•  ' + n, 23, C.ink2, 400, 'Archivo', 1.38, W - 2 * M - 28)); y += 10;
+  if (!sale && r.applied && r.applied.length) { text('Uwzględnione cechy mieszkania: ' + r.applied.map(a => `${a.label}${a.has === false ? ' (brak)' : ''}`).join(', ') + '. Ich wpływ na czynsz zmierzono na bazie ofert z rynku lubelskiego.', 25, C.ink2); y += 8; }
+  const nts = r.notes.filter(n => !/^(Lokalizacja podmiotu|Pominięto|Korekta segmentu|Cecha „|Segmenty |Dzielnica ustalona|Uwaga: wpisano)/.test(n)).slice(0, 4); nts.forEach(n => text('•  ' + n, 23, C.ink2, 400, 'Archivo', 1.38, W - 2 * M - 28)); y += 10;
 
   // tabela porównań
   const cols = [['Lokalizacja', M, 'l'], ['m²', 620, 'r'], ['Pok.', 705, 'r'], ['Cena', 880, 'r'], ['zł/m²', 1010, 'r'], [sale ? 'Akt' : 'Typ', W - M, 'r']];

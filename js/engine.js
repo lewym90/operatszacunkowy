@@ -123,30 +123,39 @@ function ridge(X, y, lam) {
   return solve(A, b);
 }
 const pctile = (a, q) => { const s = a.slice().sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.max(0, Math.round(q * (s.length - 1))))]; };
+// Cechy ofert oznaczane przy imporcie z filtrem portalu (1 = oferta była na liście z tym filtrem; 0 = oferta z tego samego dnia, której na liście nie było).
+export const ATTRS = [['meble', 'Umeblowane (opis zawiera „umeblowane")'], ['klima', 'Klimatyzacja'], ['winda', 'Winda'], ['balkon', 'Balkon'], ['taras', 'Taras'], ['ogrod', 'Ogród'], ['garaz', 'Garaż']];
+const ATTR_MIN = 15;                                  // minimum ofert Z cechą i minimum BEZ cechy (znanych), żeby ją zmierzyć
 let _memo = null;
-// Uczy się z bazy ofert, o ile droższe są oferty „nowe" i „wysoki standard" przy tym samym metrażu, pokojach i dzielnicy.
-// Zwraca przedziały (bootstrap 90%) i test wsteczny (10-krotna walidacja krzyżowa). Premia jest „istotna" tylko gdy
-// cały przedział leży po jednej stronie zera i jest dość ofert z daną cechą.
+// Uczy się z bazy ofert, o ile droższe są oferty z daną cechą przy tym samym metrażu, pokojach i dzielnicy (jeden model dla wszystkich cech naraz).
+// Zwraca przedziały (bootstrap 90%) i test wsteczny (10-krotna walidacja krzyżowa). Premia jest „istotna" tylko gdy cały przedział leży
+// po jednej stronie zera i jest dość ofert z cechą i bez niej.
 export function learnPremiums(pool) {
-  const key = pool.length + '|' + (pool[0]?.id) + '|' + (pool[pool.length - 1]?.id);
+  const key = pool.length + '|' + (pool[0]?.id) + '|' + (pool[pool.length - 1]?.id) + '|' + pool.reduce((a, o) => a + (o.attrs ? Object.values(o.attrs).reduce((x, v) => x + v + 1, 0) : 0), 0);
   if (_memo && _memo.key === key) return _memo.val;
-  const out = { n: pool.length, ok: false };
+  const out = { n: pool.length, ok: false, attr: {} };
   if (pool.length >= 60) {
     const cnt = {}; pool.forEach(o => { const d = nz(o.dzielnica); cnt[d] = (cnt[d] || 0) + 1; });
     const dzs = Object.keys(cnt).filter(d => d && cnt[d] >= 8).sort();
+    const sup = ATTRS.map(([k]) => k).filter(k => pool.filter(o => o.attrs && o.attrs[k] === 1).length >= ATTR_MIN && pool.filter(o => o.attrs && o.attrs[k] === 0).length >= ATTR_MIN);
+    for (const [k] of ATTRS) { const n1 = pool.filter(o => o.attrs && o.attrs[k] === 1).length, n0 = pool.filter(o => o.attrs && o.attrs[k] === 0).length; out.attr[k] = { n1, n0, supported: sup.includes(k) }; }
     const feat = o => { const t = o.tags || segmentTags(o.tytul), d = nz(o.dzielnica);
-      return [1, Math.log(o.m2 / 40), o.pokoje - 2, ...dzs.map(x => x === d ? 1 : 0), t.nowe, t.wysoki]; };
+      const f = [1, Math.log(o.m2 / 40), o.pokoje - 2, ...dzs.map(x => x === d ? 1 : 0), t.nowe, t.wysoki];
+      for (const k of sup) { const v = o.attrs ? o.attrs[k] : undefined; f.push(v === 1 ? 1 : 0, v === undefined ? 1 : 0); }
+      return f; };
     const X = pool.map(feat), y = pool.map(o => Math.log(o.cena / o.m2)), n = pool.length, d = X[0].length;
+    const iNowe = 3 + dzs.length, iWys = iNowe + 1;
     let seed = 12345; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
     const W = []; for (let it = 0; it < 150; it++) { const ix = Array.from({ length: n }, () => Math.floor(rnd() * n)); W.push(ridge(ix.map(i => X[i]), ix.map(i => y[i]), 3)); }
-    const mk = (j, name) => {
+    const mk = (j, name, nTag, nOther) => {
       const bs = W.map(w => w[j]), lo = pctile(bs, 0.05), hi = pctile(bs, 0.95), mid = pctile(bs, 0.5);
-      const nTag = X.filter(r => r[j] === 1).length;
-      const sig = nTag >= 15 && n - nTag >= 15 && (lo > 0 || hi < 0);
+      const sig = nTag >= ATTR_MIN && nOther >= ATTR_MIN && (lo > 0 || hi < 0);
       return { name, nTag, beta: mid, lo, hi, pct: Math.exp(mid) - 1, pctLo: Math.exp(lo) - 1, pctHi: Math.exp(hi) - 1, sig,
         used: sig ? (lo > 0 ? lo : hi) : 0 };           // stosujemy koniec przedziału NAJBLIŻSZY zera (ostrożnie)
     };
-    out.nowe = mk(d - 2, 'nowe'); out.wysoki = mk(d - 1, 'wysoki');
+    const c1 = j => X.filter(r => r[j] === 1).length;
+    out.nowe = mk(iNowe, 'nowe', c1(iNowe), n - c1(iNowe)); out.wysoki = mk(iWys, 'wysoki', c1(iWys), n - c1(iWys));
+    sup.forEach((k, i) => { const j = iWys + 1 + 2 * i, a = out.attr[k]; Object.assign(a, mk(j, k, a.n1, a.n0), { supported: true, prev: a.n1 / (a.n1 + a.n0) }); });
     // test wsteczny: 10-krotna walidacja krzyżowa modelu vs. zwykła mediana
     const idx = Array.from({ length: n }, (_, i) => i).sort((a, b) => ((a * 7919) % 1009) - ((b * 7919) % 1009)), errM = [], errB = [];
     for (let f = 0; f < 10; f++) {
@@ -167,8 +176,10 @@ export function estimateRent(offers, subject) {
   // cechy podmiotu: znane (0/1) albo nieznane (null)
   const sNowe = subject.rok == null ? null : subject.rok >= 2018 ? 1 : 0;
   const sWys = subject.standard ? (subject.standard === 'wysoki' ? 1 : 0) : null;
+  const sAttr = {}; for (const [k] of ATTRS) { const v = k === 'meble' ? (subject.meble === 'tak' ? 1 : subject.meble === 'nie' ? 0 : null) : (subject.attrs ? subject.attrs[k] ?? null : null); sAttr[k] = v; }
   const L = learnPremiums(pool);
   const use = { nowe: L.ok && L.nowe.sig && sNowe != null, wysoki: L.ok && L.wysoki.sig && sWys != null };
+  const useA = {}; for (const [k] of ATTRS) useA[k] = L.ok && L.attr[k] && L.attr[k].sig && sAttr[k] != null;
   const build = (sizeTol, dzOnly) => pool.map(o => {
     if (Math.abs(o.m2 - subject.m2) / subject.m2 > sizeTol) return null;
     if (Math.abs(o.pokoje - subject.pokoje) > 1) return null;
@@ -182,6 +193,10 @@ export function estimateRent(offers, subject) {
       const sv = k === 'nowe' ? sNowe : sWys; if (sv == null) continue;
       if (t[k] !== sv) { mism = true; if (use[k]) adj += (sv - t[k]) * L[k].used; }
     }
+    for (const [k] of ATTRS) {                       // cechy z filtrów: znana wartość oferty, a gdy nieznana — oczekiwana (udział w bazie)
+      if (!useA[k]) continue; const cv = o.attrs && o.attrs[k] !== undefined ? o.attrs[k] : L.attr[k].prev;
+      adj += (sAttr[k] - cv) * L.attr[k].used;
+    }
     if (mism) w *= (use.nowe || use.wysoki) && Math.abs(adj) > 0 ? 0.85 : 0.6;   // inny segment: niższa waga
     if (o.own) w *= 2;                              // własna umowa biura: największa waga
     if (w < 0.12) return null;
@@ -194,22 +209,29 @@ export function estimateRent(offers, subject) {
   if (excludedFlag) notes.push(`Pominięto ${excludedFlag} ofert oznaczonych jako podejrzane lub wyłączonych ręcznie.`);
   notes.push('To ceny OFERTOWE z ogłoszeń, nie zawartych umów. Faktyczny czynsz może być niższy; brak danych, by to policzyć.');
   const pc = p => `${p >= 0 ? '+' : '−'}${Math.abs(p * 100).toFixed(0)}%`;
+  const applied = [];
   if (L.ok) {
     for (const [k, lbl, sv] of [['nowe', 'nowe budownictwo', sNowe], ['wysoki', 'wysoki standard', sWys]]) {
       const P = L[k], rng = `${pc(P.pct)} (przedział ${pc(P.pctLo)} do ${pc(P.pctHi)}, ${P.nTag} ofert z tą cechą w tytule)`;
-      if (use[k]) notes.push(`Korekta segmentu „${lbl}": zmierzona różnica w bazie ${rng}. Do korekty użyto ostrożniejszego końca przedziału (${pc(Math.exp(P.used) - 1)}).${k === 'nowe' ? ' Rok budowy od 2018 traktowany jako nowe budownictwo.' : ''}`);
+      if (use[k]) { applied.push({ k, label: lbl, pct: P.pct, used: Math.exp(P.used) - 1 }); notes.push(`Korekta segmentu „${lbl}": zmierzona różnica w bazie ${rng}. Do korekty użyto ostrożniejszego końca przedziału (${pc(Math.exp(P.used) - 1)}).${k === 'nowe' ? ' Rok budowy od 2018 traktowany jako nowe budownictwo.' : ''}`); }
       else if (!P.sig) unused.push(`${lbl}: zbyt mało ofert z tą cechą, by uczciwie zmierzyć różnicę (${P.nTag} ofert)`);
       else if (sv == null) ask.push({ k, text: `${k === 'nowe' ? 'Rok budowy' : 'Standard'}: w tej bazie ${lbl} oznacza czynsz za m² o około ${pc(P.pct)} (przedział ${pc(P.pctLo)} do ${pc(P.pctHi)}). Podaj ${k === 'nowe' ? 'rok budowy' : 'standard'}, żeby to uwzględnić.` });
     }
-    notes.push('Segmenty są rozpoznawane ze słów w tytułach ogłoszeń. Oferta bez takich słów też mogła być nowa lub luksusowa, więc zmierzone premie są raczej ostrożnym minimum.');
-  } else unused.push('segmenty (nowe / wysoki standard): za mało ofert w bazie, by zmierzyć różnice (minimum 60)');
-  if (subject.meble != null) unused.push('wyposażenie/umeblowanie (listy ogłoszeń tego nie zawierają)');
+    for (const [k, lbl] of ATTRS) {
+      const A = L.attr[k]; const nm = lbl.split(' (')[0].toLowerCase();
+      if (useA[k]) { applied.push({ k, label: nm, pct: A.pct, used: Math.exp(A.used) - 1, has: sAttr[k] === 1 }); notes.push(`Cecha „${nm}": zmierzona różnica w bazie ${pc(A.pct)} (przedział ${pc(A.pctLo)} do ${pc(A.pctHi)}; ${A.n1} ofert z cechą, ${A.n0} bez). Użyto ostrożniejszego końca (${pc(Math.exp(A.used) - 1)}).`); }
+      else if (A && A.supported && !A.sig) unused.push(`${nm}: w bazie nie widać wyraźnej różnicy cen (${A.n1} z cechą, ${A.n0} bez)`);
+      else if (A && !A.supported) unused.push(`${nm}: za mało oznaczonych ofert (${A.n1} z cechą, ${A.n0} bez; trzeba co najmniej ${ATTR_MIN} z cechą i ${ATTR_MIN} bez). Wgraj listę z filtrem w zakładce Dane.`);
+      else if (A && A.sig && sAttr[k] == null) ask.push({ k, text: `${nm}: w tej bazie ta cecha oznacza czynsz za m² o około ${pc(A.pct)}. Zaznacz, czy mieszkanie ją ma.` });
+    }
+    notes.push('Segmenty „nowe" i „wysoki standard" są rozpoznawane ze słów w tytułach ogłoszeń, więc zmierzone premie są raczej ostrożnym minimum.');
+  } else unused.push('cechy mieszkania: za mało ofert w bazie, by zmierzyć różnice (minimum 60)');
   const r = summarize(sc, subject, 'Szacunkowy czynsz najmu', { notes, unused });
   if (r.ok) {
     const cz = sc.filter(s => s.czynsz != null).map(s => s.czynsz / s.m2);
     r.adminPm2 = cz.length >= 3 ? median(cz) : null;
     if (r.adminPm2 != null) r.adminTotal = r.adminPm2 * subject.m2;
-    r.ask = ask; r.premiums = L.ok ? { nowe: L.nowe, wysoki: L.wysoki } : null; r.adjusted = use.nowe || use.wysoki;
+    r.ask = ask; r.premiums = L.ok ? L : null; r.applied = applied; r.adjusted = applied.length > 0;
     if (L.ok) r.confidence.why.push(`test wsteczny na ${L.n} ofertach: typowy błąd modelu ${(L.cv.model * 100).toFixed(0)}% (zwykła mediana: ${(L.cv.base * 100).toFixed(0)}%); 8 z 10 ofert mieści się w błędzie do ${(L.cv.p80 * 100).toFixed(0)}%`);
   }
   return r;
