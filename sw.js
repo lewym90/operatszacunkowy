@@ -1,4 +1,4 @@
-const VERSION = 'am-wycena-v1.0.0';
+const VERSION = 'am-wycena-v1.1.0';
 const ASSETS = ["css/app.css", "fonts/Archivo-400_700.woff2", "fonts/Marcellus-400.woff2", "icons/apple-touch-icon.png", "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png", "icons/logo-am.png", "index.html", "js/app.js", "js/engine.js", "js/parseOtodom.js", "js/pdfimport.js", "js/rcn.js", "js/report.js", "js/store.js", "js/ui.js", "manifest.webmanifest", "vendor/pdf.min.mjs", "vendor/pdf.worker.min.mjs", "./"];
 self.addEventListener('install', e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== VERSION).map(k => caches.delete(k)))).then(() => self.clients.claim())); });

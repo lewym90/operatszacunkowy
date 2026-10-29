@@ -5,7 +5,7 @@ import { linesFromPdf, offersFromLines, offerKey } from './pdfimport.js';
 import { esc, $, $$, fmt, roundTo, toast, openSheet, closeSheet, countUp, saveFile, ICON } from './ui.js';
 import { buildReport, makePdf } from './report.js';
 
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 const S = {
   offers: [], rcn: null, tx: [], streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -76,7 +76,7 @@ function viewWycena() {
     <div class="field"><span>Standard (informacyjnie)</span><div class="chips" data-chips="standard">${[['', 'Nie wiem'], ['remont', 'Do remontu'], ['dobry', 'Dobry'], ['wysoki', 'Wysoki']].map(([v, n]) => `<button type="button" class="chip ${f.standard === v ? 'on' : ''}" data-v="${v}">${n}</button>`).join('')}</div></div>
     ${sale ? '' : `<div class="field"><span>Wyposażenie (informacyjnie)</span><div class="chips" data-chips="meble">${[['', 'Nie wiem'], ['tak', 'Umeblowane'], ['nie', 'Bez mebli']].map(([v, n]) => `<button type="button" class="chip ${f.meble === v ? 'on' : ''}" data-v="${v}">${n}</button>`).join('')}</div></div>`}
     ${sale ? `<label class="check"><input type="checkbox" name="zap" ${f.zapamietaj ? 'checked' : ''}> Zapamiętaj rok budowy dla tego adresu</label>` : ''}
-    <p class="tiny muted" style="margin:6px 0 14px">Standard i wyposażenie trafią do raportu jako informacja. Nie zmieniają wyniku, dopóki w bazie nie ma danych, które pozwolą to uczciwie policzyć.</p>
+    <p class="tiny muted" style="margin:6px 0 14px">${sale ? 'Standard trafia do raportu jako informacja i nie zmienia wyniku.' : 'Rok budowy i standard zmieniają wynik tylko wtedy, gdy baza ofert pozwala zmierzyć różnicę z przedziałem pewności. Wyposażenie trafia do raportu jako informacja.'}</p>
     <button class="btn" type="submit">Oszacuj wartość</button>
   </form>`;
   return [html, v => {
@@ -140,6 +140,8 @@ function viewWynik(p) {
   <div class="card"><div class="eyebrow">Pewność wyniku</div><div class="conf"><div class="gauge" data-l="${r.confidence.score}">${[1, 2, 3].map(i => `<i class="${i <= r.confidence.score ? 'on' : ''}"></i>`).join('')}</div><b>${LV[r.confidence.level]}</b></div>
     <p class="small muted" style="margin:10px 0 0">${LVTXT[r.confidence.level]}</p>
     <details style="margin-top:8px"><summary class="small" style="color:var(--gold-l);cursor:pointer">Dlaczego tak?</summary><ul class="clean">${r.confidence.why.map(x => `<li>${esc(x)}</li>`).join('')}</ul><p class="tiny muted">Progi są orientacyjne i wymagają skalibrowania na prawdziwych transakcjach.</p></details></div>`;
+  if (!sale && r.ask?.length) html += `<div class="card"><div class="eyebrow">Co poprawi trafność</div><ul class="clean">${r.ask.map(a => `<li>${esc(a.text)}</li>`).join('')}</ul></div>`;
+  if (!sale && r.adjusted) html += `<div class="card"><div class="eyebrow">Korekta segmentu</div><p class="small muted" style="margin:0">Porównania z innego segmentu (np. starsze budownictwo) zostały skorygowane o różnicę zmierzoną w bazie ofert. Przy każdym porównaniu widać wartość przed korektą.</p></div>`;
   if (!sale) {
     const ls = S.last.sprzedaz, y = ls && ls.res.ok && normStreet(ls.subj.ulica) === normStreet(s.ulica) && ls.subj.m2 === s.m2 ? grossYield(ls.res, r) : null;
     if (r.adminTotal) html += `<div class="card"><div class="kv"><span>Czynsz administracyjny (mediana)</span><b>ok. ${fmt(roundTo(r.adminTotal, 10))} zł</b></div></div>`;
@@ -164,7 +166,7 @@ function viewWynik(p) {
 function compHTML(c, i, sale) {
   const w = Math.max(6, Math.round(c.w * 100));
   return `<div class="comp" style="animation-delay:${Math.min(i, 12) * 40}ms"><div><b>${esc(c.opis || '—')}</b>${c.sameBuilding ? '<span class="badge g">ten sam budynek</span>' : ''}<span class="badge">${c.kind}</span></div><div class="p">${fmt(c.cena)} zł</div>
-    <div class="m">${String(c.m2).replace('.', ',')} m² · ${c.pokoje} pok.${c.pietro != null ? ' · ' + (c.pietro === 0 ? 'parter' : c.pietro + '. p.') : ''}${c.rok ? ' · akt ' + c.rok : ''}${c.rokBudowy ? ' · bud. ' + c.rokBudowy : ''}</div><div class="m r">${fmt(c.pm2)} zł/m²</div><div class="wbar"><i style="width:${w}%"></i></div></div>`;
+    <div class="m">${String(c.m2).replace('.', ',')} m² · ${c.pokoje} pok.${c.pietro != null ? ' · ' + (c.pietro === 0 ? 'parter' : c.pietro + '. p.') : ''}${c.rok ? ' · akt ' + c.rok : ''}${c.rokBudowy ? ' · bud. ' + c.rokBudowy : ''}</div><div class="m r">${fmt(c.pm2raw ?? c.pm2)} zł/m²${c.adjPct && Math.abs(c.adjPct) >= 0.005 ? `<br><small>po korekcie ${fmt(c.pm2)} (${c.adjPct > 0 ? '+' : '−'}${Math.abs(c.adjPct * 100).toFixed(0)}%)</small>` : ''}</div><div class="wbar"><i style="width:${w}%"></i></div></div>`;
 }
 function mapSVG(r) {
   const pts = r.comps.filter(c => c.lat != null), [la0, lo0] = r.subLL, k = Math.cos(la0 * Math.PI / 180);

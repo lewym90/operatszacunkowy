@@ -21,6 +21,17 @@ const r3 = estimateRent(only3, { tryb:'najem', dzielnica:'Śródmieście', m2:40
 console.log('NAJEM, tylko 3 oferty w bazie:', r3.ok, r3.reason||'', r3.confidence?.level);
 assert.ok(!r3.ok || r3.confidence.level==='niska');
 
+// 2b) segmenty: Felin, nowe, wysoki standard — wynik musi być wyższy niż bez wiedzy o segmencie, a przy braku danych bez zmian
+const base = estimateRent(offers, { tryb:'najem', dzielnica:'Felin', m2:29.9, pokoje:2, pietro:3 });
+const nw = estimateRent(offers, { tryb:'najem', dzielnica:'Felin', m2:29.9, pokoje:2, pietro:3, rok:2026, standard:'wysoki' });
+console.log('FELIN bez segmentu:', Math.round(base.total.mid), '| nowe+wysoki:', Math.round(nw.total.mid), '| pytania:', base.ask.length);
+assert.ok(nw.total.mid > base.total.mid * 1.1, 'segment nowe/wysoki musi podnosić wynik');
+assert.ok(base.ask.length >= 1, 'bez roku i standardu aplikacja ma o nie zapytać');
+const old = estimateRent(offers, { tryb:'najem', dzielnica:'Felin', m2:29.9, pokoje:2, pietro:3, rok:1975, standard:'dobry' });
+assert.ok(old.total.mid < nw.total.mid);
+const few = estimateRent(offers.slice(0,40), { tryb:'najem', dzielnica:'Śródmieście', m2:40, pokoje:2, pietro:2, rok:2026 });
+assert.ok(!few.ok || !few.adjusted, 'przy małej bazie nie wolno stosować korekt');
+
 // 3) sprzedaż: SYNTETYCZNE transakcje (wyłącznie test logiki)
 let seed = 7; const rnd = () => (seed = (seed*16807)%2147483647)/2147483647;
 const rows=[]; const streets=[['Bluszczowa',51.2301,22.5502],['Lipowa',51.2480,22.5600],['Zana',51.2200,22.5200]];
