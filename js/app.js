@@ -4,8 +4,9 @@ import { rcnToObjects } from './rcn.js';
 import { linesFromPdf, offersFromLines, offerKey } from './pdfimport.js';
 import { esc, $, $$, fmt, roundTo, toast, openSheet, closeSheet, countUp, saveFile, ICON } from './ui.js';
 import { buildReport, makePdf } from './report.js';
+import { createSync, DEFAULT_URL, encodeCode, decodeCode } from './sync.js';
 
-const VERSION = '1.6.0';
+const VERSION = '1.7.0';
 const S = { wlasne: [],
   offers: [], rcn: null, tx: [], streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -28,9 +29,34 @@ function setTx() {
   S.tx = S.rcn ? rcnToObjects(S.rcn) : [];
   S.streets = [...new Set(S.tx.map(t => t.ulica).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pl'));
 }
-const save = {
+const DEF_UST = JSON.stringify(S.ust);
+const raw = {
   offers: () => store.set('offers', S.offers), wlasne: () => store.set('wlasne', S.wlasne), budynki: () => store.set('budynki', S.budynki), wyceny: () => store.set('wyceny', S.wyceny), ust: () => store.set('ust', S.ust),
 };
+// każdy zapis lokalny uruchamia (z opóźnieniem) synchronizację z serwerem, jeśli urządzenie jest połączone
+const save = Object.fromEntries(Object.entries(raw).map(([k, f]) => [k, () => { const r = f(); sync.schedule(); return r; }]));
+
+/* ---------- synchronizacja z serwerem ---------- */
+const byId = (list, id = x => x.id) => new Map(list.map(x => [id(x), x]));
+const adapters = {
+  offers: { read: () => S.offers.map(o => [o.id, o]), apply: (u, d) => { const m = byId(S.offers); u.forEach(([id, x]) => m.set(id, x)); d.forEach(id => m.delete(id)); S.offers = [...m.values()]; raw.offers(); } },
+  wlasne: { read: () => S.wlasne.map(w => [w.id, w]), apply: (u, d) => { const m = byId(S.wlasne); u.forEach(([id, x]) => m.set(id, x)); d.forEach(id => m.delete(id)); S.wlasne = [...m.values()]; raw.wlasne(); } },
+  wyceny: { read: () => S.wyceny.filter(e => e.id).map(e => [e.id, e]), apply: (u, d) => { const m = byId(S.wyceny); u.forEach(([id, x]) => m.set(id, x)); d.forEach(id => m.delete(id)); S.wyceny = [...m.values()].sort((a, b) => (b.ts || 0) - (a.ts || 0)); raw.wyceny(); } },
+  budynki: { read: () => Object.entries(S.budynki), apply: (u, d) => { u.forEach(([k, v]) => { S.budynki[k] = v; }); d.forEach(k => { delete S.budynki[k]; }); raw.budynki(); } },
+  ust: { read: () => [['ust', S.ust]], apply: u => { u.forEach(([, v]) => { S.ust = { ...S.ust, ...v }; }); raw.ust(); }, pristine: (id, d) => JSON.stringify(d) === DEF_UST },
+};
+let syncOn = false;
+const sync = createSync({ kv: store, adapters,
+  hooks: {
+    onStatus: st => { syncOn = st.state !== 'off'; paintSync(st); },
+    onRemote: changed => { if (changed && ['dane', 'historia'].includes(location.hash.replace(/^#\/?/, '').split('/')[0])) render(); },
+  } });
+const agoTxt = ts => { if (!ts) return ''; const s = Math.round((Date.now() - ts) / 1000); return s < 20 ? 'przed chwilą' : s < 3600 ? Math.round(s / 60) + ' min temu' : new Date(ts).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' }); };
+function paintSync(st) {
+  const el = document.getElementById('syncst'); if (!el) return;
+  const m = { syncing: 'Synchronizuję…', ok: 'Zsynchronizowano ' + agoTxt(st.last), offline: 'Brak połączenia z serwerem. Spróbuję ponownie.', error: st.error || 'Błąd synchronizacji', idle: 'Połączono', off: '' };
+  el.textContent = m[st.state] || ''; el.dataset.s = st.state;
+}
 
 /* ---------- router ---------- */
 const TABS = [['wycena', 'Wycena'], ['dane', 'Dane'], ['historia', 'Historia'], ['ust', 'Ustawienia']];
@@ -269,7 +295,7 @@ function viewDane() {
     $('[data-act="exp"]', v).onclick = async () => { const blob = new Blob([JSON.stringify({ v: 1, offers: S.offers, wlasne: S.wlasne, budynki: S.budynki, wyceny: S.wyceny, ust: S.ust })], { type: 'application/json' }); await saveFile(blob, 'kopia-wycena-' + new Date().toISOString().slice(0, 10) + '.json'); };
     const fb = $('#fbak', v); $('[data-act="imp"]', v).onclick = () => fb.click();
     fb.onchange = async () => { try { const d = JSON.parse(await fb.files[0].text()); if (!Array.isArray(d.offers)) throw new Error('to nie jest kopia'); S.offers = d.offers; S.wlasne = d.wlasne || []; save.wlasne(); S.budynki = d.budynki || {}; S.wyceny = d.wyceny || []; S.ust = { ...S.ust, ...(d.ust || {}) }; save.offers(); save.budynki(); save.wyceny(); save.ust(); toast('Przywrócono'); render(); } catch (e) { toast('Błąd: ' + e.message); } };
-    $('[data-act="clear"]', v).onclick = () => { if (confirm('Usunąć wszystkie oferty z bazy?')) { S.offers = []; save.offers(); render(); } };
+    $('[data-act="clear"]', v).onclick = () => { if (confirm(syncOn ? 'Usunąć wszystkie oferty z bazy? Zniknie też z serwera i z pozostałych urządzeń.' : 'Usunąć wszystkie oferty z bazy?')) { S.offers = []; save.offers(); render(); } };
   }];
 }
 async function setRcn(pack) {
@@ -380,10 +406,12 @@ function viewHistoria() {
 function viewUst() {
   const u = S.ust, f = (k, l, ph) => `<label class="field"><span>${l}</span><input class="in" data-k="${k}" value="${esc(u[k])}" placeholder="${ph || ''}"></label>`;
   const html = head('Ustawienia', 'Dane w raporcie') + `<div class="card"><div class="eyebrow">Biuro (nagłówek raportu)</div>${f('biuro', 'Nazwa biura')}${f('haslo', 'Hasło')}${f('agent', 'Sporządził (imię i nazwisko)')}${f('tel', 'Telefon')}${f('email', 'E-mail')}${f('www', 'Strona www')}</div>
+    <div class="card" id="synccard"><div class="eyebrow">Synchronizacja urządzeń</div><div id="syncbody"><p class="small muted" style="margin:0">Sprawdzam…</p></div></div>
     <div class="card"><div class="eyebrow">O aplikacji</div><div class="kv"><span>Wersja</span><b>${VERSION}</b></div><div class="kv"><span>Dane</span><b>tylko na tym urządzeniu</b></div>
     <div class="gap"></div><button class="btn ghost" data-act="upd">Wymuś aktualizację aplikacji</button><p class="tiny muted" style="margin:8px 0 0">Pobiera najnowszą wersję. Twoje dane (oferty, RCN, historia) zostają.</p>
     <p class="small muted">Szacunek ma charakter orientacyjny i nie zastępuje wyceny rzeczoznawcy majątkowego. Wynik zawsze jest przedziałem z oceną pewności; cechy bez danych porównawczych nie zmieniają go.</p></div>`;
   return [html, v => {
+    syncCard(v);
     $$('[data-k]', v).forEach(i => i.oninput = () => { S.ust[i.dataset.k] = i.value; save.ust(); });
     $('[data-act="upd"]', v).onclick = async () => {
       toast('Aktualizuję…');
@@ -393,15 +421,42 @@ function viewUst() {
   }];
 }
 
+async function syncCard(v) {
+  const box = $('#syncbody', v), cfg = await sync.config();
+  const hint = '<p class="tiny muted" style="margin:10px 0 0">Dane (oferty, własne umowy, wyceny, ustawienia) są zapisywane na Twoim serwerze i widoczne na wszystkich połączonych urządzeniach. Dane RCN każde urządzenie pobiera osobno z serwera. Klucz jest tajny: nie wysyłaj go nikomu.</p>';
+  if (!cfg) {
+    box.innerHTML = `<p class="small muted" style="margin:0 0 12px">Połącz to urządzenie z serwerem, a telefon, tablet i komputer będą miały te same dane.</p>
+      <label class="field"><span>Adres serwera</span><input class="in" id="sy-url" value="${esc(DEFAULT_URL)}" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+      <label class="field"><span>Klucz</span><input class="in" id="sy-key" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="wklej klucz z serwera"></label>
+      <button class="btn" id="sy-go">Połącz i synchronizuj</button>
+      <div class="gap"></div><label class="field"><span>Albo wklej kod połączenia z innego urządzenia</span><input class="in" id="sy-code" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="AMSYNC1:…"></label>
+      <button class="btn ghost" id="sy-code-go">Użyj kodu</button>
+      <div id="syncst" class="small" style="margin-top:12px"></div>${hint}`;
+    const go = async (url, key) => { const st = $('#syncst', v); st.textContent = 'Łączę…'; try { await sync.connect(url, key); toast('Połączono'); render(); } catch (e) { st.dataset.s = 'error'; st.textContent = e.message; } };
+    $('#sy-go', v).onclick = () => go($('#sy-url', v).value, $('#sy-key', v).value);
+    $('#sy-code-go', v).onclick = () => { const c = decodeCode($('#sy-code', v).value); if (!c) return toast('To nie jest kod połączenia'); go(c.url, c.key); };
+  } else {
+    box.innerHTML = `<div class="kv"><span>Serwer</span><b style="white-space:normal;word-break:break-all">${esc(cfg.url.replace(/^https?:\/\//, ''))}</b></div>
+      <div id="syncst" class="small" style="margin:10px 0 12px"></div>
+      <button class="btn" id="sy-now">Synchronizuj teraz</button><div class="gap"></div>
+      <button class="btn ghost" id="sy-copy">Skopiuj kod połączenia dla nowego urządzenia</button><div class="gap"></div>
+      <button class="btn danger" id="sy-off">Odłącz to urządzenie</button>${hint}`;
+    paintSync({ state: 'idle', ...sync.status() });
+    $('#sy-now', v).onclick = async () => { await sync.run(); toast('Gotowe'); };
+    $('#sy-copy', v).onclick = async () => { const code = encodeCode(cfg.url, cfg.key); try { await navigator.clipboard.writeText(code); toast('Skopiowano kod'); } catch { prompt('Skopiuj kod połączenia:', code); } };
+    $('#sy-off', v).onclick = async () => { if (confirm('Odłączyć to urządzenie? Dane na tym urządzeniu zostają, na serwerze też.')) { await sync.disconnect(); render(); } };
+  }
+}
+
 /* ---------- start ---------- */
 window.addEventListener('hashchange', render);
 document.addEventListener('click', e => { const b = e.target.closest('[data-back]'); if (b && !b.onclick) history.length > 1 ? history.back() : go('#/wycena'); });
 load().then(() => {
-  render();
+  render(); sync.start();
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
     const had = !!navigator.serviceWorker.controller; let done = false;
     navigator.serviceWorker.addEventListener('controllerchange', () => { if (had && !done) { done = true; location.reload(); } });   // nowa wersja przejęła kontrolę: odśwież raz
     navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => { });
   }
-  window.__am = { S, render, go };
+  window.__am = { S, render, go, sync };
 });
