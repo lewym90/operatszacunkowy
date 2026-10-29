@@ -1,11 +1,11 @@
 import * as store from './store.js';
-import { estimateRent, estimateSale, grossYield, addrKey, normStreet, YEAR_BANDS, yearBand } from './engine.js';
+import { estimateRent, estimateSale, crossCheckRent, grossYield, addrKey, normStreet, YEAR_BANDS, yearBand } from './engine.js';
 import { rcnToObjects } from './rcn.js';
 import { linesFromPdf, offersFromLines, offerKey } from './pdfimport.js';
 import { esc, $, $$, fmt, roundTo, toast, openSheet, closeSheet, countUp, saveFile, ICON } from './ui.js';
 import { buildReport, makePdf } from './report.js';
 
-const VERSION = '1.1.1';
+const VERSION = '1.2.0';
 const S = {
   offers: [], rcn: null, tx: [], streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -107,6 +107,7 @@ function submitForm() {
   if (rok && f.zapamietaj && f.ulica && f.nr && f.tryb === 'sprzedaz') { S.budynki[addrKey(f.ulica, f.nr)] = rok; save.budynki(); }
   const yearOf = k => S.budynki[k] ?? null;
   const res = f.tryb === 'najem' ? estimateRent(S.offers, subj) : estimateSale(S.tx, subj, { yearOf });
+  if (f.tryb === 'najem' && res.ok) { try { res.cross = crossCheckRent(S.offers, S.tx, subj, res); } catch (e) { res.cross = { ok: false, reason: 'Nie udało się policzyć kontroli: ' + e.message }; } }
   S.last[f.tryb] = { id: null, ts: Date.now(), subj, res };
   go('#/wynik/' + f.tryb);
 }
@@ -142,6 +143,16 @@ function viewWynik(p) {
     <details style="margin-top:8px"><summary class="small" style="color:var(--gold-l);cursor:pointer">Dlaczego tak?</summary><ul class="clean">${r.confidence.why.map(x => `<li>${esc(x)}</li>`).join('')}</ul><p class="tiny muted">Progi są orientacyjne i wymagają skalibrowania na prawdziwych transakcjach.</p></details></div>`;
   if (!sale && r.ask?.length) html += `<div class="card"><div class="eyebrow">Co poprawi trafność</div><ul class="clean">${r.ask.map(a => `<li>${esc(a.text)}</li>`).join('')}</ul></div>`;
   if (!sale && r.adjusted) html += `<div class="card"><div class="eyebrow">Korekta segmentu</div><p class="small muted" style="margin:0">Porównania z innego segmentu (np. starsze budownictwo) zostały skorygowane o różnicę zmierzoną w bazie ofert. Przy każdym porównaniu widać wartość przed korektą.</p></div>`;
+  if (!sale && r.cross) {
+    const c = r.cross;
+    html += c.ok ? `<div class="card"><div class="eyebrow">Kontrola ze sprzedażą</div>
+      <h3>${fmt(roundTo(c.implied.lo, 10))} – ${fmt(roundTo(c.implied.hi, 10))} zł</h3>
+      <p class="small muted" style="margin:6px 0 0">Czynsz wyliczony z szacunkowej wartości mieszkania (${fmt(roundTo(c.sale.total.lo, 1000))} – ${fmt(roundTo(c.sale.total.hi, 1000))} zł, RCN) i zmierzonego w Twoich danych stosunku czynszu do wartości: rentowność brutto ok. ${c.grossYieldPct.toFixed(1).replace('.', ',')}% rocznie (${c.pairs} ulic z ofertami i transakcjami).</p>
+      <div class="kv" style="margin-top:8px"><span>Zgodność z wynikiem z ofert</span><b>${c.overlap ? 'zgodne' : 'rozbieżne'}${c.diffPct != null ? ` (${c.diffPct > 0 ? '+' : '−'}${Math.abs(c.diffPct).toFixed(0)}%)` : ''}</b></div>
+      ${c.r2 != null ? `<p class="tiny muted" style="margin:8px 0 0">Czy cena kupna tłumaczy czynsz? Między ulicami: R² = ${c.r2.toFixed(2).replace('.', ',')}${c.slope != null ? `, czynsz rośnie o ${c.slope.toFixed(2).replace('.', ',')}% na każdy 1% wyższej ceny kupna` : ''}. ${c.r2 < 0.3 ? 'To słaby związek: traktuj kontrolę ostrożnie.' : c.r2 < 0.6 ? 'Związek umiarkowany.' : 'Związek wyraźny.'}</p>` : ''}
+      ${c.overlap ? '' : '<p class="small" style="margin:8px 0 0;color:var(--gold-l)">Obie oceny się nie pokrywają: zweryfikuj porównania ręcznie, pewność wyniku jest niższa.</p>'}</div>`
+      : `<div class="card"><div class="eyebrow">Kontrola ze sprzedażą</div><p class="small muted" style="margin:0">${esc(c.reason || 'Niedostępna.')}</p></div>`;
+  }
   if (!sale) {
     const ls = S.last.sprzedaz, y = ls && ls.res.ok && normStreet(ls.subj.ulica) === normStreet(s.ulica) && ls.subj.m2 === s.m2 ? grossYield(ls.res, r) : null;
     if (r.adminTotal) html += `<div class="card"><div class="kv"><span>Czynsz administracyjny (mediana)</span><b>ok. ${fmt(roundTo(r.adminTotal, 10))} zł</b></div></div>`;
@@ -166,7 +177,7 @@ function viewWynik(p) {
 function compHTML(c, i, sale) {
   const w = Math.max(6, Math.round(c.w * 100));
   return `<div class="comp" style="animation-delay:${Math.min(i, 12) * 40}ms"><div><b>${esc(c.opis || '—')}</b>${c.sameBuilding ? '<span class="badge g">ten sam budynek</span>' : ''}<span class="badge">${c.kind}</span></div><div class="p">${fmt(c.cena)} zł</div>
-    <div class="m">${String(c.m2).replace('.', ',')} m² · ${c.pokoje} pok.${c.pietro != null ? ' · ' + (c.pietro === 0 ? 'parter' : c.pietro + '. p.') : ''}${c.rok ? ' · akt ' + c.rok : ''}${c.rokBudowy ? ' · bud. ' + c.rokBudowy : ''}</div><div class="m r">${fmt(c.pm2raw ?? c.pm2)} zł/m²${c.adjPct && Math.abs(c.adjPct) >= 0.005 ? `<br><small>po korekcie ${fmt(c.pm2)} (${c.adjPct > 0 ? '+' : '−'}${Math.abs(c.adjPct * 100).toFixed(0)}%)</small>` : ''}</div><div class="wbar"><i style="width:${w}%"></i></div></div>`;
+    <div class="m">${String(c.m2).replace('.', ',')} m² · ${c.pokoje} pok.${c.pietro != null ? ' · ' + (c.pietro === 0 ? 'parter' : c.pietro + '. p.') : ''}${c.data ? ' · akt ' + c.data : c.rok ? ' · akt ' + c.rok : ''}${c.rokBudowy ? ' · bud. ' + c.rokBudowy : ''}</div><div class="m r">${fmt(c.pm2raw ?? c.pm2)} zł/m²${c.adjPct && Math.abs(c.adjPct) >= 0.005 ? `<br><small>po korekcie ${fmt(c.pm2)} (${c.adjPct > 0 ? '+' : '−'}${Math.abs(c.adjPct * 100).toFixed(0)}%)</small>` : ''}</div><div class="wbar"><i style="width:${w}%"></i></div></div>`;
 }
 function mapSVG(r) {
   const pts = r.comps.filter(c => c.lat != null), [la0, lo0] = r.subLL, k = Math.cos(la0 * Math.PI / 180);

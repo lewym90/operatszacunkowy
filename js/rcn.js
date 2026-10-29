@@ -13,14 +13,19 @@ export function rcnToObjects(pack) {
     if (!(rodz === 'wolnyRynek' || (rodz === 'sprzedazBezprzetargowa' && rynekR === 'rynekPierwotny'))) continue;
     const key = g(r, 'id') + '#' + g(r, 'tran'); if (seen.has(key)) continue; seen.add(key);
     const u = g(r, 'udzial');
+    // Transakcja z kilkoma lokalami (np. mieszkanie + garaż): gdy RCN podaje OSOBNĄ cenę nieruchomości niższą niż cena całego aktu,
+    // używamy jej (cena samego lokalu). Gdy cena nieruchomości = cena całego aktu, nie wiadomo, co obejmuje: rekord zostaje wyłączony.
+    const cenaTr = +g(r, 'cena') || 0, cenaN = idx.cena_nier != null ? (+g(r, 'cena_nier') || 0) : 0, multi = cnt.get(g(r, 'tran')) > 1;
+    const split = multi && cenaN > 0 && cenaN < cenaTr - 1;
+    const ts = idx.data != null && /^\d{4}-\d{2}-\d{2}$/.test(g(r, 'data') || '') ? Date.parse(g(r, 'data')) : null;
     out.push({
-      id: key, cena: +g(r, 'cena') || 0, rynek: g(r, 'rynek') === 'rynekPierwotny' ? 'pierwotny' : g(r, 'rynek') === 'rynekWtorny' ? 'wtorny' : null,
+      id: key, cena: split ? cenaN : cenaTr, rozdzielona: split, ts, rynek: g(r, 'rynek') === 'rynekPierwotny' ? 'pierwotny' : g(r, 'rynek') === 'rynekWtorny' ? 'wtorny' : null,
       rok: +g(r, 'rok') || 0, funkcja: g(r, 'funkcja'), izby: +g(r, 'izby') || 0,
       kond: g(r, 'kond') == null || g(r, 'kond') === '' ? null : (+g(r, 'kond') < 0 ? null : +g(r, 'kond')),
       m2: +g(r, 'm2') || 0, ulica: g(r, 'ulica') || '', nr: g(r, 'nr') || '',
       lat: g(r, 'lat') ?? null, lon: g(r, 'lon') ?? null,
       rodzaj: rodz, sprz: idx.sprz != null ? g(r, 'sprz') : null, data: idx.data != null ? g(r, 'data') : null,
-      wielolokalowa: cnt.get(g(r, 'tran')) > 1,
+      wielolokalowa: multi && !split,
       pelne: u == null || u === '' || /^1(\/1|\.0+)?$/.test(String(u).trim()),
     });
   }

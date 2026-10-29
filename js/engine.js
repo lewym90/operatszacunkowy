@@ -233,8 +233,12 @@ export function estimateSale(tx, subject, opts = {}) {
       if (st.length >= 3) { subLL = avgLL(st); llKind = 'środek ulicy wg RCN (przybliżone)'; }
     }
   }
+  const nowTs = opts.nowTs || Date.now();
+  // wiek transakcji w latach: z daty aktu (jeśli jest i nie z przyszłości), inaczej z roku w numerze aktu
+  const ageOf = t => (t.ts && t.ts <= nowTs) ? (nowTs - t.ts) / 31557600000 : Math.max(0, now - t.rok);
   const build = (years, sizeTol) => base.map(t => {
-    if (now - t.rok > years) return null;
+    const ageY = ageOf(t);
+    if (ageY > years) return null;
     if (Math.abs(t.m2 - subject.m2) / subject.m2 > sizeTol) return null;
     if (Math.abs(t.izby - subject.pokoje) > 1) return null;
     if (subject.rynek && t.rynek && t.rynek !== subject.rynek) return null;
@@ -245,17 +249,17 @@ export function estimateSale(tx, subject, opts = {}) {
       same = subject.ulica && addrKey(t.ulica, t.nr) === addrKey(subject.ulica, subject.nr);
     } else if (subject.ulica) { same = norm(t.ulica) === norm(subject.ulica); loc = same ? 1 : 0.3; local = same; }
     else loc = 0.3;
-    const age = Math.max(0, now - t.rok), rec = age <= 1 ? 1 : age === 2 ? 0.85 : age === 3 ? 0.7 : 0.55;
+    const rec = ageY <= 1 ? 1 : ageY <= 2 ? 0.85 : ageY <= 3 ? 0.7 : 0.55;
     const ybuild = yearOfBuilding(addrKey(t.ulica, t.nr));
     const w = loc * sizeScore(t.m2, subject.m2) * roomScore(t.izby, subject.pokoje) * floorScore(t.kond, subject.pietro) * rec * yearScore(subject.rok, ybuild);
     if (w < 0.08) return null;
-    return { id: t.id, kind: 'transakcja', pm2: t.cena / t.m2, cena: t.cena, m2: t.m2, pokoje: t.izby, pietro: t.kond, rok: t.rok, rynek: t.rynek,
+    return { id: t.id, kind: 'transakcja', pm2: t.cena / t.m2, cena: t.cena, m2: t.m2, pokoje: t.izby, pietro: t.kond, rok: t.rok, data: t.ts ? new Date(t.ts).toISOString().slice(0, 10) : null, rozdzielona: !!t.rozdzielona, sprz: t.sprz, rodzaj: t.rodzaj, rynek: t.rynek,
       opis: [t.ulica, t.nr].filter(Boolean).join(' '), lat: t.lat, lon: t.lon, w, local, sameBuilding: !!same, rokBudowy: ybuild, src: 'RCN (ceny z aktów notarialnych)' };
   }).filter(Boolean).sort((a, b) => b.w - a.w).slice(0, 40);
   let sc = build(3, 0.3), win = 3;
   if (sc.length < 10) { sc = build(5, 0.4); win = 5; notes.push('Za mało transakcji z ostatnich 3 lat: poszerzono okno do 5 lat (starsze transakcje mają niższą wagę).'); }
-  notes.push(`Okno czasu: ostatnie ${win} lat (rok z numeru aktu). Cena z aktu notarialnego, nie z ogłoszenia.`);
-  if (excluded) notes.push(`Odrzucono ${excluded} rekordów RCN, w których cena nie dotyczy jednego pełnego lokalu mieszkalnego (garaże, lokale usługowe, udziały, kilka lokali w jednej transakcji).`);
+  notes.push(`Okno czasu: ostatnie ${win} lat (data aktu). Cena z aktu notarialnego, nie z ogłoszenia.`);
+  if (excluded) notes.push(`Odrzucono ${excluded} rekordów RCN, w których cena nie dotyczy jednego pełnego lokalu mieszkalnego (garaże, lokale usługowe, udziały, kilka lokali w jednej transakcji bez osobnej ceny lokalu).`);
   if (llKind) notes.push(`Lokalizacja podmiotu: ${llKind}.`); else notes.push('Nie ustalono współrzędnych podmiotu: lokalizację oceniono tylko po nazwie ulicy.');
   if (subject.rok != null) {
     const known = sc.filter(s => s.rokBudowy != null).length;
@@ -277,4 +281,41 @@ export function grossYield(sale, rent) {
   if (!sale?.ok || !rent?.ok) return null;
   const f = (r, s) => (r * 12) / s * 100;
   return { lo: f(rent.total.lo, sale.total.hi), mid: f(rent.total.mid, sale.total.mid), hi: f(rent.total.hi, sale.total.lo) };
+}
+
+// ---------- KONTROLA CZYNSZU ZE SPRZEDAŻĄ ----------
+// Nie zakładamy stałej rentowności. Dla ulic, na których mamy i oferty najmu, i transakcje sprzedaży, MIERZYMY stosunek
+// czynsz/wartość (za m²) oraz to, jak dobrze cena kupna tłumaczy czynsz między ulicami. Potem: czynsz ≈ szacunkowa wartość × zmierzony stosunek.
+// To druga, niezależna ocena do porównania z ofertami najmu. Kontrola działa tylko, gdy podano ulicę i jest dość par ulic.
+export function crossCheckRent(offers, tx, subject, rentRes, opts = {}) {
+  const nowTs = opts.nowTs || Date.now(), nowY = new Date(nowTs).getFullYear();
+  if (!subject.ulica) return { ok: false, reason: 'Podaj ulicę, żeby porównać czynsz z cenami sprzedaży w tej okolicy.' };
+  if (!tx || !tx.length) return { ok: false, reason: 'Brak danych RCN (zakładka Dane).' };
+  const age = t => (t.ts && t.ts <= nowTs) ? (nowTs - t.ts) / 31557600000 : Math.max(0, nowY - t.rok);
+  const sales = tx.filter(t => t.funkcja === 'mieszkalna' && t.izby > 0 && t.m2 >= 12 && t.m2 <= 250 && t.cena > 0 && !t.wielolokalowa && t.pelne && age(t) <= 3 && t.ulica);
+  const rents = offers.filter(o => o.wlaczone !== false && !(o.flagi && o.flagi.length) && o.m2 > 0 && o.cena > 0 && o.ulica);
+  const S = new Map(), R = new Map();
+  for (const t of sales) { const k = norm(t.ulica); (S.get(k) || S.set(k, []).get(k)).push(t.cena / t.m2); }
+  for (const o of rents) { const k = norm(o.ulica); (R.get(k) || R.set(k, []).get(k)).push(o.cena / o.m2); }
+  const pairs = [];
+  for (const [k, rs] of R) { const ss = S.get(k); if (ss && ss.length >= 3 && rs.length >= 2) pairs.push({ street: k, rent: median(rs), sale: median(ss), nr: rs.length, ns: ss.length }); }
+  const out = { ok: false, pairs: pairs.length };
+  if (pairs.length < 8) { out.reason = `Za mało ulic, na których mamy jednocześnie oferty najmu i transakcje (${pairs.length}, minimum 8), żeby zmierzyć związek czynszu z ceną kupna. Dodawaj oferty najmu z ulicą.`; return out; }
+  const ratios = pairs.map(p => p.rent / p.sale).sort((a, b) => a - b);
+  const q = x => ratios[Math.min(ratios.length - 1, Math.max(0, Math.round(x * (ratios.length - 1))))];
+  const xs = pairs.map(p => Math.log(p.sale)), ys = pairs.map(p => Math.log(p.rent)), n = pairs.length;
+  const mx = xs.reduce((a, b) => a + b, 0) / n, my = ys.reduce((a, b) => a + b, 0) / n;
+  const sxy = xs.reduce((a, x, i) => a + (x - mx) * (ys[i] - my), 0), sxx = xs.reduce((a, x) => a + (x - mx) ** 2, 0), syy = ys.reduce((a, y) => a + (y - my) ** 2, 0);
+  const slope = sxx > 0 ? sxy / sxx : null, r2 = sxx > 0 && syy > 0 ? (sxy * sxy) / (sxx * syy) : null;
+  const sale = estimateSale(tx, { tryb: 'sprzedaz', ulica: subject.ulica, nr: subject.nr || '', m2: subject.m2, pokoje: subject.pokoje, pietro: subject.pietro, rok: subject.rok || null, rynek: null }, { nowTs });
+  Object.assign(out, { pairs: n, ratio: { lo: q(0.25), mid: q(0.5), hi: q(0.75) }, grossYieldPct: q(0.5) * 12 * 100, slope, r2 });
+  if (!sale.ok) { out.reason = 'Brak transakcji w pobliżu tego adresu, żeby oszacować wartość (' + sale.reason + ')'; return out; }
+  out.sale = sale; out.ok = true;
+  out.implied = { lo: sale.total.lo * out.ratio.lo, mid: sale.total.mid * out.ratio.mid, hi: sale.total.hi * out.ratio.hi };
+  if (rentRes && rentRes.ok) {
+    const a = rentRes.total, b = out.implied;
+    out.overlap = Math.max(a.lo, b.lo) <= Math.min(a.hi, b.hi);
+    out.diffPct = (b.mid - a.mid) / a.mid * 100;
+  }
+  return out;
 }

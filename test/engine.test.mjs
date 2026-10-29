@@ -1,5 +1,5 @@
 import fs from 'fs'; import assert from 'assert';
-import { estimateRent, estimateSale, wquantile, grossYield, THRESH } from '../js/engine.js';
+import { estimateRent, estimateSale, crossCheckRent, wquantile, grossYield, THRESH } from '../js/engine.js';
 import { rcnToObjects, RCN_COLS } from '../js/rcn.js';
 
 // 1) kwantyle
@@ -54,4 +54,29 @@ const saleY = estimateSale(tx, { tryb:'sprzedaz', ulica:'Bluszczowa', nr:'13', m
 console.log('SPRZEDAŻ z rokiem budowy 1972:', saleY.ok, saleY.n, saleY.notes.filter(n=>n.includes('Rok budowy')));
 assert.ok(saleY.ok && saleY.n>0);
 const y = grossYield(sale, r1); console.log('Rentowność brutto (orient.):', y && Object.values(y).map(v=>v.toFixed(1)));
+// 4) wielolokalowe: mieszkanie + garaż z osobną ceną lokalu wchodzi, a gdy cena nieruchomości = cena aktu, nie wchodzi; data aktu liczy się do wagi
+const C=[...RCN_COLS];
+const mk=(id,tran,cena,rodzaj,rynek,rok,fun,m2,cn,data)=>{const r=new Array(C.length).fill(null);const set=(c,v)=>r[C.indexOf(c)]=v;
+ set('id',id);set('tran',tran);set('cena',cena);set('rynek',rynek);set('rodzaj',rodzaj);set('rok',rok);set('funkcja',fun);set('izby',fun==='mieszkalna'?2:0);set('kond',2);set('m2',m2);set('ulica','Zana');set('nr','1');set('udzial','1/1');set('lat',51.22);set('lon',22.52);set('cena_nier',cn);set('data',data);return r;};
+const rows2=[mk('A1','T1',410000,'sprzedazBezprzetargowa','rynekPierwotny',2026,'mieszkalna',40,380000,'2026-03-01'),mk('A2','T1',410000,'sprzedazBezprzetargowa','rynekPierwotny',2026,'garaz',12,30000,'2026-03-01'),
+ mk('B1','T2',500000,'sprzedazBezprzetargowa','rynekPierwotny',2026,'mieszkalna',40,500000,'2026-03-01'),mk('B2','T2',500000,'sprzedazBezprzetargowa','rynekPierwotny',2026,'garaz',12,500000,'2026-03-01'),
+ mk('C1','T3',300000,'sprzedazZBonifikata','rynekPierwotny',2026,'mieszkalna',40,300000,'2026-03-01'),
+ mk('D1','T4',380000,'sprzedazBezprzetargowa','rynekWtorny',2026,'mieszkalna',40,380000,'2026-03-01')];
+const tx2=rcnToObjects({cols:C,rows:rows2});
+const ids=tx2.map(t=>t.id.split('#')[0]);
+assert.ok(ids.includes('A1')&&!ids.includes('C1')&&!ids.includes('D1'),'filtr rodzaju transakcji');
+assert.equal(tx2.find(t=>t.id.startsWith('A1')).cena,380000); assert.equal(tx2.find(t=>t.id.startsWith('A1')).wielolokalowa,false);
+assert.equal(tx2.find(t=>t.id.startsWith('B1')).wielolokalowa,true,'cena nieruchomości = cena aktu: wyłączone');
+// 5) kontrola ze sprzedażą: syntetycznie czynsz = 0,5% wartości/m² miesięcznie (+szum) na 14 ulicach; pomiar musi to odzyskać
+let sd=3; const rn=()=> (sd=(sd*16807)%2147483647)/2147483647;
+const sts=Array.from({length:14},(_,i)=>['Ulica'+i,7000+i*500]);
+const rowsX=[],offX=[]; sts.forEach(([u,pm],i)=>{ for(let k=0;k<6;k++){const m2=40+k*3; rowsX.push(mk('X'+i+'_'+k,'TX'+i+'_'+k,Math.round(m2*pm*(0.95+rn()*0.1)),'wolnyRynek','rynekWtorny',2026,'mieszkalna',m2,null,'2026-05-01').map((v,j)=>C[j]==='ulica'?u:v)); }
+  for(let k=0;k<3;k++) offX.push({id:'ox'+i+k,wlaczone:true,flagi:[],ulica:u,dzielnica:'Śródmieście',m2:40+k*4,pokoje:2,pietro:1,cena:Math.round((40+k*4)*pm*0.005*(0.95+rn()*0.1)),tytul:'x'}); });
+const txX=rcnToObjects({cols:C,rows:rowsX});
+const subX={tryb:'najem',ulica:'Ulica5',nr:'',dzielnica:'Śródmieście',m2:44,pokoje:2,pietro:1};
+const rentX=estimateRent(offX,subX); const cc=crossCheckRent(offX,txX,subX,rentX,{nowTs:Date.parse('2026-10-29')});
+console.log('KONTROLA:', cc.ok, 'par:', cc.pairs, 'rentowność %:', cc.grossYieldPct?.toFixed(2), 'R2:', cc.r2?.toFixed(2), 'wyliczony czynsz:', cc.implied && Object.values(cc.implied).map(Math.round));
+assert.ok(cc.ok && Math.abs(cc.grossYieldPct-6)<0.7,'odzyskana rentowność ~6%'); assert.ok(cc.r2>0.7);
+assert.ok(!crossCheckRent(offX,txX,{...subX,ulica:''},rentX).ok,'bez ulicy brak kontroli');
+assert.ok(!crossCheckRent(offX.slice(0,6),txX,subX,rentX).ok,'za mało par = brak kontroli');
 console.log('TESTY OK');
