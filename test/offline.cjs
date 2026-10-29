@@ -1,6 +1,6 @@
 const { chromium } = require('/opt/npm-tools/node_modules/playwright'); const { spawn } = require('child_process');
 (async () => {
-  const srv = spawn('python3', ['-m', 'http.server', '8767', '-d', '/home/claude/operat'], { stdio: 'ignore' }); await new Promise(r => setTimeout(r, 700));
+  const srv = spawn('python3', ['-m', 'http.server', '8767', '-d', require('path').resolve(__dirname, '..')], { stdio: 'ignore' }); await new Promise(r => setTimeout(r, 700));
   const b = await chromium.launch(); const ctx = await b.newContext({ viewport: { width: 390, height: 844 } }); const p = await ctx.newPage(); const errs = [];
   p.on('pageerror', e => errs.push(e.message));
   await p.goto('http://localhost:8767/index.html'); await p.waitForTimeout(2500);

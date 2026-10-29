@@ -3,7 +3,7 @@ const { chromium } = require('/opt/npm-tools/node_modules/playwright'); const { 
 const SP = process.argv[2], PDFS = fs.readdirSync(SP + '/pdf').filter(f => f.endsWith('.pdf')).map(f => SP + '/pdf/' + f), OUT = SP + '/shots-sync'; fs.mkdirSync(OUT, { recursive: true });
 const KEY = 'testkey-0123456789-abcdefghijk', tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sy-'));
 (async () => {
-  const web = spawn('python3', ['-m', 'http.server', '8791', '-d', '/home/claude/operat'], { stdio: 'ignore' });
+  const web = spawn('python3', ['-m', 'http.server', '8791', '-d', require('path').resolve(__dirname, '..')], { stdio: 'ignore' });
   const api = spawn('python3', ['/home/claude/operat/server/sync_server.py'], { stdio: 'inherit', env: { ...process.env, OPERAT_SYNC_KEY: KEY, OPERAT_SYNC_DB: tmp + '/s.db', OPERAT_SYNC_PORT: '8792' } });
   await new Promise(r => setTimeout(r, 1200));
   const b = await chromium.launch(), errs = [];

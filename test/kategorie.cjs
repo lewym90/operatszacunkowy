@@ -16,7 +16,7 @@ rows.push(row('W1', 5000000, 'nieruchomoscGruntowaNiezabudowana', null, null, 't
 const inne = { meta: { rekordow: rows.length, wersja: 'testB', pobrano: '2026-10-29', bez_wspolrzednych: 0 }, cols, rows };
 const meta = { ...lok.meta, inne: { wersja: 'testB', rekordow: rows.length } };
 (async () => {
-  const web = spawn('python3', ['-m', 'http.server', '8797', '-d', '/home/claude/operat'], { stdio: 'ignore' }); await new Promise(r => setTimeout(r, 800));
+  const web = spawn('python3', ['-m', 'http.server', '8797', '-d', require('path').resolve(__dirname, '..')], { stdio: 'ignore' }); await new Promise(r => setTimeout(r, 800));
   const b = await chromium.launch(); const U = 'http://localhost:8797/index.html'; let bad = 0; const err = m => { bad++; console.log('  ✗', m); };
   for (const [name, w, h, touch] of [['phone', 390, 844, true], ['desktop', 1440, 900, false]]) {
     const ctx = await b.newContext({ viewport: { width: w, height: h }, isMobile: touch, hasTouch: touch, serviceWorkers: 'block' }); const p = await ctx.newPage(); const errs = [];

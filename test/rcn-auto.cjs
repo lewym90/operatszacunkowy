@@ -8,7 +8,7 @@ const put = (wersja, extra = 0) => { const pack = { ...base, meta: { ...base.met
   put('wersja-A');
   // serwer plików z CORS (jak Caddy)
   fs.writeFileSync(tmp + '/srv.py', `import http.server,sys\nclass H(http.server.SimpleHTTPRequestHandler):\n  def end_headers(self):\n    self.send_header('Access-Control-Allow-Origin','*'); self.send_header('Cache-Control','no-cache'); super().end_headers()\n  def log_message(self,*a): pass\nhttp.server.ThreadingHTTPServer(('127.0.0.1',8795),H).serve_forever()\n`);
-  const data = spawn('python3', [tmp + '/srv.py'], { cwd: tmp, stdio: 'ignore' }), web = spawn('python3', ['-m', 'http.server', '8796', '-d', '/home/claude/operat'], { stdio: 'ignore' });
+  const data = spawn('python3', [tmp + '/srv.py'], { cwd: tmp, stdio: 'ignore' }), web = spawn('python3', ['-m', 'http.server', '8796', '-d', require('path').resolve(__dirname, '..')], { stdio: 'ignore' });
   await new Promise(r => setTimeout(r, 900));
   const b = await chromium.launch(), errs = [], ctx = await b.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block' }), p = await ctx.newPage();
   p.on('pageerror', e => errs.push('PAGEERROR ' + e.message)); p.on('console', m => { if (m.type() === 'error' && !/favicon/.test(m.text())) errs.push('CONSOLE ' + m.text()); });

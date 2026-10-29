@@ -1,7 +1,7 @@
 const { chromium } = require('/opt/npm-tools/node_modules/playwright'); const { spawn } = require('child_process');
 const SP = process.argv[2]; const assert = require('assert');
 (async () => {
-  const srv = spawn('python3', ['-m', 'http.server', '8766', '-d', '/home/claude/operat'], { stdio: 'ignore' }); await new Promise(r => setTimeout(r, 800));
+  const srv = spawn('python3', ['-m', 'http.server', '8766', '-d', require('path').resolve(__dirname, '..')], { stdio: 'ignore' }); await new Promise(r => setTimeout(r, 800));
   const b = await chromium.launch(); const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
   const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push(e.message));
   await p.goto('http://localhost:8766/index.html#/oferty'); await p.waitForTimeout(1500);
@@ -32,10 +32,10 @@ const SP = process.argv[2]; const assert = require('assert');
   await p.screenshot({ path: SP + '/shots/oferty.png', fullPage: true });
   await p.click('.orow .otg'); assert.strictEqual(await p.$$eval('.orow.dis', a => a.length), 1);
   // parking osobno: karta wyniku
-  await p.evaluate(() => { const S = window.__am.S; for (let i = 0; i < 6; i++) S.offers.push({ id: 'x' + i, typ: 'najem', ts: Date.now(), wlaczone: true, cena: 2400, pokoje: 2, m2: 40, pietro: 1, dzielnica: 'Czuby', miasto: 'Lublin', flagi: [], ost: S.ust.zebrania.at(-1).id, parking: { stan: 'dodatkowo', kwota: 200 + i * 20 }, attrs: { garaz: 0 } }); });
+  await p.evaluate(() => { const S = window.__am.S; for (let i = 0; i < 6; i++) S.offers.push({ id: 'x' + i, url: 'https://www.otodom.pl/pl/oferta/x' + i, typ: 'najem', ts: Date.now(), wlaczone: true, cena: 2400, pokoje: 2, m2: 40, pietro: 1, dzielnica: 'Czuby', miasto: 'Lublin', flagi: [], ost: S.ust.zebrania.at(-1).id, parking: { stan: 'dodatkowo', kwota: 200 + i * 20 }, attrs: { garaz: 0 } }); });
   await p.goto('http://localhost:8766/index.html#/wycena'); await p.waitForTimeout(600); await p.click('.seg button[data-t=najem]'); await p.waitForTimeout(400);
   await p.fill('[name=dzielnica]', 'Czuby'); await p.fill('[name=m2]', '40'); await p.click('[data-chips=parking] [data-v=osobno]'); await p.click('#f .btn'); await p.waitForTimeout(2000);
-  const nl = await p.$$eval('.comp a.clink', a => a.length); assert(nl > 0, 'linki w porównaniach'); console.log('linki w porównaniach', nl);
+  console.log(await p.evaluate(() => JSON.stringify(window.__am.S.offers.map(c => [c.id, c.url])))); const nl = await p.$$eval('.comp a.clink', a => a.length); assert(nl > 0, 'linki w porównaniach'); console.log('linki w porównaniach', nl);
   const txt = await p.textContent('body'); assert(/Parking płatny osobno/.test(txt), 'karta parkingu'); await p.screenshot({ path: SP + '/shots/oferty-parking.png', fullPage: true });
   console.log('BŁĘDY:', errs.length ? errs : 'brak'); assert(!errs.length); await b.close(); srv.kill(); console.log('OK');
 })().catch(e => { console.error('TEST PADŁ', e); process.exit(1); });

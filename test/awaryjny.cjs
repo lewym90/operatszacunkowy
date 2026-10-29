@@ -1,7 +1,7 @@
 // Tryb awaryjny: po nieudanym uruchomieniu (znacznik am-boot) dane RCN nie wczytują się same; przycisk je wczytuje.
 const { chromium } = require('/opt/npm-tools/node_modules/playwright'); const { spawn } = require('child_process'); const SP = process.argv[2];
 (async () => {
-  const web = spawn('python3', ['-m', 'http.server', '8797', '-d', '/home/claude/operat'], { stdio: 'ignore' }); await new Promise(r => setTimeout(r, 800));
+  const web = spawn('python3', ['-m', 'http.server', '8797', '-d', require('path').resolve(__dirname, '..')], { stdio: 'ignore' }); await new Promise(r => setTimeout(r, 800));
   const b = await chromium.launch(); const ctx = await b.newContext({ viewport: { width: 820, height: 1180 }, serviceWorkers: 'block' }); let p = await ctx.newPage(); let bad = 0; const errs = [];
   p.on('pageerror', e => errs.push(e.message)); const U = 'http://localhost:8797/index.html';
   await p.goto(U + '#/dane'); await p.waitForTimeout(600); await p.setInputFiles('#frcn', SP + '/rcn_syntetyczny.json'); await p.waitForTimeout(1500);

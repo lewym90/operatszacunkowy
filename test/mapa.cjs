@@ -3,7 +3,7 @@ const { chromium } = require('/opt/npm-tools/node_modules/playwright'); const { 
 const SP = process.argv[2], PDFS = fs.readdirSync(SP + '/pdf').filter(f => f.endsWith('.pdf')).map(f => SP + '/pdf/' + f), OUT = SP + '/shots-map'; fs.mkdirSync(OUT, { recursive: true });
 const VP = [['phone', 390, 844, true], ['tablet', 820, 1180, true], ['desktop', 1440, 900, false]];
 (async () => {
-  const web = spawn('python3', ['-m', 'http.server', '8797', '-d', '/home/claude/operat'], { stdio: 'ignore' }); await new Promise(r => setTimeout(r, 800));
+  const web = spawn('python3', ['-m', 'http.server', '8797', '-d', require('path').resolve(__dirname, '..')], { stdio: 'ignore' }); await new Promise(r => setTimeout(r, 800));
   const b = await chromium.launch(); const U = 'http://localhost:8797/index.html';
   for (const [name, w, h, touch] of VP) {
     const ctx = await b.newContext({ viewport: { width: w, height: h }, isMobile: touch && w < 700, hasTouch: touch, serviceWorkers: 'block' }); const p = await ctx.newPage(); const errs = [];
