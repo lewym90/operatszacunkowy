@@ -6,10 +6,11 @@ import { flags as offerFlags } from './parseOtodom.js';
 import { esc, $, $$, fmt, roundTo, toast, openSheet, closeSheet, countUp, saveFile, ICON } from './ui.js';
 import { buildReport, makePdf } from './report.js';
 import { createSync, DEFAULT_URL, encodeCode, decodeCode } from './sync.js';
+import { trendSeries, yieldByDistrict, lineChart, barChart, bindCharts } from './rynek.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer } from './mapa.js';
 
-const VERSION = '1.12.0';
-const S = { wlasne: [],
+const VERSION = '1.13.0';
+const S = { wlasne: [], teczki: [], foto: {},
   offers: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
   form: { tryb: 'sprzedaz', kat: 'mieszkanie', pod: '', dzm2: '', ulica: '', nr: '', dzielnica: '', m2: '', pokoje: 2, pietro: null, rok: '', rynek: '', standard: '', meble: '', zapamietaj: true, ud: [] },
@@ -35,7 +36,7 @@ const safeBanner = () => S.safe ? '<div class="banner warn"><span>!</span><span>
 async function safeOff() { S.safe = false; armBoot(); S.rcn = await store.get('rcn', null); S.rcnInne = await store.get('rcnInne', null); setTx(); render(); checkRcn(); }
 document.addEventListener('click', e => { if (e.target.closest('[data-act="safeoff"]')) safeOff(); });
 async function load() {
-  S.wlasne = await store.get('wlasne', []); S.offers = await store.get('offers', []); S.budynki = await store.get('budynki', {}); S.wyceny = await store.get('wyceny', []);
+  S.wlasne = await store.get('wlasne', []); S.offers = await store.get('offers', []); S.budynki = await store.get('budynki', {}); S.wyceny = await store.get('wyceny', []); S.teczki = await store.get('teczki', []); S.foto = await store.get('foto', {});
   { const m = {}; let ch = false; for (const [k, v] of Object.entries(S.budynki)) { const nk = migrateAddrKey(k); if (nk !== k) ch = true; m[nk] = v; } if (ch) { S.budynki = m; store.set('budynki', m); } }
   S.ust = { ...S.ust, ...(await store.get('ust', {})) }; S.rcn = S.safe ? null : await store.get('rcn', null); S.rcnInne = S.safe ? null : await store.get('rcnInne', null); setTx();
 }
@@ -46,7 +47,7 @@ function setTx() {
 }
 const DEF_UST = JSON.stringify(S.ust);
 const raw = {
-  offers: () => store.set('offers', S.offers), wlasne: () => store.set('wlasne', S.wlasne), budynki: () => store.set('budynki', S.budynki), wyceny: () => store.set('wyceny', S.wyceny), ust: () => store.set('ust', S.ust),
+  offers: () => store.set('offers', S.offers), wlasne: () => store.set('wlasne', S.wlasne), budynki: () => store.set('budynki', S.budynki), wyceny: () => store.set('wyceny', S.wyceny), teczki: () => store.set('teczki', S.teczki), ust: () => store.set('ust', S.ust),
 };
 // każdy zapis lokalny uruchamia (z opóźnieniem) synchronizację z serwerem, jeśli urządzenie jest połączone
 const save = Object.fromEntries(Object.entries(raw).map(([k, f]) => [k, () => { const r = f(); sync.schedule(); return r; }]));
@@ -57,6 +58,7 @@ const adapters = {
   offers: { read: () => S.offers.map(o => [o.id, o]), apply: (u, d) => { const m = byId(S.offers); u.forEach(([id, x]) => m.set(id, x)); d.forEach(id => m.delete(id)); S.offers = [...m.values()]; raw.offers(); } },
   wlasne: { read: () => S.wlasne.map(w => [w.id, w]), apply: (u, d) => { const m = byId(S.wlasne); u.forEach(([id, x]) => m.set(id, x)); d.forEach(id => m.delete(id)); S.wlasne = [...m.values()]; raw.wlasne(); } },
   wyceny: { read: () => S.wyceny.filter(e => e.id).map(e => [e.id, e]), apply: (u, d) => { const m = byId(S.wyceny); u.forEach(([id, x]) => m.set(id, x)); d.forEach(id => m.delete(id)); S.wyceny = [...m.values()].sort((a, b) => (b.ts || 0) - (a.ts || 0)); raw.wyceny(); } },
+  teczki: { read: () => S.teczki.map(t => [t.id, t]), apply: (u, d) => { const m = byId(S.teczki); u.forEach(([id, x]) => m.set(id, x)); d.forEach(id => m.delete(id)); S.teczki = [...m.values()]; raw.teczki(); } },
   budynki: { read: () => Object.entries(S.budynki), apply: (u, d) => { u.forEach(([k, v]) => { S.budynki[k] = v; }); d.forEach(k => { delete S.budynki[k]; }); raw.budynki(); } },
   ust: { read: () => [['ust', S.ust]], apply: u => { u.forEach(([, v]) => { S.ust = { ...S.ust, ...v }; }); raw.ust(); }, pristine: (id, d) => JSON.stringify(d) === DEF_UST },
 };
@@ -64,7 +66,7 @@ let syncOn = false;
 const sync = createSync({ kv: store, adapters,
   hooks: {
     onStatus: st => { syncOn = st.state !== 'off'; paintSync(st); },
-    onRemote: changed => { if (changed) checkRcn(); if (changed && ['dane', 'historia', 'oferty'].includes(location.hash.replace(/^#\/?/, '').split('/')[0])) render(); },
+    onRemote: changed => { if (changed) checkRcn(); if (changed && ['dane', 'historia', 'oferty', 'teczka'].includes(location.hash.replace(/^#\/?/, '').split('/')[0])) render(); },
   } });
 const agoTxt = ts => { if (!ts) return ''; const s = Math.round((Date.now() - ts) / 1000); return s < 20 ? 'przed chwilą' : s < 3600 ? Math.round(s / 60) + ' min temu' : new Date(ts).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' }); };
 function paintSync(st) {
@@ -74,7 +76,7 @@ function paintSync(st) {
 }
 
 /* ---------- router ---------- */
-const TABS = [['wycena', 'Wycena'], ['mapa', 'Mapa'], ['oferty', 'Oferty'], ['dane', 'Dane'], ['historia', 'Historia'], ['ust', 'Ustawienia']];
+const TABS = [['wycena', 'Wycena'], ['mapa', 'Mapa'], ['rynek', 'Rynek'], ['oferty', 'Oferty'], ['dane', 'Dane'], ['historia', 'Historia'], ['ust', 'Ustawienia']];
 function tabs(active) {
   $('#tabs').innerHTML = '<div class="in-tabs"><div class="brand"><img src="icons/logo-am.png" alt=""><b>OPERAT SZACUNKOWY</b><span>AM Nieruchomości</span></div>' + TABS.map(([k, n]) => `<a href="#/${k}" class="${k === active ? 'on' : ''}">${ICON[k === 'wycena' ? 'wycena' : k]}<span>${n}</span></a>`).join('') + '</div>';
 }
@@ -83,6 +85,8 @@ function render() {
   let html = '', mount = null, tab = p[0];
   closeSheet(); if (mapCtl) { try { mapCtl.destroy(); } catch { } mapCtl = null; }
   if (p[0] === 'mapa') [html, mount] = viewMapa();
+  else if (p[0] === 'rynek') [html, mount] = viewRynek();
+  else if (p[0] === 'teczka') { tab = 'historia'; [html, mount] = viewTeczka(p[1]); }
   else if (p[0] === 'wycena') [html, mount] = viewWycena();
   else if (p[0] === 'oferty') [html, mount] = viewOferty();
   else if (p[0] === 'dane') [html, mount] = viewDane();
@@ -91,7 +95,7 @@ function render() {
   else if (p[0] === 'wynik') { tab = 'wycena'; [html, mount] = viewWynik(p); }
   else if (p[0] === 'raport') { tab = 'wycena'; [html, mount] = viewRaport(p); }
   else [html, mount] = viewWycena();
-  const v = $('#view'); v.innerHTML = html; v.dataset.view = ['wycena', 'mapa', 'oferty', 'dane', 'historia', 'ust', 'wynik', 'raport'].includes(p[0]) ? p[0] : 'wycena';
+  const v = $('#view'); v.innerHTML = html; v.dataset.view = ['wycena', 'mapa', 'rynek', 'oferty', 'dane', 'historia', 'teczka', 'ust', 'wynik', 'raport'].includes(p[0]) ? p[0] : 'wycena';
   const topEl = v.querySelector(':scope > .top');   // reszta widoku w osobnym bloku: na szerokim ekranie układa się w kolumny
   if (topEl) { const body = document.createElement('div'); body.className = 'body'; while (topEl.nextSibling) body.appendChild(topEl.nextSibling); v.appendChild(body); }
   v.classList.remove('enter'); void v.offsetWidth; v.classList.add('enter');
@@ -264,13 +268,15 @@ function viewWynik(p) {
   if (sale && r.subLL && withLL.length >= 3) html += `<div class="card"><div class="eyebrow">Położenie porównań</div><div class="mapbox sm" id="resmap">${mapSVG(r)}</div><div id="reslegend"></div><p class="tiny muted" style="margin:8px 0 0">Złoty pierścień: lokal wyceniany (${esc(r.llKind || '')}). Większy punkt = większa waga porównania; kolor = cena za m². Dotknij punktu, aby zobaczyć transakcję.</p></div>`;
   html += `<div class="card"><div class="eyebrow">Porównania (${r.comps.length})</div><div id="comps">${r.comps.slice(0, 10).map((c, i) => compHTML(c, i, sale)).join('')}</div>${r.comps.length > 10 ? '<button class="btn ghost" data-act="more" style="margin-top:10px">Pokaż wszystkie</button>' : ''}</div>
   <div class="row">${saved ? '' : '<button class="btn ghost" data-act="save">Zapisz do historii</button>'}<button class="btn" data-act="report">Raport dla klienta</button></div>
+  ${saved ? `<div class="gap"></div><button class="btn ghost" data-act="tec">${e.teczka && S.teczki.some(t => t.id === e.teczka) ? 'Teczka: ' + esc(tName(S.teczki.find(t => t.id === e.teczka))) : 'Dodaj do teczki nieruchomości'}</button>` : ''}
   ${saved ? `<div class="gap"></div><button class="btn ghost" data-act="real">${e.real ? 'Zmień cenę rzeczywistą' : 'Wpisz cenę rzeczywistą (do kontroli trafności)'}</button>` : ''}`;
   return [html, v => {
     $('[data-back]', v).onclick = () => (saved ? go('#/historia') : go('#/wycena'));
     $$('[data-cu]', v).forEach(el => countUp(el, +el.dataset.cu));
     const rmEl = $('#resmap', v); if (rmEl) resMap(rmEl, r, v);
     const more = $('[data-act="more"]', v); if (more) more.onclick = () => { $('#comps', v).innerHTML = r.comps.map((c, i) => compHTML(c, i, sale)).join(''); more.remove(); };
-    const sv = $('[data-act="save"]', v); if (sv) sv.onclick = () => { e.id = uid(); S.wyceny.unshift(e); save.wyceny(); toast('Zapisano w historii'); go('#/wynik/h/' + e.id); };
+    const tcb = $('[data-act="tec"]', v); if (tcb) tcb.onclick = () => teczkaSheet(e);
+    const sv = $('[data-act="save"]', v); if (sv) sv.onclick = () => { e.id = uid(); const tc = (S.teczkaNext && S.teczki.find(t => t.id === S.teczkaNext)) || findTeczka(s); S.teczkaNext = null; if (tc) { e.teczka = tc.id; toast('Zapisano w teczce: ' + tName(tc)); } S.wyceny.unshift(e); save.wyceny(); toast('Zapisano w historii'); go('#/wynik/h/' + e.id); };
     $('[data-act="report"]', v).onclick = () => go(saved ? '#/raport/h/' + e.id : '#/raport/cur/' + s.tryb);
     const rl = $('[data-act="real"]', v); if (rl) rl.onclick = () => realSheet(e);
   }];
@@ -427,7 +433,8 @@ function viewDane() {
   <div class="card"><div class="eyebrow">Cechy ofert (z filtrów portalu)</div>${attrCard()}</div>
   <div class="card"><div class="eyebrow">Własne umowy najmu</div><p class="small muted" style="margin:0 0 10px">Prawdziwe umowy Twojego biura lub najmy, które znasz z pierwszej ręki. Mają największą wagę w wycenie i pozwalają zmierzyć standard, meble i budynek, których nie ma w ogłoszeniach.</p>
     ${(S.wlasne || []).map(w => `<button class="off" data-own="${w.id}"><div><b>${esc([w.ulica, w.dzielnica].filter(Boolean).join(', ') || 'Najem')}</b></div><div class="p">${fmt(w.cena)} zł</div><div class="m">${w.m2} m² · ${w.pokoje} pok.${w.rok ? ' · rok ' + w.rok : ''}${w.standard ? ' · ' + ({ remont: 'do remontu', dobry: 'dobry', wysoki: 'wysoki' })[w.standard] : ''}${w.meble === 'tak' ? ' · meble' : ''}</div><div class="m" style="text-align:right">${fmt(w.cena / w.m2)} zł/m²</div></button>`).join('')}
-    <div class="gap"></div><button class="btn" data-act="own">Dodaj umowę najmu</button></div>
+    <div class="gap"></div><button class="btn" data-act="own">Dodaj umowę najmu</button>
+    ${(S.wlasne || []).length ? '<div class="gap"></div><button class="btn ghost" data-act="ownchk">Sprawdź, jak wycena trafia w moje umowy</button><div id="ownchk" style="margin-top:10px"></div>' : ''}</div>
   <div class="card"><div class="eyebrow">Transakcje (RCN)</div>${meta ? `<div class="kv"><span>Lokale (mieszkania, użytkowe, garaże): rekordów</span><b>${fmt(S.tx.length)}</b></div><div class="kv"><span>Domy, obiekty i grunty: transakcji</span><b>${fmt(S.inne.length)}</b></div><div class="kv"><span>Pobrano</span><b>${esc(meta.pobrano || '—')}</b></div><div class="kv"><span>Bez współrzędnych</span><b>${fmt((meta.bez_wspolrzednych ?? 0) + (S.rcnInne?.meta?.bez_wspolrzednych ?? 0))}</b></div>${katalogHTML()}${S.rcnInne ? '' : '<p class="tiny muted" style="margin:10px 0 0">Brak pliku z domami, obiektami i gruntami. Serwer przygotuje go przy najbliższym odświeżeniu; potem użyj „Sprawdź nowe dane teraz”.</p>'}` : '<p class="muted small" style="margin:0 0 10px">Brak danych. Wygeneruj plik skryptem na serwerze (tools/rcn_export.py) i wgraj poniżej.</p>'}
     ${S.ust.rcnUrl ? '<div class="gap"></div><button class="btn ghost" data-act="rcncheck">Sprawdź nowe dane teraz</button><p class="tiny muted" style="margin:8px 0 0">Aplikacja sama sprawdza nowe dane przy każdym otwarciu (serwer odświeża je codziennie w nocy) i pobiera je na wszystkie urządzenia.</p>' : ''}<div class="gap"></div><label class="field"><span>Adres pliku z serwera</span><input class="in" id="rurl" value="${esc(S.ust.rcnUrl)}" placeholder="https://…/rcn_lublin.json"></label>
     <button class="btn" data-act="rcnurl">Pobierz z serwera</button><div class="gap"></div><button class="btn ghost" data-act="rcnfile">Wczytaj plik JSON</button><input type="file" id="frcn" accept=".json,application/json" hidden></div>
@@ -441,12 +448,13 @@ function viewDane() {
     $('[data-act="paste"]', v).onclick = pasteSheet;
     $('[data-act="own"]', v).onclick = () => ownSheet(null);
     $$('[data-own]', v).forEach(b => b.onclick = () => ownSheet(b.dataset.own));
+    const oc = $('[data-act="ownchk"]', v); if (oc) oc.onclick = () => { const box = $('#ownchk', v); box.innerHTML = '<p class="small muted" style="margin:0">Liczę…</p>'; setTimeout(() => { box.innerHTML = ownImpactHTML(); }, 30); };
     $('[data-act="rcnurl"]', v).onclick = async () => { const u = $('#rurl', v).value.trim(); if (!u) return toast('Wpisz adres pliku'); S.ust.rcnUrl = u; save.ust(); toast('Pobieram…'); try { const r = await fetch(u, { cache: 'no-store' }); if (!r.ok) throw new Error('HTTP ' + r.status); await setRcn(await r.json(), true); try { const r2 = await fetch(innePath(u), { cache: 'no-store' }); if (r2.ok) await setRcnInne(await r2.json(), true); } catch {} toast(`Wczytano ${fmt(S.tx.length)} lokali${S.inne.length ? ' i ' + fmt(S.inne.length) + ' domów, obiektów i gruntów' : ''}`); render(); } catch (e) { toast('Nie udało się: ' + e.message); } };
     const rc = $('[data-act="rcncheck"]', v); if (rc) rc.onclick = () => checkRcn(true);
     const fr = $('#frcn', v); $('[data-act="rcnfile"]', v).onclick = () => fr.click(); fr.onchange = async () => { try { await setRcn(JSON.parse(await fr.files[0].text())); } catch (e) { toast('Błędny plik: ' + e.message); } };
-    $('[data-act="exp"]', v).onclick = async () => { const blob = new Blob([JSON.stringify({ v: 1, offers: S.offers, wlasne: S.wlasne, budynki: S.budynki, wyceny: S.wyceny, ust: S.ust })], { type: 'application/json' }); await saveFile(blob, 'kopia-wycena-' + new Date().toISOString().slice(0, 10) + '.json'); };
+    $('[data-act="exp"]', v).onclick = async () => { const blob = new Blob([JSON.stringify({ v: 1, offers: S.offers, wlasne: S.wlasne, budynki: S.budynki, wyceny: S.wyceny, teczki: S.teczki, ust: S.ust })], { type: 'application/json' }); await saveFile(blob, 'kopia-wycena-' + new Date().toISOString().slice(0, 10) + '.json'); };
     const fb = $('#fbak', v); $('[data-act="imp"]', v).onclick = () => fb.click();
-    fb.onchange = async () => { try { const d = JSON.parse(await fb.files[0].text()); if (!Array.isArray(d.offers)) throw new Error('to nie jest kopia'); S.offers = d.offers; sync.allowMassDelete(); S.wlasne = d.wlasne || []; save.wlasne(); S.budynki = d.budynki || {}; S.wyceny = d.wyceny || []; S.ust = { ...S.ust, ...(d.ust || {}) }; save.offers(); save.budynki(); save.wyceny(); save.ust(); toast('Przywrócono'); render(); } catch (e) { toast('Błąd: ' + e.message); } };
+    fb.onchange = async () => { try { const d = JSON.parse(await fb.files[0].text()); if (!Array.isArray(d.offers)) throw new Error('to nie jest kopia'); S.offers = d.offers; sync.allowMassDelete(); S.wlasne = d.wlasne || []; save.wlasne(); S.budynki = d.budynki || {}; S.wyceny = d.wyceny || []; if (d.teczki) { S.teczki = d.teczki; save.teczki(); } S.ust = { ...S.ust, ...(d.ust || {}) }; save.offers(); save.budynki(); save.wyceny(); save.ust(); toast('Przywrócono'); render(); } catch (e) { toast('Błąd: ' + e.message); } };
     $('[data-act="clear"]', v).onclick = () => { if (confirm(syncOn ? 'Usunąć wszystkie oferty z bazy? Zniknie też z serwera i z pozostałych urządzeń.' : 'Usunąć wszystkie oferty z bazy?')) { S.offers = []; sync.allowMassDelete(); save.offers(); render(); } };
   }];
 }
@@ -535,6 +543,22 @@ function attrCard() {
   }).join('');
   return rows + `<p class="tiny muted" style="margin:10px 0 0">Aplikacja mierzy cechę, gdy ma co najmniej 15 ofert z nią i 15 bez niej. Jak oznaczyć: na portalu ustaw filtr (np. Klimatyzacja) i wyeksportuj listę najmu do PDF tak samo jak zwykle. Przy wgrywaniu zaznacz ten filtr. Najlepiej w tym samym dniu co zwykłe listy.</p>`;
 }
+// Jak wyceniłaby to mieszkanie aplikacja, gdyby nie znała tej umowy (sprawdzenie, czy własne dane zgadzają się z rynkiem ofert)
+function ownCheck(w, excludeId) {
+  const others = S.offers.concat((S.wlasne || []).filter(x => x.id !== excludeId).map(ownToOffer));
+  if (others.length < 20) return null;
+  const r = estimateRent(others, { tryb: 'najem', kat: 'mieszkanie', ulica: w.ulica || '', dzielnica: w.dzielnica || '', m2: w.m2, pokoje: w.pokoje, pietro: w.pietro ?? null, rok: w.rok || null, standard: w.standard || null, meble: w.meble || null, attrs: null });
+  return r.ok ? { r, dev: (w.cena - r.total.mid) / r.total.mid, inR: w.cena >= r.total.lo && w.cena <= r.total.hi } : null;
+}
+const devTxt = c => `${c.dev >= 0 ? '+' : '−'}${Math.abs(c.dev * 100).toFixed(0)}%`;
+function ownImpactHTML() {
+  const rows = (S.wlasne || []).map(w => ({ w, c: ownCheck(w, w.id) })).filter(x => x.c);
+  if (rows.length < 1) return '<p class="small muted" style="margin:0">Za mało danych do sprawdzenia (potrzebne co najmniej 20 ofert w bazie i jedna umowa).</p>';
+  const ab = rows.map(x => Math.abs(x.c.dev)).sort((a, b) => a - b), medAbs = ab[Math.floor(ab.length / 2)], inR = rows.filter(x => x.c.inR).length, bias = rows.reduce((a, x) => a + x.c.dev, 0) / rows.length;
+  return `<div class="kv"><span>Umów sprawdzonych</span><b>${rows.length}</b></div><div class="kv"><span>W przedziale wyceny</span><b>${inR} z ${rows.length}</b></div><div class="kv"><span>Typowa różnica (mediana)</span><b>${(medAbs * 100).toFixed(0)}%</b></div><div class="kv"><span>Średnio względem ofert</span><b>${devTxt({ dev: bias })}</b></div>
+    <p class="tiny muted" style="margin:8px 0 0">Dla każdej umowy aplikacja wycenia to samo mieszkanie, NIE znając tej umowy, i porównuje z prawdziwym czynszem. ${bias < -0.04 ? 'Umowy wychodzą niżej niż oferty: ceny ofertowe są zawyżone względem faktycznych najmów.' : bias > 0.04 ? 'Umowy wychodzą wyżej niż oferty: aplikacja może zaniżać ten segment.' : 'Oferty i umowy są zgodne.'} ${rows.length < 8 ? 'Przy małej liczbie umów to tylko wskazówka.' : ''}</p>
+    ${rows.map(x => `<div class="kv"><span>${esc([x.w.ulica, x.w.dzielnica].filter(Boolean).join(', ') || 'Najem')} · ${x.w.m2} m²</span><b>${fmt(x.w.cena)} zł <small style="color:${x.c.inR ? 'var(--ok)' : 'var(--warn)'}">${devTxt(x.c)}</small></b></div>`).join('')}`;
+}
 function ownSheet(id) {
   const w = id ? S.wlasne.find(x => x.id === id) : null, d = { standard: w?.standard || '', meble: w?.meble || '' };
   const chips = (k, items) => `<div class="chips" data-oc="${k}">${items.map(([v, n]) => `<button type="button" class="chip ${d[k] === v ? 'on' : ''}" data-v="${v}">${n}</button>`).join('')}</div>`;
@@ -546,11 +570,19 @@ function ownSheet(id) {
     <div class="field"><span>Standard</span>${chips('standard', [['', 'Nie wiem'], ['remont', 'Do remontu'], ['dobry', 'Dobry'], ['wysoki', 'Wysoki']])}</div>
     <div class="field"><span>Wyposażenie</span>${chips('meble', [['', 'Nie wiem'], ['tak', 'Umeblowane'], ['nie', 'Bez mebli']])}</div>
     <div class="grid2"><label class="field"><span>Czynsz najmu (zł)</span><input class="in" id="o-ce" inputmode="numeric" value="${w?.cena ?? ''}"></label><label class="field"><span>Czynsz adm. (opcj.)</span><input class="in" id="o-ca" inputmode="numeric" value="${w?.czynsz ?? ''}"></label></div>
-    <button class="btn" id="o-ok">Zapisz</button>${w ? '<div class="gap"></div><button class="btn danger" id="o-del">Usuń tę umowę</button>' : ''}`, p => {
+    <div id="o-live" class="small muted" style="margin:4px 0 12px"></div>
+    <button class="btn" id="o-ok">Zapisz</button>${w ? '' : '<div class="gap"></div><button class="btn ghost" id="o-ok2">Zapisz i dodaj kolejną</button>'}${w ? '<div class="gap"></div><button class="btn danger" id="o-del">Usuń tę umowę</button>' : ''}`, p => {
     $$('[data-oc]', p).forEach(g => $$('button', g).forEach(b => b.onclick = () => { d[g.dataset.oc] = b.dataset.v; $$('button', g).forEach(x => x.classList.toggle('on', x === b)); }));
     const num = x => { const n = parseFloat(String($(x, p).value).replace(',', '.').replace(/[^\d.]/g, '')); return Number.isFinite(n) ? n : null; };
     $('#o-ul', p).onchange = () => { if (!$('#o-dz', p).value.trim()) { const inf = inferDistrict(allOffers(), S.tx, $('#o-ul', p).value.trim()); if (inf) $('#o-dz', p).value = inf.name; } };
-    $('#o-ok', p).onclick = () => {
+    const live = () => {
+      const m2 = num('#o-m2'), cena = num('#o-ce'), pk = num('#o-pk'), box = $('#o-live', p); if (!(m2 >= 10 && cena >= 200 && pk >= 1)) { box.textContent = ''; return; }
+      let dz = $('#o-dz', p).value.trim(); const ul = $('#o-ul', p).value.trim(); if (!dz && ul) { const inf = inferDistrict(allOffers(), S.tx, ul); if (inf) dz = inf.name; }
+      const c = ownCheck({ ulica: ul, dzielnica: dz, m2, pokoje: Math.round(pk), pietro: num('#o-pi'), rok: num('#o-rok'), standard: d.standard, meble: d.meble, cena }, w?.id);
+      box.innerHTML = c ? `Bez tej umowy aplikacja wyceniłaby to mieszkanie na <b>${fmt(roundTo(c.r.total.lo, 10))}–${fmt(roundTo(c.r.total.hi, 10))} zł</b>. Twoja umowa: <b>${fmt(cena)} zł</b> (${devTxt(c)} od środka) ${c.inR ? '<span class="badge g">w przedziale</span>' : '<span class="badge">poza przedziałem</span>'}` : 'Za mało ofert w bazie, by porównać.';
+    };
+    let lt = null; $$('input', p).forEach(i => i.addEventListener('input', () => { clearTimeout(lt); lt = setTimeout(live, 600); })); $$('[data-oc] button', p).forEach(b => b.addEventListener('click', () => { clearTimeout(lt); lt = setTimeout(live, 300); })); if (w) setTimeout(live, 200);
+    const saveOwn = again => {
       const m2 = num('#o-m2'), cena = num('#o-ce'), pk = num('#o-pk');
       if (!(m2 >= 10 && m2 <= 400)) return toast('Podaj powierzchnię (10–400 m²)'); if (!(cena >= 200 && cena <= 30000)) return toast('Podaj czynsz najmu (200–30000 zł)'); if (!(pk >= 1 && pk <= 10)) return toast('Podaj liczbę pokoi');
       const rok = num('#o-rok'); if (rok != null && !(rok >= 1700 && rok <= now() + 3)) return toast('Rok budowy wygląda błędnie');
@@ -558,8 +590,9 @@ function ownSheet(id) {
       if (!dz && ul) { const inf = inferDistrict(allOffers(), S.tx, ul); if (inf) dz = inf.name; }
       const rec = { id: w?.id || uid(), ulica: ul, dzielnica: dz, m2, pokoje: Math.round(pk), pietro: num('#o-pi'), rok, standard: d.standard, meble: d.meble, cena: Math.round(cena), czynsz: num('#o-ca'), ts: w?.ts || Date.now() };
       if (w) Object.assign(w, rec); else S.wlasne.push(rec);
-      save.wlasne(); closeSheet(); toast('Zapisano umowę'); render();
+      save.wlasne(); closeSheet(); toast('Zapisano umowę'); render(); if (again) setTimeout(() => ownSheet(null), 350);
     };
+    $('#o-ok', p).onclick = () => saveOwn(false); const ok2 = $('#o-ok2', p); if (ok2) ok2.onclick = () => saveOwn(true);
     const del = $('#o-del', p); if (del) del.onclick = () => { S.wlasne = S.wlasne.filter(x => x.id !== w.id); save.wlasne(); closeSheet(); render(); };
   });
 }
@@ -569,14 +602,100 @@ function pasteSheet() {
   });
 }
 
-/* ---------- HISTORIA ---------- */
+/* ---------- HISTORIA i TECZKI ---------- */
+S.histTab = 'wyceny';
+const tName = t => t.nazwa || [t.ulica, t.nr].filter(Boolean).join(' ') || 'Teczka';
+const tWyceny = id => S.wyceny.filter(e => e.teczka === id).sort((a, b) => (a.ts || 0) - (b.ts || 0));
+const midRange = e => { const r = e.res, st = e.subj.tryb === 'sprzedaz' ? 1000 : 10; return r && r.ok ? { lo: roundTo(r.total.lo, st), mid: roundTo((r.total.lo + r.total.hi) / 2, st), hi: roundTo(r.total.hi, st) } : null; };
+function findTeczka(subj) {
+  if (!subj.ulica || !subj.nr) return null; const k = addrKey(subj.ulica, subj.nr);
+  return S.teczki.find(t => t.ulica && t.nr && addrKey(t.ulica, t.nr) === k && Math.abs((+t.m2 || 0) - (+subj.m2 || 0)) <= 0.6) || null;
+}
+function newTeczka(subj, extra = {}) {
+  const t = { id: uid(), nazwa: '', klient: '', ulica: subj?.ulica || '', nr: subj?.nr || '', dzielnica: subj?.dzielnica || '', kat: subj?.kat || 'mieszkanie', m2: subj?.m2 || '', pokoje: subj?.pokoje ?? '', pietro: subj?.pietro ?? '', rok: subj?.rok || '', notatki: '', ts: Date.now(), ...extra };
+  S.teczki.unshift(t); save.teczki(); return t;
+}
 function viewHistoria() {
-  const items = S.wyceny.map(e => { const r = e.res, s = e.subj, sale = s.tryb === 'sprzedaz', st = sale ? 1000 : 10;
-    const rng = r.ok ? `${fmt(roundTo(r.total.lo, st))} – ${fmt(roundTo(r.total.hi, st))} zł` : 'brak wyniku';
-    let chk = ''; if (e.real && r.ok) { const inR = e.real >= r.total.lo && e.real <= r.total.hi, dv = (e.real - r.total.mid) / r.total.mid * 100; chk = `<span class="badge ${inR ? 'g' : ''}">${inR ? 'w przedziale' : (dv > 0 ? '+' : '') + dv.toFixed(0) + '% od mediany'}</span>`; }
-    return `<a class="card" href="#/wynik/h/${e.id}" style="display:block;text-decoration:none;color:inherit"><div class="eyebrow">${sale ? 'Sprzedaż' : 'Najem'} · ${new Date(e.ts).toLocaleDateString('pl-PL')}${r.ok ? ' · pewność ' + LV[r.confidence.level].toLowerCase() : ''}</div><h3>${esc(rng)}</h3><div class="muted small">${esc(subjLine(s))}</div>${chk ? `<div style="margin-top:8px">${chk}</div>` : ''}</a>`; });
-  const html = head('Historia', 'Zapisane wyceny') + (items.length ? items.join('') + '<button class="btn danger" data-act="clr">Wyczyść historię</button>' : '<div class="empty"><b>Pusto</b>Zapisane wyceny pojawią się tutaj. Po zamknięciu transakcji wpisz cenę rzeczywistą, a zobaczysz, jak trafiał szacunek.</div>');
-  return [html, v => { const c = $('[data-act="clr"]', v); if (c) c.onclick = () => { if (confirm('Usunąć całą historię wycen?')) { S.wyceny = []; save.wyceny(); render(); } }; }];
+  const tab = S.histTab, SEG = [['wyceny', 'Wyceny'], ['teczki', 'Teczki']];
+  const seg = `<div class="seg" data-n="2" data-v="${tab === 'teczki' ? 1 : 0}"><i></i>${SEG.map(([k, n]) => `<button data-ht="${k}" class="${tab === k ? 'on' : ''}">${n}</button>`).join('')}</div>`;
+  let body = '';
+  if (tab === 'wyceny') {
+    const items = S.wyceny.map(e => { const r = e.res, s = e.subj, sale = s.tryb === 'sprzedaz', st = sale ? 1000 : 10;
+      const rng = r.ok ? `${fmt(roundTo(r.total.lo, st))} – ${fmt(roundTo(r.total.hi, st))} zł` : 'brak wyniku';
+      let chk = ''; if (e.real && r.ok) { const inR = e.real >= r.total.lo && e.real <= r.total.hi, dv = (e.real - r.total.mid) / r.total.mid * 100; chk = `<span class="badge ${inR ? 'g' : ''}">${inR ? 'w przedziale' : (dv > 0 ? '+' : '') + dv.toFixed(0) + '% od mediany'}</span>`; }
+      const tc = e.teczka ? S.teczki.find(t => t.id === e.teczka) : null;
+      return `<a class="card" href="#/wynik/h/${e.id}" style="display:block;text-decoration:none;color:inherit"><div class="eyebrow">${sale ? 'Sprzedaż' : 'Najem'} · ${new Date(e.ts).toLocaleDateString('pl-PL')}${r.ok ? ' · pewność ' + LV[r.confidence.level].toLowerCase() : ''}</div><h3>${esc(rng)}</h3><div class="muted small">${esc(subjLine(s))}</div>${chk || tc ? `<div style="margin-top:8px">${chk}${tc ? `<span class="badge">teczka: ${esc(tName(tc))}</span>` : ''}</div>` : ''}</a>`; });
+    body = items.length ? items.join('') + '<button class="btn danger" data-act="clr">Wyczyść historię</button>' : '<div class="empty"><b>Pusto</b>Zapisane wyceny pojawią się tutaj. Po zamknięciu transakcji wpisz cenę rzeczywistą, a zobaczysz, jak trafiał szacunek.</div>';
+  } else {
+    const items = S.teczki.map(t => { const w = tWyceny(t.id), last = w.length ? midRange(w[w.length - 1]) : null, fo = (S.foto[t.id] || []).length;
+      return `<a class="card" href="#/teczka/${t.id}" style="display:block;text-decoration:none;color:inherit"><div class="eyebrow">${t.kat && KAT[t.kat] ? KAT[t.kat].n : 'Nieruchomość'}${t.dzielnica ? ' · ' + esc(t.dzielnica) : ''}</div><h3>${esc(tName(t))}</h3><div class="muted small">${[t.m2 ? String(t.m2).replace('.', ',') + ' m²' : '', t.klient ? esc(t.klient) : ''].filter(Boolean).join(' · ') || '&nbsp;'}</div>
+        <div style="margin-top:8px"><span class="badge">${w.length} ${w.length === 1 ? 'wycena' : 'wycen'}</span>${last ? `<span class="badge g">ostatnia: ${fmt(last.mid)} zł${w[w.length - 1].subj.tryb === 'najem' ? '/mies.' : ''}</span>` : ''}${fo ? `<span class="badge">${fo} zdjęć</span>` : ''}</div></a>`; });
+    body = (items.length ? items.join('') : '<div class="empty"><b>Brak teczek</b>Teczka zbiera w jednym miejscu wyceny jednej nieruchomości, notatki i zdjęcia oraz pokazuje, jak zmieniała się jej wartość.</div>') + '<button class="btn" data-act="newt">Nowa teczka</button>';
+  }
+  const html = head('Historia', tab === 'wyceny' ? 'Zapisane wyceny' : 'Teczki nieruchomości') + seg + body;
+  return [html, v => {
+    $$('[data-ht]', v).forEach(b => b.onclick = () => { S.histTab = b.dataset.ht; render(); });
+    const c = $('[data-act="clr"]', v); if (c) c.onclick = () => { if (confirm('Usunąć całą historię wycen?')) { S.wyceny = []; save.wyceny(); render(); } };
+    const n = $('[data-act="newt"]', v); if (n) n.onclick = () => { const t = newTeczka(null); go('#/teczka/' + t.id); };
+  }];
+}
+
+/* ---- teczka nieruchomości ---- */
+async function resizePhoto(file, max = 1280, q = 0.72) {
+  const bmp = await createImageBitmap(file), k = Math.min(1, max / Math.max(bmp.width, bmp.height)), c = document.createElement('canvas');
+  c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k); c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+  return c.toDataURL('image/jpeg', q);
+}
+function viewTeczka(id) {
+  const t = S.teczki.find(x => x.id === id);
+  if (!t) return [head('Teczka', '', true) + '<div class="empty"><b>Nie znaleziono teczki</b>Mogła zostać usunięta na innym urządzeniu.</div>', v => $('[data-back]', v).onclick = () => go('#/historia')];
+  const ws = tWyceny(id), fotos = S.foto[id] || [], hasBoth = ws.some(e => e.subj.tryb === 'sprzedaz') && ws.some(e => e.subj.tryb === 'najem');
+  const field = (k, l, ph = '', mode = 'text') => `<label class="field"><span>${l}</span><input class="in" data-tk="${k}" inputmode="${mode}" value="${esc(t[k] ?? '')}" placeholder="${ph}"></label>`;
+  const wl = ws.slice().reverse().map(e => { const m = midRange(e); return `<a class="off" href="#/wynik/h/${e.id}" style="text-decoration:none;color:inherit"><div><b>${e.subj.tryb === 'sprzedaz' ? 'Sprzedaż' : 'Najem'}</b></div><div class="p">${m ? fmt(m.mid) + ' zł' : 'brak wyniku'}</div><div class="m">${new Date(e.ts).toLocaleDateString('pl-PL')}${m ? ` · ${fmt(m.lo)}–${fmt(m.hi)} zł` : ''}${e.real ? ` · rzeczywista ${fmt(e.real)} zł` : ''}</div></a>`; }).join('');
+  const html = head(esc(tName(t)), 'Teczka nieruchomości', true) + `
+  <div class="card"><div class="eyebrow">Dane nieruchomości</div>${field('nazwa', 'Nazwa teczki (opcj.)', 'np. Granata 12/4')}${field('klient', 'Klient (opcj.)', 'imię lub nazwa')}
+    <div class="grid2">${field('ulica', 'Ulica')}${field('nr', 'Numer')}</div>${field('dzielnica', 'Dzielnica')}
+    <div class="grid2">${field('m2', 'Powierzchnia (m²)', '', 'decimal')}${field('pokoje', 'Pokoje', '', 'numeric')}</div><div class="grid2">${field('pietro', 'Piętro', '', 'numeric')}${field('rok', 'Rok budowy', '', 'numeric')}</div></div>
+  <div class="card"><div class="eyebrow">Wartość w czasie</div><div id="tchart"></div></div>
+  <div class="card"><div class="eyebrow">Wyceny w teczce (${ws.length})</div>${wl || '<p class="small muted" style="margin:0">Brak. Zapisz wycenę do historii, a w jej wyniku wybierz „Dodaj do teczki”, albo wyceń tę nieruchomość stąd.</p>'}
+    <div class="gap"></div><div class="row"><button class="btn" data-act="w-sale">Wyceń sprzedaż</button><button class="btn ghost" data-act="w-rent">Wyceń najem</button></div></div>
+  <div class="card"><div class="eyebrow">Zdjęcia</div><div class="photos">${fotos.map((u, i) => `<button class="ph" data-ph="${i}" aria-label="Zdjęcie ${i + 1}"><img src="${u}" alt=""></button>`).join('')}</div>
+    <div class="gap"></div><button class="btn ghost" data-act="addph">Dodaj zdjęcie</button><input type="file" id="tph" accept="image/*" multiple hidden>
+    <p class="tiny muted" style="margin:8px 0 0">Zdjęcia są pomniejszane i zapisywane tylko na tym urządzeniu: nie synchronizują się z serwerem i nie trafiają do kopii zapasowej.</p></div>
+  <div class="card"><div class="eyebrow">Notatki</div><textarea class="in" id="tnote" rows="6" placeholder="Rozmowy, ustalenia, stan lokalu…">${esc(t.notatki || '')}</textarea></div>
+  <button class="btn danger" data-act="delt">Usuń teczkę</button>`;
+  return [html, v => {
+    $('[data-back]', v).onclick = () => go('#/historia');
+    const touch = () => { t.ts = Date.now(); save.teczki(); };
+    $$('[data-tk]', v).forEach(i => i.onchange = () => { const k = i.dataset.tk; let val = i.value.trim(); if (['m2'].includes(k)) val = val ? parseFloat(val.replace(',', '.')) || '' : ''; if (['pokoje', 'pietro', 'rok'].includes(k)) val = val === '' ? '' : (parseInt(val, 10) || 0); t[k] = val; touch(); if (k === 'ulica' && !t.dzielnica) { const inf = inferDistrict(allOffers(), S.tx, val); if (inf) { t.dzielnica = inf.name; $('[data-tk="dzielnica"]', v).value = inf.name; } } });
+    $('#tnote', v).oninput = e => { t.notatki = e.target.value; clearTimeout(viewTeczka.tm); viewTeczka.tm = setTimeout(touch, 700); };
+    let mode = ws.length && ws[ws.length - 1].subj.tryb || 'sprzedaz';
+    const drawChart = () => {
+      const pts = ws.filter(e => e.subj.tryb === mode && midRange(e)).map(e => { const m = midRange(e); return { t: e.ts, label: new Date(e.ts).toLocaleDateString('pl-PL'), med: m.mid, p25: m.lo, p75: m.hi, n: null }; }), box = $('#tchart', v);
+      const sw = hasBoth ? `<div class="chips" style="margin-bottom:8px">${[['sprzedaz', 'Sprzedaż'], ['najem', 'Najem']].map(([k, n]) => `<button type="button" class="chip ${mode === k ? 'on' : ''}" data-tm="${k}">${n}</button>`).join('')}</div>` : '';
+      if (pts.length < 2) { box.innerHTML = sw + `<p class="small muted" style="margin:0">${pts.length ? 'Jedna wycena: ' + fmt(pts[0].med) + ' zł (' + fmt(pts[0].p25) + '–' + fmt(pts[0].p75) + '). ' : ''}Wykres pojawi się po drugiej wycenie tej nieruchomości (np. za kilka miesięcy).</p>`; }
+      else box.innerHTML = sw + lineChart(pts, { unit: 'zł', label: 'Wartość nieruchomości w czasie', medLabel: 'środek przedziału', bandLabel: 'przedział' }) + '<p class="tiny muted" style="margin:8px 0 0">Środek przedziału z kolejnych wycen; pasmo to przedział z wyceny. Różnice mogą wynikać ze zmiany rynku, ale też z nowszych danych i poprawek metody.</p>';
+      $$('[data-tm]', box).forEach(b => b.onclick = () => { mode = b.dataset.tm; drawChart(); }); bindCharts(box);
+    };
+    drawChart();
+    const prefill = tryb => { Object.assign(S.form, { tryb, kat: t.kat || 'mieszkanie', ulica: t.ulica || '', nr: t.nr || '', dzielnica: t.dzielnica || '', m2: t.m2 ? String(t.m2) : '', pokoje: t.pokoje === '' ? S.form.pokoje : t.pokoje, pietro: t.pietro === '' ? null : t.pietro, rok: t.rok ? String(t.rok) : '' }); S.teczkaNext = t.id; go('#/wycena'); };
+    $('[data-act="w-sale"]', v).onclick = () => prefill('sprzedaz'); $('[data-act="w-rent"]', v).onclick = () => prefill('najem');
+    const tph = $('#tph', v); $('[data-act="addph"]', v).onclick = () => tph.click();
+    tph.onchange = async () => { const list = (S.foto[id] || []).slice(); for (const f of [...tph.files]) { if (list.length >= 12) { toast('Najwyżej 12 zdjęć w teczce'); break; } try { list.push(await resizePhoto(f)); } catch { toast('Nie udało się wczytać zdjęcia'); } } S.foto[id] = list; await store.set('foto', S.foto); render(); };
+    $$('[data-ph]', v).forEach(b => b.onclick = () => { const i = +b.dataset.ph; openSheet(`<img src="${fotos[i]}" alt="" style="width:100%;border-radius:14px"><div class="gap"></div><button class="btn danger" id="phdel">Usuń zdjęcie</button>`, p => { $('#phdel', p).onclick = async () => { S.foto[id] = fotos.filter((_, j) => j !== i); await store.set('foto', S.foto); closeSheet(); render(); }; }); });
+    $('[data-act="delt"]', v).onclick = async () => { if (!confirm('Usunąć teczkę? Wyceny zostaną w historii, zdjęcia zostaną skasowane.')) return; S.wyceny.forEach(e => { if (e.teczka === id) delete e.teczka; }); save.wyceny(); S.teczki = S.teczki.filter(x => x.id !== id); save.teczki(); delete S.foto[id]; await store.set('foto', S.foto); go('#/historia'); };
+  }];
+}
+function teczkaSheet(e) {
+  const cur = e.teczka ? S.teczki.find(t => t.id === e.teczka) : null;
+  openSheet(`<h3>Teczka nieruchomości</h3>${cur ? `<p class="small muted">Ta wycena jest w teczce: <b>${esc(tName(cur))}</b>.</p><a class="btn" href="#/teczka/${cur.id}" style="display:block;text-align:center;text-decoration:none">Otwórz teczkę</a><div class="gap"></div><button class="btn ghost" id="tc-un">Wyjmij z teczki</button><div class="gap"></div>` : ''}
+    <button class="btn ${cur ? 'ghost' : ''}" id="tc-new">Nowa teczka z tej wyceny</button>
+    ${S.teczki.filter(t => !cur || t.id !== cur.id).map(t => `<div class="gap"></div><button class="off" data-tc="${t.id}"><div><b>${esc(tName(t))}</b></div><div class="m">${[t.dzielnica, t.m2 ? t.m2 + ' m²' : ''].filter(Boolean).join(' · ')}</div></button>`).join('')}`, p => {
+    const set = id => { e.teczka = id; save.wyceny(); closeSheet(); toast('Dodano do teczki'); render(); };
+    $('#tc-new', p).onclick = () => { const t = newTeczka(e.subj); set(t.id); };
+    $$('[data-tc]', p).forEach(b => b.onclick = () => set(b.dataset.tc));
+    const un = $('#tc-un', p); if (un) un.onclick = () => { delete e.teczka; save.wyceny(); closeSheet(); render(); };
+  });
 }
 
 /* ---------- USTAWIENIA ---------- */
@@ -711,6 +830,59 @@ function viewMapa() {
   }];
 }
 
+/* ---------- RYNEK (wykresy: trend cen i rentowność) ---------- */
+S.rynek = { kat: 'mieszkanie', rynek: '', metraz: '', ulica: '', promien: 1.5 };
+const plPct = (x, d = 1) => (x >= 0 ? '+' : '−') + Math.abs(x).toFixed(d).replace('.', ',') + '%';
+function viewRynek() {
+  const m = S.rynek, chips = (key, opts) => `<div class="chips" data-rf="${key}">${opts.map(([val, n]) => `<button type="button" class="chip ${String(m[key]) === String(val) ? 'on' : ''}" data-v="${val}">${n}</button>`).join('')}</div>`;
+  const html = head('Rynek', 'Jak zmieniają się ceny i ile daje najem') + safeBanner() + `
+  <div class="card"><div class="eyebrow">Trend ceny za m²</div>
+    <div class="field"><span>Rodzaj nieruchomości</span>${chips('kat', KAT_ORDER.filter(k => ['mieszkanie', 'dom', 'lokal', 'garaz'].includes(k)).map(k => [k, KAT[k].n]))}</div>
+    <div class="field" id="rf-rynek"></div><div class="field" id="rf-metraz"></div>
+    <label class="field"><span>Okolica (opcjonalnie: ulica, wokół której liczymy)</span><input class="in" id="rf-ul" list="rf-dl" value="${esc(m.ulica)}" placeholder="całe miasto" autocomplete="off"></label><datalist id="rf-dl">${S.streets.map(x => `<option value="${esc(x)}">`).join('')}</datalist>
+    <div class="field" id="rf-r"></div>
+    <div id="rtrend" style="margin-top:6px"></div></div>
+  <div class="card"><div class="eyebrow">Rentowność najmu w dzielnicach</div><div id="ryield"></div></div>`;
+  return [html, v => {
+    const paintFilters = () => {
+      const f = m.kat === 'mieszkanie' || m.kat === 'dom' || m.kat === 'lokal';
+      $('#rf-rynek', v).innerHTML = f ? `<span>Rynek</span>${chips('rynek', [['', 'Wszystkie'], ['wtorny', 'Wtórny'], ['pierwotny', 'Pierwotny']])}` : '';
+      $('#rf-metraz', v).innerHTML = `<span>${M2S[m.kat][0]}</span>${chips('metraz', M2S[m.kat][1])}`;
+      $('#rf-r', v).innerHTML = m.ulica ? `<span>Promień wokół ulicy</span>${chips('promien', [[0.7, '0,7 km'], [1.5, '1,5 km'], [3, '3 km']])}` : '';
+      $$('[data-rf]', v).forEach(g => $$('button', g).forEach(b => b.onclick = () => { m[g.dataset.rf] = b.dataset.v; if (g.dataset.rf === 'kat') { m.metraz = ''; m.rynek = ''; paintFilters(); } else $$('button', g).forEach(x => x.classList.toggle('on', x === b)); drawTrend(); }));
+    };
+    const center = () => {
+      if (!m.ulica) return null; const k = normStreet(m.ulica), mine = S.pool.filter(t => t.lat != null && normStreet(t.ulica) === k);
+      return mine.length >= 2 ? [mine.reduce((a, t) => a + t.lat, 0) / mine.length, mine.reduce((a, t) => a + t.lon, 0) / mine.length] : null;
+    };
+    const drawTrend = () => {
+      const box = $('#rtrend', v);
+      if (!S.pool.length) { box.innerHTML = '<p class="small muted" style="margin:0">Brak danych RCN. Pobierz je w zakładce <b>Dane</b>.</p>'; return; }
+      const [r0, r1] = rangeOf(m.metraz), c = center();
+      if (m.ulica && !c) { box.innerHTML = `<p class="small muted" style="margin:0">Nie znam położenia ulicy „${esc(m.ulica)}” (za mało transakcji RCN przy tej ulicy). Wybierz ulicę z listy albo wyczyść pole.</p>`; return; }
+      const T = trendSeries(S.pool, { kat: m.kat, rynek: ['mieszkanie', 'dom', 'lokal'].includes(m.kat) ? m.rynek : '', m2min: r0, m2max: r1, center: c, radiusKm: c ? +m.promien : null, years: 8 });
+      if (!T.ok) { box.innerHTML = `<p class="small muted" style="margin:0">${esc(T.reason)}</p>`; return; }
+      const last = T.points[T.points.length - 1], first = T.points[0];
+      box.innerHTML = `<div class="stats" style="margin:0 0 10px"><div class="stat"><b>${fmt(last.med)}</b><span>zł/m², ostatni okres</span></div>
+        <div class="stat"><b>${T.yoy ? plPct(T.yoy.pct) : '—'}</b><span>rok do roku</span></div><div class="stat"><b>${fmt(T.n)}</b><span>transakcji</span></div></div>
+        ${lineChart(T.points, { label: 'Mediana ceny za m² w czasie' })}
+        <p class="tiny muted" style="margin:8px 0 0">Linia: mediana ceny transakcyjnej za m² (akty notarialne, RCN) w okresach ${T.step === 12 ? 'rocznych' : T.step === 6 ? 'półrocznych' : 'kwartalnych'}; pasmo: środkowe 50% transakcji. Pokazane tylko okresy z co najmniej 8 transakcjami. ${first.label} → ${last.label}: ${plPct((last.med / first.med - 1) * 100, 0)}.${T.yoy ? ` Rok do roku: mediana z ostatnich 12 miesięcy (${T.yoy.na} transakcji) wobec poprzednich 12 (${T.yoy.nb}).` : ' Rok do roku: za mało transakcji w którymś roku.'} Ceny zmieniają się też ze standardem i metrażem, więc to wskazówka o rynku, nie wycena.</p>`;
+      bindCharts(box);
+    };
+    const drawYield = () => {
+      const box = $('#ryield', v);
+      if (!S.tx.length) { box.innerHTML = '<p class="small muted" style="margin:0">Brak danych RCN. Pobierz je w zakładce <b>Dane</b>.</p>'; return; }
+      const Y = yieldByDistrict(allOffers(), S.tx);
+      if (!Y.ok) { box.innerHTML = `<p class="small muted" style="margin:0">${esc(Y.reason)}</p>`; return; }
+      box.innerHTML = `<div class="stats" style="margin:0 0 10px"><div class="stat"><b>${Y.city.y.toFixed(1).replace('.', ',')}%</b><span>całe miasto, brutto rocznie</span></div><div class="stat"><b>${Y.rows[0].name}</b><span>najwyższa: ${Y.rows[0].y.toFixed(1).replace('.', ',')}%</span></div><div class="stat"><b>${Y.rows[Y.rows.length - 1].name}</b><span>najniższa: ${Y.rows[Y.rows.length - 1].y.toFixed(1).replace('.', ',')}%</span></div></div>
+        ${barChart(Y.rows.map(r => ({ name: r.name, y: r.y, yLo: r.yLo, yHi: r.yHi, sub: `czynsz ${fmt(r.rent)} zł/m² · cena ${fmt(r.sale)} zł/m² · ${r.nr} ofert, ${r.ns} transakcji` })), { ref: Y.city.y, label: 'Rentowność brutto w dzielnicach' })}
+        <p class="tiny muted" style="margin:8px 0 0">Roczny czynsz (mediana ofert, bez opłat administracyjnych) do mediany ceny transakcyjnej tego samego metrażu (${Y.range[0]}–${Y.range[1]} m², transakcje z ostatnich ${String(Y.windowYears).replace('.', ',')} roku/lat). Wąs: środkowe 50% czynszów. To rentowność brutto z cen ofertowych: bez podatku, kosztów, remontów i pustostanów; rzeczywisty zwrot jest niższy. Dzielnice transakcjom przypisano po najbliższej ulicy ze znaną dzielnicą (do 2,5 km); pokazane tylko dzielnice z min. 5 ofertami i 30 transakcjami.</p>`;
+    };
+    paintFilters(); drawTrend(); drawYield();
+    const ul = $('#rf-ul', v); ul.onchange = () => { m.ulica = ul.value.trim(); paintFilters(); drawTrend(); };
+  }];
+}
+
 /* ---------- start ---------- */
 window.addEventListener('hashchange', render);
 document.addEventListener('click', e => { const b = e.target.closest('[data-back]'); if (b && !b.onclick) history.length > 1 ? history.back() : go('#/wycena'); });
@@ -723,5 +895,5 @@ load().then(() => {
     navigator.serviceWorker.addEventListener('controllerchange', () => { if (had && !done) { done = true; location.reload(); } });   // nowa wersja przejęła kontrolę: odśwież raz
     navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => { });
   }
-  window.__am = { S, render, go, sync, checkRcn, getMap: () => mapCtl, importOffers: (found, opt) => applyCollection(found, opt), statusFn };
+  window.__am = { S, save, render, go, sync, checkRcn, getMap: () => mapCtl, importOffers: (found, opt) => applyCollection(found, opt), statusFn };
 });
