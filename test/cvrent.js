@@ -1,5 +1,5 @@
 // Laboratorium: walidacja krzyżowa wyceny najmu na prawdziwych ofertach (uruchamiane w przeglądarce z aplikacją).
-import { estimateRent, segmentTags, rangeFrom } from '../../js/engine.js';
+import { estimateRent, segmentTags, rangeFrom } from '../js/engine.js';
 export const subjectOf = o => ({ tryb: 'najem', kat: 'mieszkanie', ulica: o.ulica || '', dzielnica: o.dzielnica || '', m2: o.m2, pokoje: o.pokoje, pietro: o.pietro ?? null, rok: o.rok || null,
   standard: segmentTags(o.tytul).wysoki ? 'wysoki' : null, meble: o.attrs && o.attrs.meble === 1 ? 'tak' : o.attrs && o.attrs.meble === 0 ? 'nie' : null, attrs: o.attrs || null });
 // Uruchamia w tle (po jednej warstwie na wywołanie), wynik w window.__cv
