@@ -8,6 +8,7 @@ const offers = []; for (let i = 0; i < 150; i++) { const d = DZ[i % 3], m2 = Mat
 (async () => {
   const srv = spawn('python3', ['-m', 'http.server', '8765', '-d', path.resolve(__dirname, '..')], { stdio: 'ignore' }); await new Promise(r => setTimeout(r, 800));
   const b = await chromium.launch(); const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, serviceWorkers: 'block' });
+  await ctx.route(/overpass/, r => r.fulfill({ contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ elements: [{ type: 'node', lat: 51.246, lon: 22.568, tags: { name: 'Test' } }, { type: 'way', center: { lat: 51.25, lon: 22.57 }, tags: {} }] }) }));
   const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push('PAGEERROR ' + e.message)); p.on('dialog', d => d.accept());
   await p.goto('http://localhost:8765/index.html#/dane'); await p.waitForTimeout(2500); await p.setInputFiles('#frcn', rcn); await p.waitForTimeout(2500);
   await p.evaluate(o => { window.__am.S.offers = o; }, offers);

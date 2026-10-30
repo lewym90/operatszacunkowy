@@ -44,7 +44,7 @@ function barChartCv(ctx, rows, ref, x0, y0, w) {
 export async function buildReport(e, ust, opts = {}) {
   const variant = opts.variant || 'full';
   await Promise.all([document.fonts.load('40px Marcellus'), document.fonts.load('400 20px Archivo'), document.fonts.load('700 20px Archivo')]);
-  const logo = await loadImg('icons/logo-am.png');
+  const custom = !!ust.logo, logo = await loadImg(ust.logo || 'icons/logo-am.png');
   const { subj: s, res: r } = e, sale = s.tryb === 'sprzedaz', step = sale ? 1000 : 10;
   const pages = []; let cv, ctx, y;
   const newPage = first => {
@@ -53,7 +53,7 @@ export async function buildReport(e, ust, opts = {}) {
     if (first) {
       ctx.fillStyle = C.onyx; ctx.fillRect(0, 0, W, 236);
       const g = ctx.createLinearGradient(0, 0, W, 0); g.addColorStop(0, 'rgba(200,164,77,0)'); g.addColorStop(.5, 'rgba(200,164,77,.9)'); g.addColorStop(1, 'rgba(200,164,77,0)'); ctx.fillStyle = g; ctx.fillRect(0, 236, W, 3);
-      if (logo) ctx.drawImage(logo, M, 40, 156, 156);
+      if (logo) { if (custom) { ctx.fillStyle = '#FFFFFF'; ctx.beginPath(); ctx.roundRect(M, 40, 156, 156, 18); ctx.fill(); const k = Math.min(132 / logo.width, 132 / logo.height); ctx.drawImage(logo, M + 78 - logo.width * k / 2, 118 - logo.height * k / 2, logo.width * k, logo.height * k); } else ctx.drawImage(logo, M, 40, 156, 156); }
       ctx.fillStyle = C.goldL; ctx.font = '400 54px Marcellus'; ctx.fillText(ust.biuro || 'Biuro nieruchomości', M + 196, 112);
       ctx.fillStyle = C.bone; ctx.font = '400 26px Archivo'; ctx.fillText(ust.haslo || '', M + 196, 158);
       ctx.textAlign = 'right'; ctx.fillStyle = C.ash || '#9A978F'; ctx.font = '400 24px Archivo'; ctx.fillText(new Date(e.ts).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' }), W - M, 112); ctx.textAlign = 'left';

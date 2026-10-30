@@ -270,6 +270,7 @@ const qOf = (a, q) => { const s = a.slice().sort((x, y) => x - y); return s[Math
 
 // ---------- NAJEM (oferty z list) ----------
 export function estimateRent(offers, subject, opts = {}) {
+  offers = offers.filter(o => !o.kat || o.kat === 'mieszkanie');   // oferty innych kategorii (dom, lokal, hala) nie mieszają się z mieszkaniami
   const notes = [], unused = [], ask = [];
   const pool = offers.filter(o => o.wlaczone !== false && !(o.flagi && o.flagi.length) && o.m2 > 0 && o.cena > 0);
   const excludedFlag = offers.length - pool.length;
@@ -423,6 +424,25 @@ export function estimateSale(tx, subject, opts = {}) {
   if (!subLL) ce.push('brak współrzędnych podmiotu');
   const r = summarize(sc, subject, 'Szacunkowa wartość rynkowa', { notes, unused, confExtra: ce });
   if (r.ok) { r.subLL = subLL; r.llKind = llKind; r.window = win; if (r_g != null) r.timeAdj = r_g; }
+  return r;
+}
+
+
+// ---------- NAJEM: dom, lokal użytkowy, hala/obiekt, garaż ----------
+// Baza to oferty i własne umowy z polem kat. Bez modelu cech: ważona mediana czynszu za m² z podobnych metrażowo pozycji (waga = podobieństwo powierzchni i dzielnicy).
+// Pozycji jest zwykle niewiele, więc przy braku danych wynik NIE jest podawany (minimum THRESH.min_n pozycji).
+export function estimateRentKat(offers, subject) {
+  const kat = subject.kat, F = SIZE_F[kat] || 2, notes = [], pool = offers.filter(o => o.kat === kat && o.wlaczone !== false && !(o.flagi && o.flagi.length) && o.m2 > 0 && o.cena > 0);
+  if (pool.length < 5) return { ok: false, n: pool.length, reason: `Za mało danych o najmie tej kategorii (${pool.length} w bazie, minimum 5). Dodaj umowy lub oferty tej kategorii (Dane → Własne umowy, wybierz rodzaj nieruchomości).` };
+  const sc = pool.map(o => {
+    const sz = sizeLog(o.m2, subject.m2, F); if (sz <= 0) return null;
+    const sameSt = subject.ulica && o.ulica && streetKey(o.ulica) === streetKey(subject.ulica), sameDz = subject.dzielnica && norm(o.dzielnica) === norm(subject.dzielnica);
+    const loc = sameSt ? 1 : sameDz ? 0.9 : 0.4, w = loc * (0.3 + 0.7 * sz); if (w < 0.08) return null;
+    return { id: o.id, kind: 'oferta', pm2: o.cena / o.m2, cena: o.cena, m2: o.m2, pokoje: null, pietro: null, rok: o.rok || null, opis: [o.ulica, o.dzielnica].filter(Boolean).join(', ') || 'Lublin', w, local: !!(sameSt || sameDz), src: o.own ? 'własna umowa' : 'oferta z ogłoszenia' };
+  }).filter(Boolean).sort((a, b) => b.w - a.w).slice(0, 40);
+  notes.push(`Baza tej kategorii jest mała (${pool.length} pozycji), więc przedział jest szeroki, a pewność niska. Wynik to czynsz za m² z podobnych metrażowo umów i ofert, bez korekt na cechy.`);
+  const r = summarize(sc, subject, 'Szacunkowy czynsz najmu', { notes, unused: ['stan i wyposażenie (za mało danych tej kategorii)'], confExtra: ['mała baza kategorii'] });
+  if (r.ok) { r.confidence.score = 1; r.confidence.level = 'niska'; }
   return r;
 }
 

@@ -1,5 +1,5 @@
 import * as store from './store.js';
-import { estimateRent, estimateSale, estimateSaleKat, parkingExtra, crossCheckRent, inferDistrict, ATTRS, learnPremiums, grossYield, addrKey, migrateAddrKey, normStreet, normDz, YEAR_BANDS, yearBand } from './engine.js';
+import { estimateRent, estimateRentKat, estimateSale, estimateSaleKat, parkingExtra, crossCheckRent, inferDistrict, ATTRS, learnPremiums, grossYield, addrKey, migrateAddrKey, normStreet, normDz, YEAR_BANDS, yearBand } from './engine.js';
 import { rcnToObjects, inneToObjects, katalog, KAT, KAT_ORDER, POD_TXT } from './rcn.js';
 import { linesFromPdf, offersFromLines, offerKey } from './pdfimport.js';
 import { flags as offerFlags } from './parseOtodom.js';
@@ -7,17 +7,18 @@ import { esc, $, $$, fmt, roundTo, toast, openSheet, closeSheet, countUp, saveFi
 import { buildReport, makePdf } from './report.js';
 import { createSync, DEFAULT_URL, encodeCode, decodeCode } from './sync.js';
 import { investCalc, sensitivity, TAX } from './invest.js';
+import { LAYERS as OSM, loadPois, nearest } from './osm.js';
 import { exposure, trendSeries, yieldByDistrict, districtAssigner, lineChart, barChart, bindCharts } from './rynek.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer } from './mapa.js';
 
-const VERSION = '1.16.0';
+const VERSION = '1.17.0';
 const S = { wlasne: [], teczki: [], foto: {},
   offers: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
   form: { tryb: 'sprzedaz', kat: 'mieszkanie', pod: '', dzm2: '', ulica: '', nr: '', dzielnica: '', m2: '', pokoje: 2, pietro: null, rok: '', rynek: '', standard: '', meble: '', zapamietaj: true, ud: [] },
 };
 // Własne umowy najmu biura -> ta sama postać co oferty, z jawnymi cechami (nie ze słów w tytule) i dużą wagą
-const ownToOffer = w => ({ id: 'w' + w.id, own: true, ulica: w.ulica, dzielnica: w.dzielnica, miasto: 'Lublin', m2: w.m2, pokoje: w.pokoje, pietro: w.pietro, cena: w.cena, czynsz: w.czynsz || null, meble: w.meble,
+const ownToOffer = w => ({ id: 'w' + w.id, own: true, ...(w.kat && w.kat !== 'mieszkanie' ? { kat: w.kat } : {}), ulica: w.ulica, dzielnica: w.dzielnica, miasto: 'Lublin', m2: w.m2, pokoje: w.pokoje, pietro: w.pietro, cena: w.cena, czynsz: w.czynsz || null, meble: w.meble,
   tags: { nowe: w.rok && w.rok >= 2018 ? 1 : 0, wysoki: w.standard === 'wysoki' ? 1 : 0 }, tytul: 'własna umowa', wlaczone: true, flagi: [] });
 const allOffers = () => S.offers.concat((S.wlasne || []).map(ownToOffer));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -204,7 +205,7 @@ function submitForm() {
   }
   if (rok && flat && f.zapamietaj && f.ulica && f.nr && f.tryb === 'sprzedaz') { S.budynki[addrKey(f.ulica, f.nr)] = rok; save.budynki(); }
   const yearOf = k => S.budynki[k] ?? null;
-  const res = f.tryb === 'najem' ? (flat ? estimateRent(allOffers(), subj) : { ok: false, reason: `Brak ofert najmu dla kategorii „${KAT[kat].n}”. Baza ofert zawiera dziś tylko mieszkania; najem tej kategorii wyceniam z ofert, więc najpierw trzeba je zaimportować.` }) : flat ? estimateSale(S.tx, subj, { yearOf }) : estimateSaleKat(S.pool, subj, { geo: S.pool });
+  const res = f.tryb === 'najem' ? (flat ? estimateRent(allOffers(), subj) : (kat === 'dom' || kat === 'lokal' || kat === 'obiekt' || kat === 'garaz') ? estimateRentKat(allOffers(), subj) : { ok: false, reason: `Najem nie dotyczy kategorii „${KAT[kat].n}”.` }) : flat ? estimateSale(S.tx, subj, { yearOf }) : estimateSaleKat(S.pool, subj, { geo: S.pool });
   if (f.tryb === 'najem' && flat && res.ok) { try { const baseRent = res.adjusted ? estimateRent(allOffers(), { ...subj, rok: null, standard: null }) : res; res.cross = crossCheckRent(allOffers(), S.tx, subj, baseRent.ok ? baseRent : res); const c = res.cross; if (res.adjusted && baseRent.ok) c.vsBase = baseRent.total; if (c.ok && c.agreement === 'rozbieżne' && c.r2 >= 0.3 && res.confidence.score > 1) { res.confidence.score -= 1; res.confidence.level = res.confidence.score === 1 ? 'niska' : 'średnia'; res.confidence.why.push('obniżono: kontrola ze sprzedażą (wiarygodna, R² ≥ 0,3) daje wyraźnie inny czynsz'); } } catch (e) { res.cross = { ok: false, reason: 'Nie udało się policzyć kontroli: ' + e.message }; } }
   if (subj.parking === 'osobno' && res.ok) res.parking = parkingExtra(allOffers());
   if (dzNote && res.ok) res.notes.unshift(dzNote);
@@ -313,10 +314,10 @@ function viewRaport(p) {
   const e = p[1] === 'h' ? S.wyceny.find(w => w.id === p[2]) : S.last[p[2]];
   const back = () => history.length > 1 ? history.back() : go('#/wycena');
   if (!e || !e.res.ok) return [head('Raport', '', true) + '<div class="empty"><b>Brak wyniku</b>Raport powstaje z gotowej wyceny.</div>', v => $('[data-back]', v).onclick = back];
-  const VAR = [['short', 'Krótki'], ['full', 'Pełny'], ['market', 'Z wykresami rynku']];
+  const VAR = [['short', 'Krótki'], ['full', 'Pełny'], ['market', 'Z wykresami']];
   let variant = 'full'; try { variant = localStorage.getItem('am-rapvar') || 'full'; } catch { }
   if (!VAR.some(x => x[0] === variant)) variant = 'full';
-  const html = head('Raport', 'Dla klienta', true) + `<div class="seg" id="rvar" style="margin-bottom:12px">${VAR.map(([k, n]) => `<button data-v="${k}" class="${k === variant ? 'on' : ''}">${n}</button>`).join('')}</div>
+  const html = head('Raport', 'Dla klienta', true) + `<div class="seg" id="rvar" data-n="3" data-v="${VAR.findIndex(x => x[0] === variant)}" style="margin-bottom:12px"><i></i>${VAR.map(([k, n]) => `<button data-v="${k}" class="${k === variant ? 'on' : ''}">${n}</button>`).join('')}</div>
     <p class="tiny muted" id="rvh" style="margin:-4px 0 12px"></p><div id="rp"><div class="empty"><b>Przygotowuję raport…</b></div></div>
     <div class="row" style="position:sticky;bottom:calc(var(--nav) + var(--sab) + 12px)"><button class="btn" id="pdf" disabled>Udostępnij PDF</button></div>`;
   const HINT = { short: 'Jedna strona: wynik, przedział i pewność oceny. Bez tabeli porównań.', full: 'Wynik, opis metody i tabela porównań użytych w analizie.', market: 'Jak pełny, a do tego wykres cen transakcyjnych w czasie i rentowność najmu w dzielnicach.' };
@@ -340,7 +341,7 @@ function viewRaport(p) {
       if (variant === 'market' && !market().trend && !market().yield) $('#rvh', v).textContent += ' Brak wystarczających danych RCN do wykresów, więc raport ich nie zawiera.';
       b.disabled = false;
     };
-    $('#rvar', v).onclick = ev => { const bt = ev.target.closest('button[data-v]'); if (!bt) return; variant = bt.dataset.v; try { localStorage.setItem('am-rapvar', variant); } catch { } $$('#rvar button', v).forEach(x => x.classList.toggle('on', x === bt)); draw(); };
+    $('#rvar', v).onclick = ev => { const bt = ev.target.closest('button[data-v]'); if (!bt) return; variant = bt.dataset.v; $('#rvar', v).dataset.v = VAR.findIndex(x => x[0] === variant); try { localStorage.setItem('am-rapvar', variant); } catch { } $$('#rvar button', v).forEach(x => x.classList.toggle('on', x === bt)); draw(); };
     const b = $('#pdf', v);
     b.onclick = async () => { b.disabled = true; try { const blob = makePdf(pages); const nm = 'Analiza-rynkowa-' + (variant === 'short' ? 'krotka-' : variant === 'market' ? 'rynek-' : '') + new Date().toISOString().slice(0, 10) + '.pdf'; const r = await saveFile(blob, nm); if (r !== 'cancel') toast(r === 'share' ? 'Gotowe' : 'Pobrano PDF'); } finally { b.disabled = false; } };
     draw();
@@ -587,9 +588,10 @@ function ownImpactHTML() {
     ${rows.map(x => `<div class="kv"><span>${esc([x.w.ulica, x.w.dzielnica].filter(Boolean).join(', ') || 'Najem')} · ${x.w.m2} m²</span><b>${fmt(x.w.cena)} zł <small style="color:${x.c.inR ? 'var(--ok)' : 'var(--warn)'}">${devTxt(x.c)}</small></b></div>`).join('')}`;
 }
 function ownSheet(id) {
-  const w = id ? S.wlasne.find(x => x.id === id) : null, d = { standard: w?.standard || '', meble: w?.meble || '' };
+  const w = id ? S.wlasne.find(x => x.id === id) : null, d = { standard: w?.standard || '', meble: w?.meble || '', kat: w?.kat || 'mieszkanie' };
   const chips = (k, items) => `<div class="chips" data-oc="${k}">${items.map(([v, n]) => `<button type="button" class="chip ${d[k] === v ? 'on' : ''}" data-v="${v}">${n}</button>`).join('')}</div>`;
   openSheet(`<h3>Umowa najmu</h3><p class="small muted">Czynsz najmu z umowy (bez czynszu administracyjnego i opłat). Bez danych osobowych.</p>
+    <div class="field"><span>Rodzaj nieruchomości</span>${chips('kat', [['mieszkanie', 'Mieszkanie'], ['dom', 'Dom'], ['lokal', 'Lokal użytkowy'], ['obiekt', 'Hala / obiekt'], ['garaz', 'Garaż']])}</div>
     <label class="field"><span>Ulica</span><input class="in" id="o-ul" list="o-dl" value="${esc(w?.ulica || '')}" placeholder="np. Granata"></label><datalist id="o-dl">${S.streets.map(x => `<option value="${esc(x)}">`).join('')}</datalist>
     <label class="field"><span>Dzielnica (uzupełni się z ulicy)</span><input class="in" id="o-dz" value="${esc(w?.dzielnica || '')}"></label>
     <div class="grid2"><label class="field"><span>Powierzchnia (m²)</span><input class="in" id="o-m2" inputmode="decimal" value="${w?.m2 ?? ''}"></label><label class="field"><span>Rok budowy (opcj.)</span><input class="in" id="o-rok" inputmode="numeric" maxlength="4" value="${w?.rok ?? ''}"></label></div>
@@ -603,7 +605,7 @@ function ownSheet(id) {
     const num = x => { const n = parseFloat(String($(x, p).value).replace(',', '.').replace(/[^\d.]/g, '')); return Number.isFinite(n) ? n : null; };
     $('#o-ul', p).onchange = () => { if (!$('#o-dz', p).value.trim()) { const inf = inferDistrict(allOffers(), S.tx, $('#o-ul', p).value.trim()); if (inf) $('#o-dz', p).value = inf.name; } };
     const live = () => {
-      const m2 = num('#o-m2'), cena = num('#o-ce'), pk = num('#o-pk'), box = $('#o-live', p); if (!(m2 >= 10 && cena >= 200 && pk >= 1)) { box.textContent = ''; return; }
+      const m2 = num('#o-m2'), cena = num('#o-ce'), pk = num('#o-pk'), box = $('#o-live', p); if (d.kat !== 'mieszkanie') { box.textContent = m2 >= 5 && cena >= 100 ? 'Umowa trafi do bazy tej kategorii. Porównanie z modelem jest tylko dla mieszkań.' : ''; return; } if (!(m2 >= 10 && cena >= 200 && pk >= 1)) { box.textContent = ''; return; }
       let dz = $('#o-dz', p).value.trim(); const ul = $('#o-ul', p).value.trim(); if (!dz && ul) { const inf = inferDistrict(allOffers(), S.tx, ul); if (inf) dz = inf.name; }
       const c = ownCheck({ ulica: ul, dzielnica: dz, m2, pokoje: Math.round(pk), pietro: num('#o-pi'), rok: num('#o-rok'), standard: d.standard, meble: d.meble, cena }, w?.id);
       box.innerHTML = c ? `Bez tej umowy aplikacja wyceniłaby to mieszkanie na <b>${fmt(roundTo(c.r.total.lo, 10))}–${fmt(roundTo(c.r.total.hi, 10))} zł</b>. Twoja umowa: <b>${fmt(cena)} zł</b> (${devTxt(c)} od środka) ${c.inR ? '<span class="badge g">w przedziale</span>' : '<span class="badge">poza przedziałem</span>'}` : 'Za mało ofert w bazie, by porównać.';
@@ -611,11 +613,11 @@ function ownSheet(id) {
     let lt = null; $$('input', p).forEach(i => i.addEventListener('input', () => { clearTimeout(lt); lt = setTimeout(live, 600); })); $$('[data-oc] button', p).forEach(b => b.addEventListener('click', () => { clearTimeout(lt); lt = setTimeout(live, 300); })); if (w) setTimeout(live, 200);
     const saveOwn = again => {
       const m2 = num('#o-m2'), cena = num('#o-ce'), pk = num('#o-pk');
-      if (!(m2 >= 10 && m2 <= 400)) return toast('Podaj powierzchnię (10–400 m²)'); if (!(cena >= 200 && cena <= 30000)) return toast('Podaj czynsz najmu (200–30000 zł)'); if (!(pk >= 1 && pk <= 10)) return toast('Podaj liczbę pokoi');
+      const flat0 = d.kat === 'mieszkanie'; if (!(m2 >= (flat0 ? 10 : 5) && m2 <= (flat0 ? 400 : 20000))) return toast(flat0 ? 'Podaj powierzchnię (10–400 m²)' : 'Podaj powierzchnię (5–20000 m²)'); if (!(cena >= (flat0 ? 200 : 100) && cena <= (flat0 ? 30000 : 500000))) return toast('Podaj czynsz najmu w zł'); if (flat0 && !(pk >= 1 && pk <= 10)) return toast('Podaj liczbę pokoi');
       const rok = num('#o-rok'); if (rok != null && !(rok >= 1700 && rok <= now() + 3)) return toast('Rok budowy wygląda błędnie');
       let dz = $('#o-dz', p).value.trim(), ul = $('#o-ul', p).value.trim();
       if (!dz && ul) { const inf = inferDistrict(allOffers(), S.tx, ul); if (inf) dz = inf.name; }
-      const rec = { id: w?.id || uid(), ulica: ul, dzielnica: dz, m2, pokoje: Math.round(pk), pietro: num('#o-pi'), rok, standard: d.standard, meble: d.meble, cena: Math.round(cena), czynsz: num('#o-ca'), ts: w?.ts || Date.now() };
+      const rec = { id: w?.id || uid(), ulica: ul, dzielnica: dz, m2, pokoje: Math.round(pk || 0), pietro: num('#o-pi'), rok, standard: d.standard, meble: d.meble, ...(d.kat !== 'mieszkanie' ? { kat: d.kat } : { kat: undefined }), cena: Math.round(cena), czynsz: num('#o-ca'), ts: w?.ts || Date.now() };
       if (w) Object.assign(w, rec); else S.wlasne.push(rec);
       save.wlasne(); closeSheet(); toast('Zapisano umowę'); render(); if (again) setTimeout(() => ownSheet(null), 350);
     };
@@ -686,6 +688,11 @@ function viewHistoria() {
   }];
 }
 
+async function resizeLogo(file, max = 320) {
+  const bmp = await createImageBitmap(file), k = Math.min(1, max / Math.max(bmp.width, bmp.height)), c = document.createElement('canvas');
+  c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k); c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+  const d = c.toDataURL('image/png'); if (d.length > 150000) return c.toDataURL('image/jpeg', .85); return d;
+}
 /* ---- teczka nieruchomości ---- */
 async function resizePhoto(file, max = 1280, q = 0.72) {
   const bmp = await createImageBitmap(file), k = Math.min(1, max / Math.max(bmp.width, bmp.height)), c = document.createElement('canvas');
@@ -757,12 +764,16 @@ function teczkaSheet(e) {
 function viewUst() {
   const u = S.ust, f = (k, l, ph) => `<label class="field"><span>${l}</span><input class="in" data-k="${k}" value="${esc(u[k])}" placeholder="${ph || ''}"></label>`;
   const html = head('Ustawienia', 'Dane w raporcie') + `<div class="card"><div class="eyebrow">Biuro (nagłówek raportu)</div>${f('biuro', 'Nazwa biura')}${f('haslo', 'Hasło')}${f('agent', 'Sporządził (imię i nazwisko)')}${f('tel', 'Telefon')}${f('email', 'E-mail')}${f('www', 'Strona www')}</div>
+    <div class="card"><div class="eyebrow">Logo w raporcie</div><div id="logobox"></div></div>
     <div class="card" id="synccard"><div class="eyebrow">Synchronizacja urządzeń</div><div id="syncbody"><p class="small muted" style="margin:0">Sprawdzam…</p></div></div>
     <div class="card"><div class="eyebrow">Dziennik błędów</div><div id="errlog"></div></div>
     <div class="card"><div class="eyebrow">O aplikacji</div><div class="kv"><span>Wersja</span><b>${VERSION}</b></div><div class="kv"><span>Dane</span><b>tylko na tym urządzeniu</b></div>
     <div class="gap"></div><button class="btn ghost" data-act="upd">Wymuś aktualizację aplikacji</button><p class="tiny muted" style="margin:8px 0 0">Pobiera najnowszą wersję. Twoje dane (oferty, RCN, historia) zostają.</p>
     <p class="small muted">Szacunek ma charakter orientacyjny i nie zastępuje wyceny rzeczoznawcy majątkowego. Wynik zawsze jest przedziałem z oceną pewności; cechy bez danych porównawczych nie zmieniają go.</p></div>`;
   return [html, v => {
+    { const box = $('#logobox', v), draw = () => { box.innerHTML = `<div class="row" style="align-items:center;gap:14px"><div style="width:76px;height:76px;border-radius:12px;background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden"><img alt="Logo" src="${S.ust.logo || 'icons/logo-am.png'}" style="max-width:100%;max-height:100%"></div><div style="flex:1"><div class="small">${S.ust.logo ? 'Własne logo biura' : 'Domyślne logo AM'}</div><div class="tiny muted">Pojawia się w nagłówku raportu PDF.</div></div></div><div class="gap"></div><label class="btn ghost" style="display:block;text-align:center">Wgraj własne logo<input type="file" accept="image/*" id="logof" hidden></label>${S.ust.logo ? '<div class="gap"></div><button class="btn ghost" id="logoX">Przywróć domyślne</button>' : ''}`;
+        $('#logof', box).onchange = async ev => { const f = ev.target.files[0]; if (!f) return; try { S.ust.logo = await resizeLogo(f); save.ust(); draw(); toast('Logo zapisane'); } catch { toast('Nie udało się wczytać obrazu'); } };
+        const x = $('#logoX', box); if (x) x.onclick = () => { delete S.ust.logo; save.ust(); draw(); }; }; draw(); }
     syncCard(v);
     { let l = []; try { l = JSON.parse(ls.get('am-errlog') || '[]'); } catch { } $('#errlog', v).innerHTML = l.length ? l.slice(0, 8).map(x => `<div class="kv"><span>${new Date(x.t).toLocaleString('pl-PL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} · ${esc(x.v || '')}</span><b style="white-space:normal;text-align:right;font-size:12.5px">${esc(x.k)}: ${esc(x.m)}</b></div>`).join('') + '<div class="gap"></div><button class="btn ghost" data-act="errclr">Wyczyść dziennik</button>' : '<p class="small muted" style="margin:0">Brak błędów. Gdy aplikacja się zawiesi lub zachowa dziwnie, ślad zostanie tutaj (przydatne na tablecie z Androidem).</p>'; const ec = $('[data-act="errclr"]', v); if (ec) ec.onclick = () => { ls.del('am-errlog'); render(); }; }
     $$('[data-k]', v).forEach(i => i.oninput = () => { S.ust[i.dataset.k] = i.value; save.ust(); });
@@ -842,7 +853,8 @@ function viewMapa() {
   <div class="seg" data-n="3" data-v="${MODES.findIndex(x => x[0] === m.mode)}"><i></i>${MODES.map(([k, n]) => `<button data-mode="${k}" class="${m.mode === k ? 'on' : ''}">${n}</button>`).join('')}</div>
   <div class="card"><div id="mapfilters">${filters()}</div></div>
   <div class="card mapcard"><div class="mapbox" id="mapbox"><div class="empty">Ładuję mapę…</div></div><div id="maplegend" style="margin-top:10px"></div><button class="tilesw" id="tilesw" type="button"></button></div>
-  <div class="card"><div id="mapstat" class="small muted"></div></div>`;
+  <div class="card"><div id="mapstat" class="small muted"></div></div>
+  <div class="card"><div class="eyebrow">Warstwy z OpenStreetMap</div><div class="chips" data-multi="1" id="olay">${Object.entries(OSM).map(([k, l]) => `<button type="button" class="chip" data-v="${k}">${l.n}</button>`).join('')}</div><div id="olst" class="tiny muted" style="margin-top:10px">Dotknij, aby pokazać na mapie. Dane pobierane z OpenStreetMap i zapamiętywane na 30 dni.</div></div>`;
   return [html, async v => {
     let ctl = null, subj = S.last.sprzedaz?.res?.ok && (S.last.sprzedaz.subj.kat || 'mieszkanie') === 'mieszkanie' ? S.last.sprzedaz.res.subLL : null;
     const stat = t => { $('#mapstat', v).innerHTML = t; };
@@ -880,6 +892,23 @@ function viewMapa() {
     $$('.seg button', v).forEach(b => b.onclick = () => { m.mode = b.dataset.mode; const sg = $('.seg', v); sg.dataset.v = MODES.findIndex(x => x[0] === m.mode); $$('button', sg).forEach(x => x.classList.toggle('on', x === b)); redrawFilters(); draw(true); });
     const tilesBtn = $('#tilesw', v), applyTiles = () => { const light = ls.get('am-tiles') === 'light'; $('#mapbox', v).classList.toggle('light-tiles', light); tilesBtn.textContent = light ? 'Podkład mapy: jasny (zmień na ciemny)' : 'Podkład mapy: ciemny (zmień na jasny)'; };
     tilesBtn.onclick = () => { ls.set('am-tiles', ls.get('am-tiles') === 'light' ? 'dark' : 'light'); applyTiles(); }; applyTiles();
+    const olay = {};
+    const olStatus = async () => {
+      const on = Object.keys(olay).filter(k => olay[k]), box = $('#olst', v); if (!on.length) { box.textContent = 'Dotknij, aby pokazać na mapie. Dane pobierane z OpenStreetMap i zapamiętywane na 30 dni.'; return; }
+      const ls = S.last.sprzedaz; const ll = ls?.res?.ok ? ls.res.subLL : subj; const parts = [];
+      if (ll) for (const k of on) { try { const { pts } = await loadPois(k); const n = nearest(pts, ll); if (n) parts.push(`${OSM[k].one}: ${n.m < 1000 ? n.m + ' m' : (n.m / 1000).toFixed(1).replace('.', ',') + ' km'}${n.p.name ? ' (' + esc(n.p.name) + ')' : ''}`); } catch { } }
+      box.innerHTML = (parts.length ? `Od ostatnio wycenianej nieruchomości (w linii prostej), najbliżej: ${parts.join(', ')}. ` : '') + '© współtwórcy OpenStreetMap.';
+    };
+    $$('#olay button', v).forEach(b => b.onclick = async () => {
+      const k = b.dataset.v; if (!ctl) return;
+      if (olay[k]) { olay[k].remove(); olay[k] = null; b.classList.remove('on'); return olStatus(); }
+      b.classList.add('on'); $('#olst', v).textContent = 'Pobieram dane…';
+      try {
+        const { pts } = await loadPois(k), g = ctl.L.layerGroup();
+        for (const p of pts) ctl.L.circleMarker([p.lat, p.lon], { radius: 4, weight: 1, color: 'rgba(11,11,13,.9)', fillColor: OSM[k].color, fillOpacity: .95 }).bindTooltip(p.name ? esc(p.name) : OSM[k].one).addTo(g);
+        g.addTo(ctl.map); olay[k] = g; await olStatus();
+      } catch (e) { b.classList.remove('on'); $('#olst', v).textContent = e.message; }
+    });
     bindFilters();
     try { ctl = await createMap($('#mapbox', v)); } catch (e) { $('#mapbox', v).innerHTML = `<div class="empty"><b>Mapa niedostępna</b>${esc(e.message)}</div>`; return; }
     if (!$('#mapbox', v).isConnected) { ctl.destroy(); return; }

@@ -95,7 +95,14 @@ def parse(raw):
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--out', required=True); ap.add_argument('--page', type=int, default=2000)
     ap.add_argument('--max', type=int, default=0, help='limit rekordów (test)')
+    ap.add_argument('--center', help='inne miasto zamiast Lublina: "szerokość,długość" środka, np. 51.143,23.472 (Chełm)')
+    ap.add_argument('--radius-km', type=float, default=10, help='połowa boku prostokąta wokół środka (z --center)')
     a = ap.parse_args()
+    if a.center:
+        global BBOX
+        c_la, c_lo = [float(x) for x in a.center.split(',')]; dla = a.radius_km / 111.2; dlo = a.radius_km / (111.2 * math.cos(math.radians(c_la)))
+        BBOX = (round(c_la - dla, 4), round(c_lo - dlo, 4), round(c_la + dla, 4), round(c_lo + dlo, 4))
+        print('obszar:', BBOX, file=sys.stderr)
     la0, lo0, la1, lo1 = BBOX
     orders = {"latlon": "%s,%s,%s,%s,urn:ogc:def:crs:EPSG::4326" % (la0, lo0, la1, lo1),
               "lonlat": "%s,%s,%s,%s,urn:ogc:def:crs:EPSG::4326" % (lo0, la0, lo1, la1)}
