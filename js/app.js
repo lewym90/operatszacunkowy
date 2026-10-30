@@ -9,7 +9,7 @@ import { createSync, DEFAULT_URL, encodeCode, decodeCode } from './sync.js';
 import { trendSeries, yieldByDistrict, districtAssigner, lineChart, barChart, bindCharts } from './rynek.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer } from './mapa.js';
 
-const VERSION = '1.13.2';
+const VERSION = '1.13.3';
 const S = { wlasne: [], teczki: [], foto: {},
   offers: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -851,7 +851,7 @@ function viewRynek() {
       $('#rf-rynek', v).innerHTML = f ? `<span>Rynek</span>${chips('rynek', [['', 'Wszystkie'], ['wtorny', 'Wtórny'], ['pierwotny', 'Pierwotny']])}` : '';
       $('#rf-metraz', v).innerHTML = `<span>${M2S[m.kat][0]}</span>${chips('metraz', M2S[m.kat][1])}`;
       $('#rf-r', v).innerHTML = m.ulica ? `<span>Promień wokół ulicy</span>${chips('promien', [[0.7, '0,7 km'], [1.5, '1,5 km'], [3, '3 km']])}` : '';
-      $$('[data-rf]', v).forEach(g => $$('button', g).forEach(b => b.onclick = () => { m[g.dataset.rf] = b.dataset.v; if (g.dataset.rf === 'kat') { m.metraz = ''; m.rynek = ''; paintFilters(); } else $$('button', g).forEach(x => x.classList.toggle('on', x === b)); drawTrend(); }));
+      $$('[data-rf]', v).forEach(g => $$('button', g).forEach(b => b.onclick = () => { m[g.dataset.rf] = b.dataset.v; $$('button', g).forEach(x => x.classList.toggle('on', x === b)); if (g.dataset.rf === 'kat') { m.metraz = ''; m.rynek = ''; paintFilters(); } drawTrend(); }));
     };
     const center = () => {
       if (!m.ulica) return null; const k = normStreet(m.ulica), mine = S.pool.filter(t => t.lat != null && normStreet(t.ulica) === k);
