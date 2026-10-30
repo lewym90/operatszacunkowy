@@ -6,10 +6,10 @@ import { flags as offerFlags } from './parseOtodom.js';
 import { esc, $, $$, fmt, roundTo, toast, openSheet, closeSheet, countUp, saveFile, ICON } from './ui.js';
 import { buildReport, makePdf } from './report.js';
 import { createSync, DEFAULT_URL, encodeCode, decodeCode } from './sync.js';
-import { trendSeries, yieldByDistrict, lineChart, barChart, bindCharts } from './rynek.js';
+import { trendSeries, yieldByDistrict, districtAssigner, lineChart, barChart, bindCharts } from './rynek.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer } from './mapa.js';
 
-const VERSION = '1.13.0';
+const VERSION = '1.13.1';
 const S = { wlasne: [], teczki: [], foto: {},
   offers: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -831,15 +831,17 @@ function viewMapa() {
 }
 
 /* ---------- RYNEK (wykresy: trend cen i rentowność) ---------- */
-S.rynek = { kat: 'mieszkanie', rynek: '', metraz: '', ulica: '', promien: 1.5 };
+S.rynek = { kat: 'mieszkanie', rynek: '', metraz: '', ulica: '', dzielnica: '', promien: 1.5 };
 const plPct = (x, d = 1) => (x >= 0 ? '+' : '−') + Math.abs(x).toFixed(d).replace('.', ',') + '%';
+let rynekDz = null;
 function viewRynek() {
   const m = S.rynek, chips = (key, opts) => `<div class="chips" data-rf="${key}">${opts.map(([val, n]) => `<button type="button" class="chip ${String(m[key]) === String(val) ? 'on' : ''}" data-v="${val}">${n}</button>`).join('')}</div>`;
   const html = head('Rynek', 'Jak zmieniają się ceny i ile daje najem') + safeBanner() + `
   <div class="card"><div class="eyebrow">Trend ceny za m²</div>
     <div class="field"><span>Rodzaj nieruchomości</span>${chips('kat', KAT_ORDER.filter(k => ['mieszkanie', 'dom', 'lokal', 'garaz'].includes(k)).map(k => [k, KAT[k].n]))}</div>
     <div class="field" id="rf-rynek"></div><div class="field" id="rf-metraz"></div>
-    <label class="field"><span>Okolica (opcjonalnie: ulica, wokół której liczymy)</span><input class="in" id="rf-ul" list="rf-dl" value="${esc(m.ulica)}" placeholder="całe miasto" autocomplete="off"></label><datalist id="rf-dl">${S.streets.map(x => `<option value="${esc(x)}">`).join('')}</datalist>
+    <label class="field"><span>Dzielnica (opcjonalnie)</span><input class="in" id="rf-dz" list="rf-ddl" value="${esc(m.dzielnica)}" placeholder="cały Lublin" autocomplete="off"></label><datalist id="rf-ddl">${[...new Set(allOffers().map(o => o.dzielnica).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pl')).map(x => `<option value="${esc(x)}">`).join('')}</datalist>
+    <label class="field"><span>Ulica (opcjonalnie: liczymy wokół niej)</span><input class="in" id="rf-ul" list="rf-dl" value="${esc(m.ulica)}" placeholder="całe miasto" autocomplete="off"></label><datalist id="rf-dl">${S.streets.map(x => `<option value="${esc(x)}">`).join('')}</datalist>
     <div class="field" id="rf-r"></div>
     <div id="rtrend" style="margin-top:6px"></div></div>
   <div class="card"><div class="eyebrow">Rentowność najmu w dzielnicach</div><div id="ryield"></div></div>`;
@@ -860,7 +862,14 @@ function viewRynek() {
       if (!S.pool.length) { box.innerHTML = '<p class="small muted" style="margin:0">Brak danych RCN. Pobierz je w zakładce <b>Dane</b>.</p>'; return; }
       const [r0, r1] = rangeOf(m.metraz), c = center();
       if (m.ulica && !c) { box.innerHTML = `<p class="small muted" style="margin:0">Nie znam położenia ulicy „${esc(m.ulica)}” (za mało transakcji RCN przy tej ulicy). Wybierz ulicę z listy albo wyczyść pole.</p>`; return; }
-      const T = trendSeries(S.pool, { kat: m.kat, rynek: ['mieszkanie', 'dom', 'lokal'].includes(m.kat) ? m.rynek : '', m2min: r0, m2max: r1, center: c, radiusKm: c ? +m.promien : null, years: 8 });
+      let pred = null;
+      if (m.dzielnica) {
+        const key = S.offers.length + '|' + (S.wlasne || []).length;
+        if (!rynekDz || rynekDz.for !== S.tx || rynekDz.key !== key) rynekDz = { for: S.tx, key, fn: districtAssigner(allOffers(), S.tx) };
+        const dn = normDz(m.dzielnica); if (!rynekDz.fn.known) { box.innerHTML = '<p class="small muted" style="margin:0">Za mało ulic ze znaną dzielnicą w ofertach, by przypisać dzielnice transakcjom. Dodaj oferty z ulicą i dzielnicą.</p>'; return; }
+        pred = s => rynekDz.fn(s.lat, s.lon) === dn;
+      }
+      const T = trendSeries(S.pool, { pred, kat: m.kat, rynek: ['mieszkanie', 'dom', 'lokal'].includes(m.kat) ? m.rynek : '', m2min: r0, m2max: r1, center: c, radiusKm: c ? +m.promien : null, years: 8 });
       if (!T.ok) { box.innerHTML = `<p class="small muted" style="margin:0">${esc(T.reason)}</p>`; return; }
       const last = T.points[T.points.length - 1], first = T.points[0];
       box.innerHTML = `<div class="stats" style="margin:0 0 10px"><div class="stat"><b>${fmt(last.med)}</b><span>zł/m², ostatni okres</span></div>
@@ -879,6 +888,7 @@ function viewRynek() {
         <p class="tiny muted" style="margin:8px 0 0">Roczny czynsz (mediana ofert, bez opłat administracyjnych) do mediany ceny transakcyjnej tego samego metrażu (${Y.range[0]}–${Y.range[1]} m², transakcje z ostatnich ${String(Y.windowYears).replace('.', ',')} roku/lat). Wąs: środkowe 50% czynszów. To rentowność brutto z cen ofertowych: bez podatku, kosztów, remontów i pustostanów; rzeczywisty zwrot jest niższy. Dzielnice transakcjom przypisano po najbliższej ulicy ze znaną dzielnicą (do 2,5 km); pokazane tylko dzielnice z min. 5 ofertami i 30 transakcjami.</p>`;
     };
     paintFilters(); drawTrend(); drawYield();
+    const dzI = $('#rf-dz', v); dzI.onchange = () => { m.dzielnica = dzI.value.trim(); drawTrend(); };
     const ul = $('#rf-ul', v); ul.onchange = () => { m.ulica = ul.value.trim(); paintFilters(); drawTrend(); };
   }];
 }

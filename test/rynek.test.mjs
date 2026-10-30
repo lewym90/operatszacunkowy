@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { trendSeries, yieldByDistrict, lineChart, barChart } from '../js/rynek.js';
+import { trendSeries, yieldByDistrict, districtAssigner, lineChart, barChart } from '../js/rynek.js';
 // deterministyczny generator
 let seed = 7; const rnd = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
 const NOW = Date.UTC(2026, 9, 29), YR = 365.25 * 864e5;
@@ -28,6 +28,11 @@ assert.ok(Y.ok, Y.reason); assert.equal(Y.rows.length, 3);
 assert.equal(Y.rows[0].name, 'Wrotków'); const by = Object.fromEntries(Y.rows.map(r => [r.name, r.y]));
 for (const k of Object.keys(yld)) assert.ok(Math.abs(by[k] - yld[k] * 100) < 1.3, k + ' ' + by[k]);
 assert.equal(yieldByDistrict(offers.slice(0, 10), tx, { nowTs: NOW }).ok, false);
+// filtr dzielnicy: przypisanie po najbliższej ulicy ze znaną dzielnicą
+const asg = districtAssigner(offers, tx); assert.ok(asg.known >= 5);
+const WD = trendSeries(tx, { years: 6, nowTs: NOW, pred: s => asg(s.lat, s.lon) === 'wrotkow' });
+assert.ok(WD.ok && Math.abs(WD.n - tx.length / 3) < tx.length * 0.08, 'dzielnica Wrotków ~1/3 transakcji: ' + (WD && WD.n));
+assert.ok(WD.points[WD.points.length - 1].med < T.points[T.points.length - 1].med);
 // wykresy generują poprawny SVG
 const svg = lineChart(T.points); assert.ok(svg.includes('<svg') && svg.includes('data-chart') && !svg.includes('NaN') && !svg.includes('undefined'));
 const bar = barChart(Y.rows.map(r => ({ name: r.name, y: r.y, yLo: r.yLo, yHi: r.yHi, sub: 'x' })), { ref: Y.city.y }); assert.ok(bar.includes('<svg') && !bar.includes('NaN'));

@@ -15,6 +15,7 @@ export function trendSeries(pool, opts = {}) {
   const nowTs = opts.nowTs || Date.now(), years = opts.years || 8, radius = opts.radiusKm || null, center = opts.center || null;
   let sales = usableSales(pool, { years, rynek: opts.rynek || '', m2min: opts.m2min || 0, m2max: opts.m2max || 1e9, kat: opts.kat || 'mieszkanie' }).filter(s => s.ts <= nowTs + 864e5);
   if (center && radius) sales = sales.filter(s => haversine(center, [s.lat, s.lon]) <= radius);
+  if (opts.pred) sales = sales.filter(opts.pred);
   if (sales.length < 20) return { ok: false, n: sales.length, reason: `Za mało transakcji dla tych filtrów (${sales.length}; trzeba co najmniej 20). Poszerz okolicę, metraż lub rynek.` };
   const perQuarter = sales.length / (years * 4), step = perQuarter >= 12 ? 3 : perQuarter >= 5 ? 6 : 12, minN = step === 3 ? 8 : step === 6 ? 8 : 10;
   const bucket = new Map();
@@ -29,6 +30,22 @@ export function trendSeries(pool, opts = {}) {
   const yoy = A.length >= 25 && B.length >= 25 ? { a: med(A), b: med(B), na: A.length, nb: B.length, pct: (med(A) / med(B) - 1) * 100 } : null;
   if (points.length < 3) return { ok: false, n: sales.length, reason: 'Transakcje są zbyt rozproszone w czasie, by narysować trend. Poszerz okolicę.' };
   return { ok: true, points, n: sales.length, step, yoy };
+}
+
+/* ---------- DZIELNICE DLA TRANSAKCJI ---------- */
+// Transakcje RCN nie mają dzielnicy. Przypisujemy ją po najbliższej ulicy, dla której dzielnicę znamy z ofert (do 2,5 km). Zwraca funkcję (lat, lon) -> znormalizowana dzielnica | null.
+export function districtAssigner(offers, tx) {
+  const pts = new Map();
+  for (const t of tx) if (t.ulica && t.lat != null) { const k = streetKey(t.ulica), p = pts.get(k) || pts.set(k, { la: 0, lo: 0, n: 0 }).get(k); p.la += t.lat; p.lo += t.lon; p.n++; }
+  const known = [], seen = new Set();
+  for (const o of offers) if (o.ulica && o.dzielnica) { const k = streetKey(o.ulica), d = normDz(o.dzielnica), key = k + '|' + d, p = pts.get(k); if (p && p.n >= 2 && !seen.has(key)) { seen.add(key); known.push({ la: p.la / p.n, lo: p.lo / p.n, d }); } }
+  const cache = new Map(), K = Math.cos(51.25 * Math.PI / 180);
+  const fn = (lat, lon) => {
+    const ck = lat.toFixed(4) + ',' + lon.toFixed(4); if (cache.has(ck)) return cache.get(ck);
+    let best = null, bd = 1e9; for (const k of known) { const dy = (lat - k.la) * 111.2, dx = (lon - k.lo) * 111.2 * K, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = k; } }
+    const v = best && bd <= 6.25 ? best.d : null; cache.set(ck, v); return v;
+  };
+  fn.known = known.length; return fn;
 }
 
 /* ---------- RENTOWNOŚĆ W DZIELNICACH ---------- */
