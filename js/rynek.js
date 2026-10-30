@@ -132,3 +132,24 @@ export function bindCharts(root) {
     svg.addEventListener('pointermove', show); svg.addEventListener('pointerdown', show);
   });
 }
+
+
+/* ---------- CZAS EKSPOZYCJI I ZMIANY CEN OFERT (punkt 19) ---------- */
+// Z powtarzanych zbiorów ofert (zebrania): oferta „zniknęła”, gdy jej ost (ostatnie zebranie, w którym była) jest wcześniejsze niż ostatnie pełne zebranie.
+// Czas ekspozycji znamy tylko dla ofert, które pojawiły się PO pierwszym pełnym zebraniu (inaczej nie wiemy, od kiedy wisiały). Dokładność = odstęp między zebraniami.
+// Zmiany cen: o.hc = [[id zebrania, cena], ...] zapisywane od wersji 1.16.
+export function exposure(offers, zebrania) {
+  const full = (zebrania || []).filter(z => z.pelne), DAY = 864e5;
+  if (full.length < 2) return { ok: false, reason: `Potrzebuję co najmniej 2 pełnych zebrań ofert (jest ${full.length}). Zbierz oferty ponownie za tydzień lub dwa.` };
+  const span = (full[full.length - 1].ts - full[0].ts) / DAY;
+  if (span < 7) return { ok: false, reason: `Zebrania dzieli tylko ${Math.round(span)} dni; potrzeba co najmniej 7, żeby cokolwiek zmierzyć.` };
+  const ts = new Map((zebrania || []).map(z => [z.id, z.ts])), first = full[0].id, last = full[full.length - 1].id;
+  const seen = offers.filter(o => o.pierw != null && o.ost != null && o.cena > 0);
+  const gone = seen.filter(o => o.pierw > first && o.ost < last && ts.has(o.pierw) && ts.has(o.ost));
+  const days = gone.map(o => Math.max(0, (ts.get(o.ost) - ts.get(o.pierw)) / DAY)).sort((a, b) => a - b);
+  const q = p => days[Math.min(days.length - 1, Math.floor(days.length * p))];
+  const multi = seen.filter(o => o.hc && o.hc.length > 1), cuts = multi.filter(o => o.hc[o.hc.length - 1][1] < o.hc[0][1]);
+  const cutPct = cuts.map(o => 1 - o.hc[o.hc.length - 1][1] / o.hc[0][1]).sort((a, b) => a - b);
+  return { ok: true, spanDays: Math.round(span), collections: full.length, active: seen.filter(o => o.ost >= last).length, nGone: gone.length,
+    days: gone.length >= 10 ? { med: q(.5), p25: q(.25), p75: q(.75) } : null, nChanged: multi.length, nCut: cuts.length, cutMed: cutPct.length >= 5 ? cutPct[cutPct.length >> 1] : null };
+}

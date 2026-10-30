@@ -7,10 +7,10 @@ import { esc, $, $$, fmt, roundTo, toast, openSheet, closeSheet, countUp, saveFi
 import { buildReport, makePdf } from './report.js';
 import { createSync, DEFAULT_URL, encodeCode, decodeCode } from './sync.js';
 import { investCalc, sensitivity, TAX } from './invest.js';
-import { trendSeries, yieldByDistrict, districtAssigner, lineChart, barChart, bindCharts } from './rynek.js';
+import { exposure, trendSeries, yieldByDistrict, districtAssigner, lineChart, barChart, bindCharts } from './rynek.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer } from './mapa.js';
 
-const VERSION = '1.15.1';
+const VERSION = '1.16.0';
 const S = { wlasne: [], teczki: [], foto: {},
   offers: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -376,7 +376,7 @@ function applyCollection(found, opt = {}) {
   for (const r of found) {
     const ex = (r.portalId && byP.get(String(r.portalId))) || byK.get(offerKey(r));
     let o;
-    if (ex) { o = ex; updated++; for (const k of ['cena', 'czynsz', 'pokoje', 'm2', 'pietro', 'ulica', 'dzielnica', 'miasto']) if (r[k] != null) o[k] = r[k]; if (r.url) o.url = r.url; if (r.portalId) o.portalId = String(r.portalId); if (r.rokBand) o.rokBand = r.rokBand; if (r.zabudowa) o.zabudowa = r.zabudowa; }
+    if (ex) { o = ex; updated++; if (r.cena != null && r.cena !== o.cena && o.cena > 0) o.hc = (o.hc && o.hc.length ? o.hc : [[o.pierw || 0, o.cena]]).concat([[c.id, r.cena]]); for (const k of ['cena', 'czynsz', 'pokoje', 'm2', 'pietro', 'ulica', 'dzielnica', 'miasto']) if (r[k] != null) o[k] = r[k]; if (r.url) o.url = r.url; if (r.portalId) o.portalId = String(r.portalId); if (r.rokBand) o.rokBand = r.rokBand; if (r.zabudowa) o.zabudowa = r.zabudowa; }
     else { o = { ...r, flagi: r.flagi || offerFlags(r), id: uid(), typ: 'najem', ts: t, wlaczone: true, pierw: c.id }; if (o.portalId) o.portalId = String(o.portalId); S.offers.push(o); added++; if (o.portalId) byP.set(o.portalId, o); byK.set(offerKey(o), o); }
     o.ost = c.id; batch.add(o);
     if (r.parking && r.parking.stan) o.parking = { stan: r.parking.stan, ...(r.parking.kwota > 0 ? { kwota: r.parking.kwota } : {}) };
@@ -902,6 +902,7 @@ function viewRynek() {
     <div class="field" id="rf-r"></div>
     <div id="rtrend" style="margin-top:6px"></div></div>
   <div class="card"><div class="eyebrow">Rentowność najmu w dzielnicach</div><div id="ryield"></div></div>
+  <div class="card"><div class="eyebrow">Czas ekspozycji ofert najmu</div><div id="rexp"></div></div>
   <a class="btn" href="#/kalkulator" style="display:block;text-align:center;text-decoration:none">Kalkulator inwestycyjny (zwrot netto)</a>`;
   return [html, v => {
     const paintFilters = () => {
@@ -945,7 +946,14 @@ function viewRynek() {
         ${barChart(Y.rows.map(r => ({ name: r.name, y: r.y, yLo: r.yLo, yHi: r.yHi, sub: `czynsz ${fmt(r.rent)} zł/m² · cena ${fmt(r.sale)} zł/m² · ${r.nr} ofert, ${r.ns} transakcji` })), { ref: Y.city.y, label: 'Rentowność brutto w dzielnicach' })}
         <p class="tiny muted" style="margin:8px 0 0">Roczny czynsz (mediana ofert, bez opłat administracyjnych) do mediany ceny transakcyjnej tego samego metrażu (${Y.range[0]}–${Y.range[1]} m², transakcje z ostatnich ${String(Y.windowYears).replace('.', ',')} roku/lat). Wąs: środkowe 50% czynszów. To rentowność brutto z cen ofertowych: bez podatku, kosztów, remontów i pustostanów; rzeczywisty zwrot jest niższy. Dzielnice transakcjom przypisano po najbliższej ulicy ze znaną dzielnicą (do 2,5 km); pokazane tylko dzielnice z min. 5 ofertami i 30 transakcjami.</p>`;
     };
-    paintFilters(); drawTrend(); drawYield();
+    const drawExp = () => {
+      const box = $('#rexp', v), X = exposure(S.offers, S.ust.zebrania || []);
+      if (!X.ok) { box.innerHTML = `<p class="small muted" style="margin:0">${esc(X.reason)}</p><p class="tiny muted" style="margin:8px 0 0">Od tej wersji aplikacja zapamiętuje też zmiany cen ofert między zebraniami, więc po kilku tygodniach pokaże, ile ofert tanieje i o ile.</p>`; return; }
+      const d = X.days;
+      box.innerHTML = `<div class="stats" style="margin:0 0 10px"><div class="stat"><b>${d ? Math.round(d.med) + ' dni' : '—'}</b><span>typowy czas do zniknięcia oferty</span></div><div class="stat"><b>${X.nGone}</b><span>ofert, które zniknęły</span></div><div class="stat"><b>${X.nChanged ? Math.round(X.nCut / X.nChanged * 100) + '%' : '—'}</b><span>ofert ze zmianą ceny, które staniały</span></div></div>
+        <p class="tiny muted" style="margin:0">${d ? `Połowa ofert znikała w ciągu ${Math.round(d.med)} dni (środkowe 50%: ${Math.round(d.p25)}–${Math.round(d.p75)} dni).` : 'Za mało zniknętych ofert (potrzeba co najmniej 10), by podać czas.'} Oferta „znikła”, gdy nie było jej w ostatnim pełnym zebraniu; dokładność to odstęp między zebraniami (${X.spanDays} dni, ${X.collections} zebrań). Zniknięcie oferty nie zawsze oznacza wynajem.${X.cutMed != null ? ` Mediana obniżki: ${(X.cutMed * 100).toFixed(1).replace('.', ',')}%.` : ''}</p>`;
+    };
+    paintFilters(); drawTrend(); drawYield(); drawExp();
     const dzI = $('#rf-dz', v); dzI.onchange = () => { m.dzielnica = dzI.value; drawTrend(); };
     const ul = $('#rf-ul', v); suggest(ul, S.streets); ul.onchange = () => { m.ulica = ul.value.trim(); paintFilters(); drawTrend(); };
   }];

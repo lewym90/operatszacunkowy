@@ -37,3 +37,17 @@ assert.ok(WD.points[WD.points.length - 1].med < T.points[T.points.length - 1].me
 const svg = lineChart(T.points); assert.ok(svg.includes('<svg') && svg.includes('data-chart') && !svg.includes('NaN') && !svg.includes('undefined'));
 const bar = barChart(Y.rows.map(r => ({ name: r.name, y: r.y, yLo: r.yLo, yHi: r.yHi, sub: 'x' })), { ref: Y.city.y }); assert.ok(bar.includes('<svg') && !bar.includes('NaN'));
 console.log('rynek.test: OK', T.points.length, 'punktów, rok do roku', T.yoy.pct.toFixed(1) + '%', Y.rows.map(r => r.name + ' ' + r.y.toFixed(1)).join(', '));
+
+// ---- czas ekspozycji ----
+{
+  const { exposure } = await import('../js/rynek.js'); const D = 864e5, t0 = Date.UTC(2026, 0, 1);
+  const z = [{ id: 1, ts: t0, pelne: true }, { id: 2, ts: t0 + 10 * D, pelne: true }, { id: 3, ts: t0 + 20 * D, pelne: true }];
+  const bad = exposure([], z.slice(0, 1)); if (bad.ok) throw new Error('1 zebranie nie wystarcza');
+  const near = exposure([], [{ id: 1, ts: t0, pelne: true }, { id: 2, ts: t0 + 2 * D, pelne: true }]); if (near.ok) throw new Error('2 dni to za mało');
+  const of = []; for (let i = 0; i < 20; i++) of.push({ cena: 3000, pierw: 2, ost: 2, hc: i < 8 ? [[2, 3200], [2, 3000]] : null }); // pojawiły się w zebraniu 2, zniknęły przed 3 → 0 dni? ost<last
+  for (let i = 0; i < 6; i++) of.push({ cena: 3000, pierw: 2, ost: 3 });                                            // wciąż aktywne
+  of.push({ cena: 3000, pierw: 1, ost: 1 });                                                                          // sprzed pierwszego pełnego: bez czasu
+  const r = exposure(of, z); if (!r.ok || r.nGone !== 20 || r.active !== 6) throw new Error('ekspozycja: ' + JSON.stringify(r));
+  if (r.nCut !== 8 || r.nChanged !== 8) throw new Error('obniżki: ' + JSON.stringify(r));
+  console.log('exposure.test: OK', JSON.stringify({ gone: r.nGone, active: r.active, cut: r.nCut }));
+}
