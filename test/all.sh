@@ -11,4 +11,6 @@ node test/lock.cjs
 node test/rynek.cjs "$SP"
 node test/chips.cjs "$SP"
 node test/teczka.cjs "$SP"
+node test/raport.cjs "$SP"
+node test/kalkulator.cjs "$SP"
 echo "WSZYSTKIE TESTY OK"

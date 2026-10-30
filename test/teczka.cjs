@@ -41,6 +41,16 @@ const offers = []; for (let i = 0; i < 150; i++) { const d = DZ[i % 3], m2 = Mat
   await p.goto('http://localhost:8765/index.html#/historia'); await p.waitForTimeout(400); await p.click('[data-ht=teczki]'); await p.click('a.card[href^="#/teczka/"]'); await p.waitForTimeout(900);
   ok((await p.$$('#tchart svg circle')).length === 2, 'wykres wartości w czasie: 2 punkty');
   await p.screenshot({ path: OUT + '/02-teczka.png', fullPage: true });
+  // CRM: status, zadanie po terminie, odznaka na zakładce Historia, lista Zadania
+  await p.click('a.card[href^="#/teczka/"]').catch(() => { }); 
+  await p.goto('http://localhost:8765/index.html#/historia'); await p.waitForTimeout(400); await p.click('[data-ht=teczki]'); await p.click('a.card[href^="#/teczka/"]'); await p.waitForTimeout(700);
+  await p.click('[data-tst] [data-v=oferta]'); ok(await p.$eval('[data-tst] [data-v=oferta]', e => e.classList.contains('on')), 'status „Oferta” podświetlony');
+  await p.fill('#tz-txt', 'Oddzwonić do klienta'); await p.fill('#tz-due', '2020-01-02'); await p.click('#tz-add'); await p.waitForTimeout(300);
+  ok((await p.$$('#tzad .kv')).length === 1, 'zadanie dodane');
+  await p.goto('http://localhost:8765/index.html#/historia'); await p.waitForTimeout(600);
+  const nb = await p.$eval('#tabs a[href="#/historia"] .nb', e => e.textContent).catch(() => null); ok(nb === '1', 'odznaka przypomnień na zakładce Historia: ' + nb);
+  await p.click('[data-ht=zadania]'); await p.waitForTimeout(400); const zt = await p.$eval('#view', e => e.innerText); ok(/Oddzwonić do klienta/.test(zt) && /po terminie/.test(zt), 'lista Zadania pokazuje zadanie po terminie');
+  await p.screenshot({ path: OUT + '/04-zadania.png' });
   // własne umowy
   await p.goto('http://localhost:8765/index.html#/dane'); await p.waitForTimeout(700); await p.click('[data-act=own]'); await p.waitForTimeout(500);
   await p.fill('#o-ul', 'Granata'); await p.fill('#o-m2', '52'); await p.fill('#o-pk', '3'); await p.fill('#o-pi', '1'); await p.fill('#o-ce', '3200'); await p.waitForTimeout(2500);

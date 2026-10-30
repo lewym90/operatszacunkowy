@@ -14,7 +14,35 @@ function wrap(ctx, text, maxW) {
   } return out;
 }
 
-export async function buildReport(e, ust) {
+
+const plN = (n, d = 1) => n.toFixed(d).replace('.', ',');
+function lineChartCv(ctx, pts, x0, y0, w, h) {
+  const padL = 110, padB = 50, pw = w - padL - 20, ph = h - padB - 10;
+  const lo = Math.min(...pts.map(p => p.p25)), hi = Math.max(...pts.map(p => p.p75)), span = hi - lo || 1, a = lo - span * .08, b = hi + span * .08;
+  const tx = i => x0 + padL + (pts.length === 1 ? pw / 2 : i * pw / (pts.length - 1)), ty = v => y0 + 10 + ph * (1 - (v - a) / (b - a));
+  ctx.strokeStyle = C.line; ctx.lineWidth = 2; ctx.fillStyle = C.ink2; ctx.font = '400 21px Archivo'; ctx.textAlign = 'right';
+  for (let i = 0; i <= 4; i++) { const v = a + (b - a) * i / 4, yy = ty(v); ctx.beginPath(); ctx.moveTo(x0 + padL, yy); ctx.lineTo(x0 + padL + pw, yy); ctx.stroke(); ctx.fillText(money(v), x0 + padL - 12, yy + 7); }
+  ctx.fillStyle = 'rgba(200,164,77,.22)'; ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(tx(i), ty(p.p75)) : ctx.moveTo(tx(i), ty(p.p75))); for (let i = pts.length - 1; i >= 0; i--) ctx.lineTo(tx(i), ty(pts[i].p25)); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = C.goldD; ctx.lineWidth = 4; ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(tx(i), ty(p.med)) : ctx.moveTo(tx(i), ty(p.med))); ctx.stroke();
+  ctx.fillStyle = C.goldD; pts.forEach((p, i) => { ctx.beginPath(); ctx.arc(tx(i), ty(p.med), 5, 0, 7); ctx.fill(); });
+  ctx.fillStyle = C.ink2; ctx.textAlign = 'center'; ctx.font = '400 21px Archivo'; let lastX = -1e9;
+  pts.forEach((p, i) => { const lb = String(p.y); if (i === 0 || p.y !== pts[i - 1].y) { const X = tx(i); if (X - lastX > 80) { ctx.fillText(lb, X, y0 + h - 14); lastX = X; } } });
+  const l = pts[pts.length - 1]; ctx.textAlign = 'right'; ctx.fillStyle = C.ink; ctx.font = '700 24px Archivo'; ctx.fillText(money(l.med) + ' zł/m²', x0 + w, ty(l.med) - 16); ctx.textAlign = 'left';
+}
+function barChartCv(ctx, rows, ref, x0, y0, w) {
+  const labW = 300, rowH = 50, max = Math.max(...rows.map(r => r.yHi || r.y), ref) * 1.1, bw = w - labW - 110, X = v => x0 + labW + bw * v / max;
+  ctx.font = '400 24px Archivo'; y0 += 30;
+  rows.forEach((r, i) => { const yy = y0 + i * rowH; ctx.fillStyle = C.ink; ctx.textAlign = 'left'; let nm = r.name; while (ctx.measureText(nm).width > labW - 16 && nm.length > 3) nm = nm.slice(0, -1);
+    ctx.fillText(nm, x0, yy + 8); ctx.fillStyle = C.gold; ctx.fillRect(x0 + labW, yy - 14, X(r.y) - x0 - labW, 28);
+    if (r.yLo != null && r.yHi != null) { ctx.strokeStyle = C.ink; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(X(r.yLo), yy); ctx.lineTo(X(r.yHi), yy); ctx.stroke(); }
+    ctx.fillStyle = C.ink; ctx.font = '700 24px Archivo'; ctx.fillText(plN(r.y) + '%', X(Math.max(r.y, r.yHi || 0)) + 12, yy + 8); ctx.font = '400 24px Archivo'; });
+  ctx.strokeStyle = C.goldD; ctx.lineWidth = 3; ctx.setLineDash([8, 6]); ctx.beginPath(); ctx.moveTo(X(ref), y0 - 28); ctx.lineTo(X(ref), y0 + rows.length * rowH - 20); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle = C.goldD; ctx.font = '400 20px Archivo'; ctx.fillText('miasto ' + plN(ref) + '%', X(ref) + 8, y0 - 34);
+  return y0 + rows.length * rowH;
+}
+
+export async function buildReport(e, ust, opts = {}) {
+  const variant = opts.variant || 'full';
   await Promise.all([document.fonts.load('40px Marcellus'), document.fonts.load('400 20px Archivo'), document.fonts.load('700 20px Archivo')]);
   const logo = await loadImg('icons/logo-am.png');
   const { subj: s, res: r } = e, sale = s.tryb === 'sprzedaz', step = sale ? 1000 : 10;
@@ -75,6 +103,7 @@ export async function buildReport(e, ust) {
   if (!sale && r.applied && r.applied.length) { text('Uwzględnione cechy mieszkania: ' + r.applied.map(a => `${a.label}${a.has === false ? ' (brak)' : ''}`).join(', ') + '. Ich wpływ na czynsz zmierzono na bazie ofert z rynku lubelskiego.', 25, C.ink2); y += 8; }
   const nts = r.notes.filter(n => !/^(Lokalizacja podmiotu|Pominięto|Korekta segmentu|Cecha „|Segmenty |Dzielnica ustalona|Uwaga: wpisano)/.test(n)).slice(0, 4); nts.forEach(n => text('•  ' + n, 23, C.ink2, 400, 'Archivo', 1.38, W - 2 * M - 28)); y += 10;
 
+  if (variant !== 'short') {
   // tabela porównań
   const cols = [['Lokalizacja', M, 'l'], ['m²', 620, 'r'], [fl ? 'Pok.' : '', 705, 'r'], ['Cena', 880, 'r'], ['zł/m²', 1010, 'r'], [sale ? 'Akt' : 'Typ', W - M, 'r']];
   const head = () => { ctx.fillStyle = C.goldD; ctx.font = '700 21px Archivo'; cols.forEach(([n, x, a]) => { ctx.textAlign = a === 'r' ? 'right' : 'left'; ctx.fillText(n.toUpperCase(), x, y); }); ctx.textAlign = 'left'; ctx.fillStyle = C.line; ctx.fillRect(M, y + 14, W - 2 * M, 2); y += 52; };
@@ -90,6 +119,24 @@ export async function buildReport(e, ust) {
     ctx.textAlign = 'right'; [620, 705, 880, 1010, W - M].forEach((x, i) => ctx.fillText(vals[i], x, y)); ctx.textAlign = 'left'; y += 46;
   }
   y += 14;
+  }
+  if (variant === 'market' && opts.market) {
+    const mk = opts.market, need = 700;
+    if (H - 190 - y < need) { footer(pages.length); newPage(false); }
+    if (mk.trend && mk.trend.ok) {
+      text('Ceny transakcyjne w czasie', 34, C.ink, 400, 'Marcellus'); y += 6;
+      text(mk.trendLabel || '', 23, C.ink2); y += 8;
+      lineChartCv(ctx, mk.trend.points, M, y, W - 2 * M, 380); y += 380 + 30;
+      text(`Mediana ceny za m² (akty notarialne, RCN) w okresach ${mk.trend.step === 12 ? 'rocznych' : mk.trend.step === 6 ? 'półrocznych' : 'kwartalnych'}; pasmo to środkowe 50% transakcji. Podstawa: ${money(mk.trend.n)} transakcji.${mk.trend.yoy ? ` Zmiana rok do roku: ${mk.trend.yoy.pct >= 0 ? '+' : ''}${mk.trend.yoy.pct.toFixed(1).replace('.', ',')}%.` : ''}`, 22, C.ink2, 400, 'Archivo', 1.38); y += 22;
+    }
+    if (mk.yield && mk.yield.ok) {
+      const rows = mk.yield.rows.slice(0, 10), need2 = 130 + rows.length * 50 + 120;
+      if (H - 190 - y < need2) { footer(pages.length); newPage(false); }
+      text('Rentowność najmu w dzielnicach', 34, C.ink, 400, 'Marcellus'); y += 6;
+      y = barChartCv(ctx, rows, mk.yield.city.y, M, y, W - 2 * M); y += 16;
+      text('Roczny czynsz z ofert do mediany ceny transakcyjnej tego samego metrażu; wartość brutto, przed podatkiem i kosztami. Linia pionowa: średnia dla miasta.', 22, C.ink2, 400, 'Archivo', 1.38); y += 22;
+    }
+  }
   // zastrzeżenie
   const disc = `Niniejsze zestawienie ma charakter wyłącznie orientacyjny i informacyjny. Sporządzono je metodą porównawczą na podstawie ${sale ? 'cen transakcyjnych z Rejestru Cen Nieruchomości' : 'cen ofertowych z ogłoszeń'}, bez oględzin nieruchomości oraz bez badania jej stanu prawnego i technicznego. Nie jest wyceną sporządzoną przez rzeczoznawcę majątkowego i nie może jej zastępować. Rzeczywista cena lub czynsz zależą od stanu nieruchomości, negocjacji i sytuacji rynkowej.`;
   ctx.font = '400 22px Archivo'; const dl = wrap(ctx, disc, W - 2 * M - 48), dh = dl.length * 31 + 44;

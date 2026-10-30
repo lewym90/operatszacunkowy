@@ -10,7 +10,7 @@ import { investCalc, sensitivity, TAX } from './invest.js';
 import { trendSeries, yieldByDistrict, districtAssigner, lineChart, barChart, bindCharts } from './rynek.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer } from './mapa.js';
 
-const VERSION = '1.14.0';
+const VERSION = '1.15.0';
 const S = { wlasne: [], teczki: [], foto: {},
   offers: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -79,7 +79,7 @@ function paintSync(st) {
 /* ---------- router ---------- */
 const TABS = [['wycena', 'Wycena'], ['mapa', 'Mapa'], ['rynek', 'Rynek'], ['oferty', 'Oferty'], ['dane', 'Dane'], ['historia', 'Historia'], ['ust', 'Ustawienia']];
 function tabs(active) {
-  $('#tabs').innerHTML = '<div class="in-tabs"><div class="brand"><img src="icons/logo-am.png" alt=""><b>OPERAT SZACUNKOWY</b><span>AM Nieruchomości</span></div>' + TABS.map(([k, n]) => `<a href="#/${k}" class="${k === active ? 'on' : ''}">${ICON[k === 'wycena' ? 'wycena' : k]}<span>${n}</span></a>`).join('') + '</div>';
+  $('#tabs').innerHTML = '<div class="in-tabs"><div class="brand"><img src="icons/logo-am.png" alt=""><b>OPERAT SZACUNKOWY</b><span>AM Nieruchomości</span></div>' + TABS.map(([k, n]) => `<a href="#/${k}" class="${k === active ? 'on' : ''}">${ICON[k === 'wycena' ? 'wycena' : k]}${k === 'historia' && remindN() ? `<i class="nb">${remindN()}</i>` : ''}<span>${n}</span></a>`).join('') + '</div>';
 }
 function render() {
   const h = location.hash.replace(/^#\/?/, '') || 'wycena', p = h.split('/');
@@ -313,14 +313,37 @@ function viewRaport(p) {
   const e = p[1] === 'h' ? S.wyceny.find(w => w.id === p[2]) : S.last[p[2]];
   const back = () => history.length > 1 ? history.back() : go('#/wycena');
   if (!e || !e.res.ok) return [head('Raport', '', true) + '<div class="empty"><b>Brak wyniku</b>Raport powstaje z gotowej wyceny.</div>', v => $('[data-back]', v).onclick = back];
-  const html = head('Raport', 'Dla klienta', true) + `<div id="rp"><div class="empty"><b>Przygotowuję raport…</b></div></div>
+  const VAR = [['short', 'Krótki'], ['full', 'Pełny'], ['market', 'Z wykresami rynku']];
+  let variant = 'full'; try { variant = localStorage.getItem('am-rapvar') || 'full'; } catch { }
+  if (!VAR.some(x => x[0] === variant)) variant = 'full';
+  const html = head('Raport', 'Dla klienta', true) + `<div class="seg" id="rvar" style="margin-bottom:12px">${VAR.map(([k, n]) => `<button data-v="${k}" class="${k === variant ? 'on' : ''}">${n}</button>`).join('')}</div>
+    <p class="tiny muted" id="rvh" style="margin:-4px 0 12px"></p><div id="rp"><div class="empty"><b>Przygotowuję raport…</b></div></div>
     <div class="row" style="position:sticky;bottom:calc(var(--nav) + var(--sab) + 12px)"><button class="btn" id="pdf" disabled>Udostępnij PDF</button></div>`;
+  const HINT = { short: 'Jedna strona: wynik, przedział i pewność oceny. Bez tabeli porównań.', full: 'Wynik, opis metody i tabela porównań użytych w analizie.', market: 'Jak pełny, a do tego wykres cen transakcyjnych w czasie i rentowność najmu w dzielnicach.' };
   return [html, async v => {
-    $('[data-back]', v).onclick = back; let pages = [];
-    try { await document.fonts.ready; pages = await buildReport(e, S.ust); } catch (err) { $('#rp', v).innerHTML = `<div class="empty"><b>Nie udało się zbudować raportu</b>${esc(err.message)}</div>`; return; }
-    $('#rp', v).innerHTML = pages.map(c => `<img class="report-img" alt="Strona raportu" src="${c.toDataURL('image/jpeg', .92)}">`).join('');
-    const b = $('#pdf', v); b.disabled = false;
-    b.onclick = async () => { b.disabled = true; try { const blob = makePdf(pages); const nm = 'Analiza-rynkowa-' + new Date().toISOString().slice(0, 10) + '.pdf'; const r = await saveFile(blob, nm); if (r !== 'cancel') toast(r === 'share' ? 'Gotowe' : 'Pobrano PDF'); } finally { b.disabled = false; } };
+    $('[data-back]', v).onclick = back; let pages = [], seq = 0;
+    const market = () => {
+      const s = e.subj, kat = s.kat || 'mieszkanie', m2 = +s.m2 || 0, out = {};
+      if (S.pool.length && m2) {
+        const T = trendSeries(S.pool, { kat, rynek: ['mieszkanie', 'dom', 'lokal'].includes(kat) ? (s.rynek === 'pierwotny' || s.rynek === 'wtorny' ? s.rynek : '') : '', m2min: Math.round(m2 * .7), m2max: Math.round(m2 * 1.3), years: 8 });
+        if (T.ok) { out.trend = T; out.trendLabel = `Lublin, ${KAT[kat] ? KAT[kat].n.toLowerCase() : 'mieszkania'} o powierzchni ${Math.round(m2 * .7)}–${Math.round(m2 * 1.3)} m².`; }
+      }
+      if (kat === 'mieszkanie' && S.tx.length) { try { const Y = yieldByDistrict(allOffers(), S.tx); if (Y.ok) out.yield = Y; } catch { } }
+      return out;
+    };
+    const draw = async () => {
+      const my = ++seq, b = $('#pdf', v); b.disabled = true; $('#rvh', v).textContent = HINT[variant];
+      $('#rp', v).innerHTML = '<div class="empty"><b>Przygotowuję raport…</b></div>';
+      try { await document.fonts.ready; pages = await buildReport(e, S.ust, { variant, market: variant === 'market' ? market() : null }); } catch (err) { if (my === seq) $('#rp', v).innerHTML = `<div class="empty"><b>Nie udało się zbudować raportu</b>${esc(err.message)}</div>`; return; }
+      if (my !== seq) return;
+      $('#rp', v).innerHTML = pages.map(c => `<img class="report-img" alt="Strona raportu" src="${c.toDataURL('image/jpeg', .92)}">`).join('');
+      if (variant === 'market' && !market().trend && !market().yield) $('#rvh', v).textContent += ' Brak wystarczających danych RCN do wykresów, więc raport ich nie zawiera.';
+      b.disabled = false;
+    };
+    $('#rvar', v).onclick = ev => { const bt = ev.target.closest('button[data-v]'); if (!bt) return; variant = bt.dataset.v; try { localStorage.setItem('am-rapvar', variant); } catch { } $$('#rvar button', v).forEach(x => x.classList.toggle('on', x === bt)); draw(); };
+    const b = $('#pdf', v);
+    b.onclick = async () => { b.disabled = true; try { const blob = makePdf(pages); const nm = 'Analiza-rynkowa-' + (variant === 'short' ? 'krotka-' : variant === 'market' ? 'rynek-' : '') + new Date().toISOString().slice(0, 10) + '.pdf'; const r = await saveFile(blob, nm); if (r !== 'cancel') toast(r === 'share' ? 'Gotowe' : 'Pobrano PDF'); } finally { b.disabled = false; } };
+    draw();
   }];
 }
 
@@ -611,6 +634,22 @@ S.histTab = 'wyceny';
 const tName = t => t.nazwa || [t.ulica, t.nr].filter(Boolean).join(' ') || 'Teczka';
 const tWyceny = id => S.wyceny.filter(e => e.teczka === id).sort((a, b) => (a.ts || 0) - (b.ts || 0));
 const midRange = e => { const r = e.res, st = e.subj.tryb === 'sprzedaz' ? 1000 : 10; return r && r.ok ? { lo: roundTo(r.total.lo, st), mid: roundTo((r.total.lo + r.total.hi) / 2, st), hi: roundTo(r.total.hi, st) } : null; };
+const TSTAT = [['kontakt', 'Kontakt'], ['prezentacja', 'Prezentacja'], ['oferta', 'Oferta'], ['negocjacje', 'Negocjacje'], ['umowa', 'Umowa'], ['zamkniete', 'Zamknięte'], ['utracone', 'Utracone']];
+const tStatName = k => (TSTAT.find(x => x[0] === k) || [0, ''])[1];
+const todayStr = () => new Date().toLocaleDateString('sv-SE');
+const dayDiff = (a, b) => Math.round((Date.parse(a) - Date.parse(b)) / 864e5);
+// Przypomnienia: otwarte zadania, zbliżający się koniec umowy najmu (90 dni), wycena starsza niż 180 dni. Zamknięte i utracone teczki są pomijane.
+function reminders() {
+  const t0 = todayStr(), out = [];
+  for (const t of S.teczki) {
+    if (t.status === 'zamkniete' || t.status === 'utracone') continue;
+    for (const z of t.zadania || []) if (!z.done) out.push({ tid: t.id, zid: z.id, kind: 'zadanie', txt: z.txt, due: z.due || '', over: !!z.due && z.due < t0, hot: !!z.due && z.due <= t0 });
+    if (t.koniecUmowy) { const d = dayDiff(t.koniecUmowy, t0); if (d <= 90) out.push({ tid: t.id, kind: 'umowa', txt: d < 0 ? `Umowa najmu skończyła się ${-d} dni temu` : d === 0 ? 'Umowa najmu kończy się dziś' : `Umowa najmu kończy się za ${d} dni`, due: t.koniecUmowy, over: d < 0, hot: d <= 30 }); }
+    const ws = tWyceny(t.id); if (ws.length) { const age = Math.floor((Date.now() - (ws[ws.length - 1].ts || 0)) / 864e5); if (age >= 180) out.push({ tid: t.id, kind: 'wycena', txt: `Ostatnia wycena ma ${Math.round(age / 30)} mies.: odśwież`, due: '', over: false, hot: false }); }
+  }
+  return out.sort((x, y) => (y.over - x.over) || ((x.due || '9999') < (y.due || '9999') ? -1 : 1));
+}
+const remindN = () => reminders().filter(r => r.hot || r.kind === 'wycena').length;
 function findTeczka(subj) {
   if (!subj.ulica || !subj.nr) return null; const k = addrKey(subj.ulica, subj.nr);
   return S.teczki.find(t => t.ulica && t.nr && addrKey(t.ulica, t.nr) === k && Math.abs((+t.m2 || 0) - (+subj.m2 || 0)) <= 0.6) || null;
@@ -620,8 +659,8 @@ function newTeczka(subj, extra = {}) {
   S.teczki.unshift(t); save.teczki(); return t;
 }
 function viewHistoria() {
-  const tab = S.histTab, SEG = [['wyceny', 'Wyceny'], ['teczki', 'Teczki']];
-  const seg = `<div class="seg" data-n="2" data-v="${tab === 'teczki' ? 1 : 0}"><i></i>${SEG.map(([k, n]) => `<button data-ht="${k}" class="${tab === k ? 'on' : ''}">${n}</button>`).join('')}</div>`;
+  const tab = S.histTab, SEG = [['wyceny', 'Wyceny'], ['teczki', 'Teczki'], ['zadania', 'Zadania' + (remindN() ? ' (' + remindN() + ')' : '')]];
+  const seg = `<div class="seg" data-n="3" data-v="${Math.max(0, SEG.findIndex(x => x[0] === tab))}"><i></i>${SEG.map(([k, n]) => `<button data-ht="${k}" class="${tab === k ? 'on' : ''}">${n}</button>`).join('')}</div>`;
   let body = '';
   if (tab === 'wyceny') {
     const items = S.wyceny.map(e => { const r = e.res, s = e.subj, sale = s.tryb === 'sprzedaz', st = sale ? 1000 : 10;
@@ -630,13 +669,16 @@ function viewHistoria() {
       const tc = e.teczka ? S.teczki.find(t => t.id === e.teczka) : null;
       return `<a class="card" href="#/wynik/h/${e.id}" style="display:block;text-decoration:none;color:inherit"><div class="eyebrow">${sale ? 'Sprzedaż' : 'Najem'} · ${new Date(e.ts).toLocaleDateString('pl-PL')}${r.ok ? ' · pewność ' + LV[r.confidence.level].toLowerCase() : ''}</div><h3>${esc(rng)}</h3><div class="muted small">${esc(subjLine(s))}</div>${chk || tc ? `<div style="margin-top:8px">${chk}${tc ? `<span class="badge">teczka: ${esc(tName(tc))}</span>` : ''}</div>` : ''}</a>`; });
     body = items.length ? items.join('') + '<button class="btn danger" data-act="clr">Wyczyść historię</button>' : '<div class="empty"><b>Pusto</b>Zapisane wyceny pojawią się tutaj. Po zamknięciu transakcji wpisz cenę rzeczywistą, a zobaczysz, jak trafiał szacunek.</div>';
+  } else if (tab === 'zadania') {
+    const rs = reminders(), t0 = todayStr();
+    body = rs.length ? `<div class="card">${rs.map(r => { const t = S.teczki.find(x => x.id === r.tid); return `<a class="off" href="#/teczka/${r.tid}" style="text-decoration:none;color:inherit"><div><b>${esc(r.txt)}</b></div><div class="p" style="color:${r.over ? 'var(--bad)' : r.hot ? 'var(--warn)' : 'var(--gold-l)'};font-size:13px">${r.due ? (r.over ? 'po terminie · ' : r.due === t0 ? 'dziś · ' : '') + new Date(r.due).toLocaleDateString('pl-PL') : ''}</div><div class="m">${esc(tName(t))}${t && t.status ? ' · ' + esc(tStatName(t.status)) : ''}</div></a>`; }).join('')}</div>` : '<div class="empty"><b>Brak zadań</b>Dodaj zadania w teczce nieruchomości. Tu zobaczysz też zbliżający się koniec umów najmu i wyceny, które warto odświeżyć.</div>';
   } else {
     const items = S.teczki.map(t => { const w = tWyceny(t.id), last = w.length ? midRange(w[w.length - 1]) : null, fo = (S.foto[t.id] || []).length;
       return `<a class="card" href="#/teczka/${t.id}" style="display:block;text-decoration:none;color:inherit"><div class="eyebrow">${t.kat && KAT[t.kat] ? KAT[t.kat].n : 'Nieruchomość'}${t.dzielnica ? ' · ' + esc(t.dzielnica) : ''}</div><h3>${esc(tName(t))}</h3><div class="muted small">${[t.m2 ? String(t.m2).replace('.', ',') + ' m²' : '', t.klient ? esc(t.klient) : ''].filter(Boolean).join(' · ') || '&nbsp;'}</div>
-        <div style="margin-top:8px"><span class="badge">${w.length} ${w.length === 1 ? 'wycena' : 'wycen'}</span>${last ? `<span class="badge g">ostatnia: ${fmt(last.mid)} zł${w[w.length - 1].subj.tryb === 'najem' ? '/mies.' : ''}</span>` : ''}${fo ? `<span class="badge">${fo} zdjęć</span>` : ''}</div></a>`; });
+        <div style="margin-top:8px">${t.status ? `<span class="badge g">${esc(tStatName(t.status))}</span>` : ''}<span class="badge">${w.length} ${w.length === 1 ? 'wycena' : 'wycen'}</span>${last ? `<span class="badge g">ostatnia: ${fmt(last.mid)} zł${w[w.length - 1].subj.tryb === 'najem' ? '/mies.' : ''}</span>` : ''}${fo ? `<span class="badge">${fo} zdjęć</span>` : ''}</div></a>`; });
     body = (items.length ? items.join('') : '<div class="empty"><b>Brak teczek</b>Teczka zbiera w jednym miejscu wyceny jednej nieruchomości, notatki i zdjęcia oraz pokazuje, jak zmieniała się jej wartość.</div>') + '<button class="btn" data-act="newt">Nowa teczka</button>';
   }
-  const html = head('Historia', tab === 'wyceny' ? 'Zapisane wyceny' : 'Teczki nieruchomości') + seg + body;
+  const html = head('Historia', tab === 'wyceny' ? 'Zapisane wyceny' : tab === 'teczki' ? 'Teczki nieruchomości' : 'Zadania i przypomnienia') + seg + body;
   return [html, v => {
     $$('[data-ht]', v).forEach(b => b.onclick = () => { S.histTab = b.dataset.ht; render(); });
     const c = $('[data-act="clr"]', v); if (c) c.onclick = () => { if (confirm('Usunąć całą historię wycen?')) { S.wyceny = []; save.wyceny(); render(); } };
@@ -660,6 +702,9 @@ function viewTeczka(id) {
   <div class="card"><div class="eyebrow">Dane nieruchomości</div>${field('nazwa', 'Nazwa teczki (opcj.)', 'np. Granata 12/4')}${field('klient', 'Klient (opcj.)', 'imię lub nazwa')}
     <div class="grid2">${field('ulica', 'Ulica')}${field('nr', 'Numer')}</div>${field('dzielnica', 'Dzielnica')}
     <div class="grid2">${field('m2', 'Powierzchnia (m²)', '', 'decimal')}${field('pokoje', 'Pokoje', '', 'numeric')}</div><div class="grid2">${field('pietro', 'Piętro', '', 'numeric')}${field('rok', 'Rok budowy', '', 'numeric')}</div></div>
+  <div class="card"><div class="eyebrow">Postępowanie</div><div class="chips" data-tst>${TSTAT.map(([k, n]) => `<button type="button" class="chip ${t.status === k ? 'on' : ''}" data-v="${k}">${n}</button>`).join('')}</div>
+    <label class="field" style="margin-top:12px"><span>Koniec umowy najmu (opcj.)</span><input class="in" type="date" data-tk="koniecUmowy" value="${esc(t.koniecUmowy || '')}"></label>
+    <div id="tzad"></div><div class="grid2" style="margin-top:8px"><input class="in" id="tz-txt" placeholder="Nowe zadanie, np. oddzwonić"><input class="in" id="tz-due" type="date"></div><div class="gap"></div><button class="btn ghost" id="tz-add">Dodaj zadanie</button></div>
   <div class="card"><div class="eyebrow">Wartość w czasie</div><div id="tchart"></div></div>
   <div class="card"><div class="eyebrow">Wyceny w teczce (${ws.length})</div>${wl || '<p class="small muted" style="margin:0">Brak. Zapisz wycenę do historii, a w jej wyniku wybierz „Dodaj do teczki”, albo wyceń tę nieruchomość stąd.</p>'}
     <div class="gap"></div><div class="row"><button class="btn" data-act="w-sale">Wyceń sprzedaż</button><button class="btn ghost" data-act="w-rent">Wyceń najem</button></div></div>
@@ -672,6 +717,12 @@ function viewTeczka(id) {
     $('[data-back]', v).onclick = () => go('#/historia');
     const touch = () => { t.ts = Date.now(); save.teczki(); };
     $$('[data-tk]', v).forEach(i => i.onchange = () => { const k = i.dataset.tk; let val = i.value.trim(); if (['m2'].includes(k)) val = val ? parseFloat(val.replace(',', '.')) || '' : ''; if (['pokoje', 'pietro', 'rok'].includes(k)) val = val === '' ? '' : (parseInt(val, 10) || 0); t[k] = val; touch(); if (k === 'ulica' && !t.dzielnica) { const inf = inferDistrict(allOffers(), S.tx, val); if (inf) { t.dzielnica = inf.name; $('[data-tk="dzielnica"]', v).value = inf.name; } } });
+    $$('[data-tst] button', v).forEach(b => b.onclick = () => { t.status = t.status === b.dataset.v ? '' : b.dataset.v; $$('[data-tst] button', v).forEach(x => x.classList.toggle('on', x.dataset.v === t.status)); touch(); });
+    const drawZ = () => { const z = t.zadania || [], t0 = todayStr(); $('#tzad', v).innerHTML = z.map(x => `<div class="kv" style="align-items:center"><button type="button" class="chip ${x.done ? 'on' : ''}" data-zd="${x.id}" aria-label="Zrobione" style="padding:4px 12px">${x.done ? '✓' : '○'}</button><span style="flex:1;margin:0 10px;${x.done ? 'text-decoration:line-through;opacity:.55' : ''}">${esc(x.txt)}${x.due ? ` <small style="color:${!x.done && x.due < t0 ? 'var(--bad)' : 'var(--ash)'}">${new Date(x.due).toLocaleDateString('pl-PL')}</small>` : ''}</span><button type="button" data-zx="${x.id}" aria-label="Usuń" style="color:var(--ash)">✕</button></div>`).join('');
+      $$('[data-zd]', v).forEach(b => b.onclick = () => { const x = z.find(q => q.id === b.dataset.zd); x.done = !x.done; touch(); drawZ(); });
+      $$('[data-zx]', v).forEach(b => b.onclick = () => { t.zadania = z.filter(q => q.id !== b.dataset.zx); touch(); drawZ(); }); };
+    drawZ();
+    $('#tz-add', v).onclick = () => { const txt = $('#tz-txt', v).value.trim(); if (!txt) return toast('Wpisz treść zadania'); (t.zadania ||= []).push({ id: uid(), txt, due: $('#tz-due', v).value || '', done: false }); $('#tz-txt', v).value = ''; $('#tz-due', v).value = ''; touch(); drawZ(); };
     $('#tnote', v).oninput = e => { t.notatki = e.target.value; clearTimeout(viewTeczka.tm); viewTeczka.tm = setTimeout(touch, 700); };
     let mode = ws.length && ws[ws.length - 1].subj.tryb || 'sprzedaz';
     const drawChart = () => {
