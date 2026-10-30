@@ -3,13 +3,13 @@ import { estimateRent, estimateSale, estimateSaleKat, parkingExtra, crossCheckRe
 import { rcnToObjects, inneToObjects, katalog, KAT, KAT_ORDER, POD_TXT } from './rcn.js';
 import { linesFromPdf, offersFromLines, offerKey } from './pdfimport.js';
 import { flags as offerFlags } from './parseOtodom.js';
-import { esc, $, $$, fmt, roundTo, toast, openSheet, closeSheet, countUp, saveFile, ICON } from './ui.js';
+import { esc, $, $$, fmt, roundTo, toast, openSheet, closeSheet, countUp, saveFile, ICON, suggest } from './ui.js';
 import { buildReport, makePdf } from './report.js';
 import { createSync, DEFAULT_URL, encodeCode, decodeCode } from './sync.js';
 import { trendSeries, yieldByDistrict, districtAssigner, lineChart, barChart, bindCharts } from './rynek.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer } from './mapa.js';
 
-const VERSION = '1.13.1';
+const VERSION = '1.13.2';
 const S = { wlasne: [], teczki: [], foto: {},
   offers: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -840,8 +840,8 @@ function viewRynek() {
   <div class="card"><div class="eyebrow">Trend ceny za m²</div>
     <div class="field"><span>Rodzaj nieruchomości</span>${chips('kat', KAT_ORDER.filter(k => ['mieszkanie', 'dom', 'lokal', 'garaz'].includes(k)).map(k => [k, KAT[k].n]))}</div>
     <div class="field" id="rf-rynek"></div><div class="field" id="rf-metraz"></div>
-    <label class="field"><span>Dzielnica (opcjonalnie)</span><input class="in" id="rf-dz" list="rf-ddl" value="${esc(m.dzielnica)}" placeholder="cały Lublin" autocomplete="off"></label><datalist id="rf-ddl">${[...new Set(allOffers().map(o => o.dzielnica).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pl')).map(x => `<option value="${esc(x)}">`).join('')}</datalist>
-    <label class="field"><span>Ulica (opcjonalnie: liczymy wokół niej)</span><input class="in" id="rf-ul" list="rf-dl" value="${esc(m.ulica)}" placeholder="całe miasto" autocomplete="off"></label><datalist id="rf-dl">${S.streets.map(x => `<option value="${esc(x)}">`).join('')}</datalist>
+    <label class="field"><span>Dzielnica (opcjonalnie)</span><select class="in" id="rf-dz"><option value="">Cały Lublin</option>${[...new Set(allOffers().map(o => o.dzielnica).filter(Boolean))].sort((x, y) => x.localeCompare(y, 'pl')).map(x => `<option value="${esc(x)}"${normDz(x) === normDz(m.dzielnica) ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select></label>
+    <label class="field"><span>Ulica (opcjonalnie: liczymy wokół niej)</span><input class="in" id="rf-ul" value="${esc(m.ulica)}" placeholder="całe miasto" autocomplete="off" autocapitalize="words"></label>
     <div class="field" id="rf-r"></div>
     <div id="rtrend" style="margin-top:6px"></div></div>
   <div class="card"><div class="eyebrow">Rentowność najmu w dzielnicach</div><div id="ryield"></div></div>`;
@@ -888,8 +888,8 @@ function viewRynek() {
         <p class="tiny muted" style="margin:8px 0 0">Roczny czynsz (mediana ofert, bez opłat administracyjnych) do mediany ceny transakcyjnej tego samego metrażu (${Y.range[0]}–${Y.range[1]} m², transakcje z ostatnich ${String(Y.windowYears).replace('.', ',')} roku/lat). Wąs: środkowe 50% czynszów. To rentowność brutto z cen ofertowych: bez podatku, kosztów, remontów i pustostanów; rzeczywisty zwrot jest niższy. Dzielnice transakcjom przypisano po najbliższej ulicy ze znaną dzielnicą (do 2,5 km); pokazane tylko dzielnice z min. 5 ofertami i 30 transakcjami.</p>`;
     };
     paintFilters(); drawTrend(); drawYield();
-    const dzI = $('#rf-dz', v); dzI.onchange = () => { m.dzielnica = dzI.value.trim(); drawTrend(); };
-    const ul = $('#rf-ul', v); ul.onchange = () => { m.ulica = ul.value.trim(); paintFilters(); drawTrend(); };
+    const dzI = $('#rf-dz', v); dzI.onchange = () => { m.dzielnica = dzI.value; drawTrend(); };
+    const ul = $('#rf-ul', v); suggest(ul, S.streets); ul.onchange = () => { m.ulica = ul.value.trim(); paintFilters(); drawTrend(); };
   }];
 }
 

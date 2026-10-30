@@ -38,3 +38,19 @@ export const ICON = {
   ust: '<svg viewBox="0 0 24 24"><path d="M4 7h9m4 0h3M4 17h3m4 0h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>',
   back: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>',
 };
+
+// Własne podpowiedzi pod polem tekstowym (iOS w aplikacji z ekranu głównego często ignoruje <datalist>). list: tablica napisów.
+const plain = s => String(s || '').toLowerCase().replace(/ł/g, 'l').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+export function suggest(input, list, max = 8) {
+  const box = document.createElement('div'); box.className = 'suggest'; box.hidden = true; input.parentElement.style.position = 'relative'; input.parentElement.appendChild(box);
+  const idx = list.map(x => [x, plain(x)]);
+  const show = () => {
+    const q = plain(input.value.trim()); if (!q) { box.hidden = true; return; }
+    const m = idx.filter(([, p]) => p.startsWith(q)).concat(idx.filter(([, p]) => !p.startsWith(q) && p.includes(q))).slice(0, max);
+    if (!m.length || (m.length === 1 && plain(m[0][0]) === q)) { box.hidden = true; return; }
+    box.innerHTML = m.map(([x]) => `<button type="button" class="sg">${esc(x)}</button>`).join(''); box.hidden = false;
+  };
+  const pick = e => { const b = e.target.closest('.sg'); if (!b) return; e.preventDefault(); input.value = b.textContent; box.hidden = true; input.dispatchEvent(new Event('change', { bubbles: true })); input.blur(); };
+  box.addEventListener('pointerdown', pick);
+  input.addEventListener('input', show); input.addEventListener('focus', show); input.addEventListener('blur', () => setTimeout(() => { box.hidden = true; }, 200));
+}
