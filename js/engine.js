@@ -231,6 +231,19 @@ function rmFit(train, prev) {
   const w = rmSolve(A, b);
   return o => { const { f, idx } = feat(o); let z = 0; f.forEach((v, j) => { z += v * w[j]; }); idx.forEach(j => { z += w[j]; }); return Math.exp(z) * o.m2; };
 }
+// klasa wieku oferty do doboru reszt przy przedziale: 1 = od 2018 / „nowe" w tytule, 0 = starsze, null = nie wiadomo
+const noweOf = o => o.rok != null && o.rok > 0 ? (o.rok >= 2018 ? 1 : 0) : (segmentTags(o.tytul).nowe ? 1 : null);
+// Przedział z błędów testu wstecznego. 'base': reszty ofert o metrażu w ±30% (min. 40, inaczej wszystkie). 'seg': kwantyle ważone podobieństwem metrażu i klasy wieku.
+export function rangeFrom(res, ctr, ag, m2, sNowe, mode = 'base', P = {}) {
+  const widen = ag > 0.15 ? (P.widen ?? 1.25) : 1; let q25, q50, q75;
+  if (mode === 'seg') {
+    const sg = P.sg ?? 0.22, mm = P.mm ?? 0.35, un = P.un ?? 0.7, items = res.map(x => ({ v: x.e, w: Math.exp(-0.5 * (Math.log(x.m2 / m2) / sg) ** 2) * (sNowe == null || x.nowe == null ? un : x.nowe === sNowe ? 1 : mm) + 0.01 }));
+    q25 = wquantile(items, 0.25) * (P.scale ?? 1); q50 = wquantile(items, 0.5); q75 = wquantile(items, 0.75) * (P.scale ?? 1);
+  } else {
+    const near = res.filter(x => Math.abs(Math.log(x.m2 / m2)) < 0.3), R = (near.length >= 40 ? near : res).map(x => x.e); q25 = qOf(R, 0.25); q50 = qOf(R, 0.5); q75 = qOf(R, 0.75);
+  }
+  return { lo: ctr * Math.exp(q25 * widen), mid: ctr * Math.exp(q50), hi: ctr * Math.exp(q75 * widen) };
+}
 let _rm = null;
 export function rentModel(pool) {
   const key = pool.length + '|' + pool.reduce((a, o) => a + o.cena + o.m2 * 3 + (o.rok || 0) + (o.attrs ? Object.values(o.attrs).reduce((x, v) => x + v + 1, 0) : 0) + (o.tytul ? o.tytul.length : 0), 0);
@@ -245,17 +258,18 @@ export function rentModel(pool) {
     const res = [];                                       // błędy poza próbą: ln(rzeczywista / przewidziana)
     for (let f = 0; f < 10; f++) {
       const tr = pool.filter((_, i) => foldOf.get(i) !== f), fn = rmFit(tr, prev);
-      pool.forEach((o, i) => { if (foldOf.get(i) === f) res.push({ e: Math.log(o.cena / fn(o)), m2: o.m2 }); });
+      pool.forEach((o, i) => { if (foldOf.get(i) === f) res.push({ e: Math.log(o.cena / fn(o)), m2: o.m2, nowe: noweOf(o) }); });
     }
     const fit = rmFit(pool, prev), ae = res.map(r => Math.exp(Math.abs(r.e)) - 1).sort((a, b) => a - b);
     val = { n: pool.length, prev, wysPrev, res, mape: ae[Math.floor(ae.length / 2)], predict: s => fit({ ...s, wysoki: s.wysoki }) };
   }
   _rm = { key, val }; return val;
 }
+export let RANGE_MODE = 'base';
 const qOf = (a, q) => { const s = a.slice().sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.max(0, Math.round(q * (s.length - 1))))]; };
 
 // ---------- NAJEM (oferty z list) ----------
-export function estimateRent(offers, subject) {
+export function estimateRent(offers, subject, opts = {}) {
   const notes = [], unused = [], ask = [];
   const pool = offers.filter(o => o.wlaczone !== false && !(o.flagi && o.flagi.length) && o.m2 > 0 && o.cena > 0);
   const excludedFlag = offers.length - pool.length;
@@ -320,8 +334,8 @@ export function estimateRent(offers, subject) {
       attrs: { ...(subject.attrs || {}), ...(subject.meble === 'tak' ? { meble: 1 } : subject.meble === 'nie' ? { meble: 0 } : {}) }, wysoki: subject.standard === 'wysoki' ? 1 : subject.standard ? 0 : RM.wysPrev };
     const pB = RM.predict(sub), pA = r.total.mid, wB = 0.6, ag = Math.abs(Math.log(pA / pB));
     const ctr = Math.exp(wB * Math.log(pB) + (1 - wB) * Math.log(pA));
-    const near = RM.res.filter(x => Math.abs(Math.log(x.m2 / subject.m2)) < 0.3), R = (near.length >= 40 ? near : RM.res).map(x => x.e), widen = ag > 0.15 ? 1.25 : 1;
-    const lo = ctr * Math.exp(qOf(R, 0.25) * widen), mid = ctr * Math.exp(qOf(R, 0.5)), hi = ctr * Math.exp(qOf(R, 0.75) * widen), m2 = subject.m2;
+    const { lo, mid, hi } = rangeFrom(RM.res, ctr, ag, subject.m2, sNowe, opts.range || RANGE_MODE, opts.rangeParams), m2 = subject.m2;
+    Object.defineProperty(r, '_hy', { value: { RM, ctr, ag, pA, pB, sNowe, m2 }, enumerable: false });   // do testów wstecznych (nie trafia do zapisu)
     r.compsTotal = r.total; r.total = { lo, mid, hi }; r.pm2 = { lo: lo / m2, mid: mid / m2, hi: hi / m2 };
     r.rangeKind = 'przedział typowego błędu metody (środkowe 50% dopasowań w teście wstecznym)';
     r.model = { pA, pB, wB, agreement: ag, mape: RM.mape, n: RM.n };
