@@ -355,9 +355,18 @@ export function estimateRent(offers, subject, opts = {}) {
 
 // ---------- SPRZEDAŻ (transakcje RCN) ----------
 // rcn: { cols:[...], rows:[[...]] } -> obiekty (patrz rcn.js: rcnToObjects)
+
+// zmiana rok do roku mediany zł/m² (ostatnie 12 mies. vs poprzednie 12), min. 100 transakcji w każdym oknie; ograniczona do [-10%, +15%]
+function yoyOf(base, nowTs, rynek) {
+  const YR = 31557600000, A = [], B = [];
+  for (const t of base) { if (!t.ts || t.ts > nowTs || (rynek && t.rynek && t.rynek !== rynek)) continue; const a = nowTs - t.ts; if (a <= YR) A.push(t.cena / t.m2); else if (a <= 2 * YR) B.push(t.cena / t.m2); }
+  if (A.length < 100 || B.length < 100) return null;
+  const md = v => { v.sort((x, y) => x - y); return v[v.length >> 1]; };
+  return Math.max(-0.10, Math.min(0.15, md(A) / md(B) - 1));
+}
 export function estimateSale(tx, subject, opts = {}) {
   const now = opts.year || new Date().getFullYear();
-  const notes = [], unused = [];
+  const notes = [], unused = []; let r_g = null;
   const yearOfBuilding = opts.yearOf || (() => null);
   const base = tx.filter(t => t.funkcja === 'mieszkalna' && t.izby > 0 && t.m2 >= 12 && t.m2 <= 250 && t.cena > 0 && !t.wielolokalowa && t.pelne);
   const excluded = tx.length - base.length;
@@ -393,11 +402,15 @@ export function estimateSale(tx, subject, opts = {}) {
     const w = loc * sizeScore(t.m2, subject.m2) * roomScore(t.izby, subject.pokoje) * floorScore(t.kond, subject.pietro) * rec * yearScore(subject.rok, ybuild);
     if (w < 0.08) return null;
     return { id: t.id, kind: 'transakcja', pm2: t.cena / t.m2, cena: t.cena, m2: t.m2, pokoje: t.izby, pietro: t.kond, rok: t.rok, data: t.ts ? new Date(t.ts).toISOString().slice(0, 10) : null, rozdzielona: !!t.rozdzielona, sprz: t.sprz, rodzaj: t.rodzaj, rynek: t.rynek,
-      opis: [t.ulica, t.nr].filter(Boolean).join(' '), lat: t.lat, lon: t.lon, w, local, sameBuilding: !!same, rokBudowy: ybuild, src: 'RCN (ceny z aktów notarialnych)' };
+      opis: [t.ulica, t.nr].filter(Boolean).join(' '), lat: t.lat, lon: t.lon, w, local, sameBuilding: !!same, rokBudowy: ybuild, src: 'RCN (ceny z aktów notarialnych)', ageY };
   }).filter(Boolean).sort((a, b) => b.w - a.w).slice(0, 40);
   let sc = build(3, 0.3), win = 3;
   if (sc.length < 10) { sc = build(5, 0.4); win = 5; notes.push('Za mało transakcji z ostatnich 3 lat: poszerzono okno do 5 lat (starsze transakcje mają niższą wagę).'); }
   notes.push(`Okno czasu: ostatnie ${win} lat (data aktu). Cena z aktu notarialnego, nie z ogłoszenia.`);
+  // Korekta czasu (zwalidowana na RCN: błąd mediany 9,2% -> 7,9%, systematyczne zaniżenie 5,7% -> 0%): ceny rosną, więc starsze akty doprowadzamy
+  // do dzisiejszego poziomu lokalną dynamiką rok do roku (mediana zł/m² z ostatnich 12 mies. względem poprzednich 12, ten sam rynek). Bez korekty, gdy za mało danych (<100 transakcji w oknie).
+  const g = opts.noTimeAdj ? null : yoyOf(base, nowTs, subject.rynek);
+  if (g != null) { for (const c of sc) { const f = Math.pow(1 + g, c.ageY || 0); c.pm2raw = c.pm2; c.pm2 = c.pm2 * f; } notes.push(`Korekta czasu: ceny starszych aktów doprowadzono do dzisiejszego poziomu rynku (zmiana rok do roku w tym segmencie: ${g >= 0 ? '+' : ''}${(g * 100).toFixed(1).replace('.', ',')}%).`); r_g = g; }
   if (excluded) notes.push(`Odrzucono ${excluded} rekordów RCN, w których cena nie dotyczy jednego pełnego lokalu mieszkalnego (garaże, lokale usługowe, udziały, kilka lokali w jednej transakcji bez osobnej ceny lokalu).`);
   if (llKind) notes.push(`Lokalizacja podmiotu: ${llKind}.`); else notes.push('Nie ustalono współrzędnych podmiotu: lokalizację oceniono tylko po nazwie ulicy.');
   if (subject.rok != null) {
@@ -409,7 +422,7 @@ export function estimateSale(tx, subject, opts = {}) {
   const ce = [];
   if (!subLL) ce.push('brak współrzędnych podmiotu');
   const r = summarize(sc, subject, 'Szacunkowa wartość rynkowa', { notes, unused, confExtra: ce });
-  if (r.ok) { r.subLL = subLL; r.llKind = llKind; r.window = win; }
+  if (r.ok) { r.subLL = subLL; r.llKind = llKind; r.window = win; if (r_g != null) r.timeAdj = r_g; }
   return r;
 }
 
