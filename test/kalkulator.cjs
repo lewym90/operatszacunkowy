@@ -1,0 +1,21 @@
+let _pw; try { _pw = require('playwright'); } catch { _pw = require('/opt/npm-tools/node_modules/playwright'); } const { chromium } = _pw;
+const { spawn } = require('child_process'); const fs = require('fs'), path = require('path');
+const SP = process.argv[2], OUT = SP + '/shots-kalk'; fs.mkdirSync(OUT, { recursive: true });
+(async () => {
+  const srv = spawn('python3', ['-m', 'http.server', '8765', '-d', path.resolve(__dirname, '..')], { stdio: 'ignore' }); await new Promise(r => setTimeout(r, 800));
+  const b = await chromium.launch(); const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, serviceWorkers: 'block' });
+  const p = await ctx.newPage(); const errs = [], fail = []; p.on('pageerror', e => errs.push(e.message)); const ok = (c, m) => { console.log((c ? 'OK   ' : 'FAIL ') + m); if (!c) fail.push(m); };
+  await p.goto('http://localhost:8765/index.html#/kalkulator'); await p.waitForTimeout(1500);
+  const fill = (k, v) => p.fill(`[data-iv=${k}]`, String(v));
+  await fill('cena', 500000); await fill('kosztyInne', 3000); await fill('remont', 20000); await fill('czynsz', 2800); await fill('pustostan', 1); await fill('oplaty', 300); await p.waitForTimeout(300);
+  const hero = await p.$eval('#ires .hero .big', e => e.innerText); ok(/4,6%/.test(hero), 'zwrot netto po podatku 4,6%: ' + hero);
+  const st = await p.$eval('#ires .stats', e => e.innerText.replace(/\n/g, ' ')); ok(/6,7%/.test(st) && /5,1%/.test(st), 'brutto 6,7% i netto przed podatkiem 5,1%: ' + st);
+  await p.click('[data-ic=podatek] [data-v=liniowy]'); await p.waitForTimeout(200); ok(await p.$eval('[data-ic=podatek] [data-v=liniowy]', e => e.classList.contains('on')), 'chip podatku podświetlony');
+  const h2 = await p.$eval('#ires .hero .big', e => e.innerText); ok(h2 !== hero, 'zmiana podatku zmienia wynik: ' + h2);
+  await fill('wklad', 30); await fill('oproc', 7); await fill('lata', 25); await p.waitForTimeout(300);
+  ok(/Rata kredytu/.test(await p.$eval('#ires', e => e.innerText)), 'sekcja kredytu pojawia się');
+  ok(await p.$eval('#tabs a.on', e => /Rynek/i.test(e.textContent)), 'zakładka Rynek podświetlona na kalkulatorze');
+  await p.screenshot({ path: OUT + '/01.png', fullPage: true });
+  await p.reload(); await p.waitForTimeout(1200); ok(await p.$eval('[data-iv=cena]', e => e.value) === '500000', 'dane kalkulatora zapamiętane po odświeżeniu');
+  console.log('JS:', errs.length ? errs : 'brak'); await b.close(); srv.kill(); if (fail.length || errs.length) process.exit(1);
+})().catch(e => { console.error('TEST PADŁ', e); process.exit(1); });

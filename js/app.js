@@ -6,10 +6,11 @@ import { flags as offerFlags } from './parseOtodom.js';
 import { esc, $, $$, fmt, roundTo, toast, openSheet, closeSheet, countUp, saveFile, ICON, suggest } from './ui.js';
 import { buildReport, makePdf } from './report.js';
 import { createSync, DEFAULT_URL, encodeCode, decodeCode } from './sync.js';
+import { investCalc, sensitivity, TAX } from './invest.js';
 import { trendSeries, yieldByDistrict, districtAssigner, lineChart, barChart, bindCharts } from './rynek.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer } from './mapa.js';
 
-const VERSION = '1.13.3';
+const VERSION = '1.14.0';
 const S = { wlasne: [], teczki: [], foto: {},
   offers: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -86,6 +87,7 @@ function render() {
   closeSheet(); if (mapCtl) { try { mapCtl.destroy(); } catch { } mapCtl = null; }
   if (p[0] === 'mapa') [html, mount] = viewMapa();
   else if (p[0] === 'rynek') [html, mount] = viewRynek();
+  else if (p[0] === 'kalkulator') { tab = 'rynek'; [html, mount] = viewKalkulator(); }
   else if (p[0] === 'teczka') { tab = 'historia'; [html, mount] = viewTeczka(p[1]); }
   else if (p[0] === 'wycena') [html, mount] = viewWycena();
   else if (p[0] === 'oferty') [html, mount] = viewOferty();
@@ -95,7 +97,7 @@ function render() {
   else if (p[0] === 'wynik') { tab = 'wycena'; [html, mount] = viewWynik(p); }
   else if (p[0] === 'raport') { tab = 'wycena'; [html, mount] = viewRaport(p); }
   else [html, mount] = viewWycena();
-  const v = $('#view'); v.innerHTML = html; v.dataset.view = ['wycena', 'mapa', 'rynek', 'oferty', 'dane', 'historia', 'teczka', 'ust', 'wynik', 'raport'].includes(p[0]) ? p[0] : 'wycena';
+  const v = $('#view'); v.innerHTML = html; v.dataset.view = ['wycena', 'mapa', 'rynek', 'oferty', 'dane', 'historia', 'teczka', 'kalkulator', 'ust', 'wynik', 'raport'].includes(p[0]) ? p[0] : 'wycena';
   const topEl = v.querySelector(':scope > .top');   // reszta widoku w osobnym bloku: na szerokim ekranie układa się w kolumny
   if (topEl) { const body = document.createElement('div'); body.className = 'body'; while (topEl.nextSibling) body.appendChild(topEl.nextSibling); v.appendChild(body); }
   v.classList.remove('enter'); void v.offsetWidth; v.classList.add('enter');
@@ -268,6 +270,7 @@ function viewWynik(p) {
   if (sale && r.subLL && withLL.length >= 3) html += `<div class="card"><div class="eyebrow">Położenie porównań</div><div class="mapbox sm" id="resmap">${mapSVG(r)}</div><div id="reslegend"></div><p class="tiny muted" style="margin:8px 0 0">Złoty pierścień: lokal wyceniany (${esc(r.llKind || '')}). Większy punkt = większa waga porównania; kolor = cena za m². Dotknij punktu, aby zobaczyć transakcję.</p></div>`;
   html += `<div class="card"><div class="eyebrow">Porównania (${r.comps.length})</div><div id="comps">${r.comps.slice(0, 10).map((c, i) => compHTML(c, i, sale)).join('')}</div>${r.comps.length > 10 ? '<button class="btn ghost" data-act="more" style="margin-top:10px">Pokaż wszystkie</button>' : ''}</div>
   <div class="row">${saved ? '' : '<button class="btn ghost" data-act="save">Zapisz do historii</button>'}<button class="btn" data-act="report">Raport dla klienta</button></div>
+  <div class="gap"></div><button class="btn ghost" data-act="calc">Kalkulator inwestycyjny</button>
   ${saved ? `<div class="gap"></div><button class="btn ghost" data-act="tec">${e.teczka && S.teczki.some(t => t.id === e.teczka) ? 'Teczka: ' + esc(tName(S.teczki.find(t => t.id === e.teczka))) : 'Dodaj do teczki nieruchomości'}</button>` : ''}
   ${saved ? `<div class="gap"></div><button class="btn ghost" data-act="real">${e.real ? 'Zmień cenę rzeczywistą' : 'Wpisz cenę rzeczywistą (do kontroli trafności)'}</button>` : ''}`;
   return [html, v => {
@@ -275,6 +278,7 @@ function viewWynik(p) {
     $$('[data-cu]', v).forEach(el => countUp(el, +el.dataset.cu));
     const rmEl = $('#resmap', v); if (rmEl) resMap(rmEl, r, v);
     const more = $('[data-act="more"]', v); if (more) more.onclick = () => { $('#comps', v).innerHTML = r.comps.map((c, i) => compHTML(c, i, sale)).join(''); more.remove(); };
+    $('[data-act="calc"]', v).onclick = () => { if (sale) S.invest.cena = roundTo(r.total.mid, 1000); else S.invest.czynsz = roundTo(r.total.mid, 10); ls.set('am-invest', JSON.stringify(S.invest)); go('#/kalkulator'); };
     const tcb = $('[data-act="tec"]', v); if (tcb) tcb.onclick = () => teczkaSheet(e);
     const sv = $('[data-act="save"]', v); if (sv) sv.onclick = () => { e.id = uid(); const tc = (S.teczkaNext && S.teczki.find(t => t.id === S.teczkaNext)) || findTeczka(s); S.teczkaNext = null; if (tc) { e.teczka = tc.id; toast('Zapisano w teczce: ' + tName(tc)); } S.wyceny.unshift(e); save.wyceny(); toast('Zapisano w historii'); go('#/wynik/h/' + e.id); };
     $('[data-act="report"]', v).onclick = () => go(saved ? '#/raport/h/' + e.id : '#/raport/cur/' + s.tryb);
@@ -703,11 +707,13 @@ function viewUst() {
   const u = S.ust, f = (k, l, ph) => `<label class="field"><span>${l}</span><input class="in" data-k="${k}" value="${esc(u[k])}" placeholder="${ph || ''}"></label>`;
   const html = head('Ustawienia', 'Dane w raporcie') + `<div class="card"><div class="eyebrow">Biuro (nagłówek raportu)</div>${f('biuro', 'Nazwa biura')}${f('haslo', 'Hasło')}${f('agent', 'Sporządził (imię i nazwisko)')}${f('tel', 'Telefon')}${f('email', 'E-mail')}${f('www', 'Strona www')}</div>
     <div class="card" id="synccard"><div class="eyebrow">Synchronizacja urządzeń</div><div id="syncbody"><p class="small muted" style="margin:0">Sprawdzam…</p></div></div>
+    <div class="card"><div class="eyebrow">Dziennik błędów</div><div id="errlog"></div></div>
     <div class="card"><div class="eyebrow">O aplikacji</div><div class="kv"><span>Wersja</span><b>${VERSION}</b></div><div class="kv"><span>Dane</span><b>tylko na tym urządzeniu</b></div>
     <div class="gap"></div><button class="btn ghost" data-act="upd">Wymuś aktualizację aplikacji</button><p class="tiny muted" style="margin:8px 0 0">Pobiera najnowszą wersję. Twoje dane (oferty, RCN, historia) zostają.</p>
     <p class="small muted">Szacunek ma charakter orientacyjny i nie zastępuje wyceny rzeczoznawcy majątkowego. Wynik zawsze jest przedziałem z oceną pewności; cechy bez danych porównawczych nie zmieniają go.</p></div>`;
   return [html, v => {
     syncCard(v);
+    { let l = []; try { l = JSON.parse(ls.get('am-errlog') || '[]'); } catch { } $('#errlog', v).innerHTML = l.length ? l.slice(0, 8).map(x => `<div class="kv"><span>${new Date(x.t).toLocaleString('pl-PL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} · ${esc(x.v || '')}</span><b style="white-space:normal;text-align:right;font-size:12.5px">${esc(x.k)}: ${esc(x.m)}</b></div>`).join('') + '<div class="gap"></div><button class="btn ghost" data-act="errclr">Wyczyść dziennik</button>' : '<p class="small muted" style="margin:0">Brak błędów. Gdy aplikacja się zawiesi lub zachowa dziwnie, ślad zostanie tutaj (przydatne na tablecie z Androidem).</p>'; const ec = $('[data-act="errclr"]', v); if (ec) ec.onclick = () => { ls.del('am-errlog'); render(); }; }
     $$('[data-k]', v).forEach(i => i.oninput = () => { S.ust[i.dataset.k] = i.value; save.ust(); });
     $('[data-act="upd"]', v).onclick = async () => {
       toast('Aktualizuję…');
@@ -844,7 +850,8 @@ function viewRynek() {
     <label class="field"><span>Ulica (opcjonalnie: liczymy wokół niej)</span><input class="in" id="rf-ul" value="${esc(m.ulica)}" placeholder="całe miasto" autocomplete="off" autocapitalize="words"></label>
     <div class="field" id="rf-r"></div>
     <div id="rtrend" style="margin-top:6px"></div></div>
-  <div class="card"><div class="eyebrow">Rentowność najmu w dzielnicach</div><div id="ryield"></div></div>`;
+  <div class="card"><div class="eyebrow">Rentowność najmu w dzielnicach</div><div id="ryield"></div></div>
+  <a class="btn" href="#/kalkulator" style="display:block;text-align:center;text-decoration:none">Kalkulator inwestycyjny (zwrot netto)</a>`;
   return [html, v => {
     const paintFilters = () => {
       const f = m.kat === 'mieszkanie' || m.kat === 'dom' || m.kat === 'lokal';
@@ -893,17 +900,81 @@ function viewRynek() {
   }];
 }
 
+/* ---------- KALKULATOR INWESTYCYJNY ---------- */
+try { S.invest = JSON.parse(ls.get('am-invest') || 'null') || {}; } catch { S.invest = {}; }
+S.invest = { rynek: 'wtorny', podatek: 'ryczalt', pustostan: 1, ...S.invest };
+const zl = n => fmt(n) + ' zł', pct1 = x => (x < 0 ? '−' : '') + Math.abs(x).toFixed(1).replace('.', ',') + '%';
+function viewKalkulator() {
+  const I = S.invest, f = (k, l, ph = '', hint = '') => `<label class="field"><span>${l}</span><input class="in" data-iv="${k}" inputmode="decimal" value="${I[k] ?? ''}" placeholder="${ph}">${hint ? `<small class="tiny muted">${hint}</small>` : ''}</label>`;
+  const ls1 = S.last.sprzedaz?.res?.ok ? S.last.sprzedaz : null, ln = S.last.najem?.res?.ok ? S.last.najem : null;
+  const html = head('Kalkulator', 'Zwrot z inwestycji w najem', true) + `
+  ${ls1 || ln ? `<div class="card"><div class="eyebrow">Z ostatnich wycen</div><div class="row">${ls1 ? `<button class="btn ghost" data-act="from-s">Cena: ${fmt(roundTo(ls1.res.total.mid, 1000))} zł</button>` : ''}${ln ? `<button class="btn ghost" data-act="from-n">Czynsz: ${fmt(roundTo(ln.res.total.mid, 10))} zł</button>` : ''}</div></div>` : ''}
+  <div class="card"><div class="eyebrow">Zakup</div>${f('cena', 'Cena zakupu (zł)', 'np. 500000')}
+    <div class="field"><span>Rynek (od tego zależy PCC)</span><div class="chips" data-ic="rynek">${[['wtorny', 'Wtórny (PCC 2%)'], ['pierwotny', 'Pierwotny (bez PCC)']].map(([v, n]) => `<button type="button" class="chip ${I.rynek === v ? 'on' : ''}" data-v="${v}">${n}</button>`).join('')}</div></div>
+    ${f('pcc', 'PCC (zł, opcj.)', 'liczone automatycznie', 'Zostaw puste: 2% ceny na rynku wtórnym, 0 na pierwotnym.')}${f('kosztyInne', 'Notariusz, wpisy, prowizja (zł)', '0', 'Wpisz własne kwoty: nie zakładam żadnych stawek.')}${f('remont', 'Remont i wyposażenie (zł)', '0')}</div>
+  <div class="card"><div class="eyebrow">Najem</div>${f('czynsz', 'Czynsz miesięczny (zł)', 'np. 2800', 'Bez opłat administracyjnych płaconych przez najemcę.')}${f('pustostan', 'Pustostany (miesięcy w roku)', '1')}${f('oplaty', 'Koszty właściciela miesięcznie (zł)', '0', 'Fundusz remontowy, ubezpieczenie, drobne naprawy itp.')}${f('zarzad', 'Zarządzanie (% przychodu)', '0')}</div>
+  <div class="card"><div class="eyebrow">Podatek (orientacyjnie)</div><div class="chips" data-ic="podatek">${Object.entries(TAX).map(([k, t]) => `<button type="button" class="chip ${I.podatek === k ? 'on' : ''}" data-v="${k}">${k === 'ryczalt' ? 'Ryczałt' : k === 'skala' ? 'Skala' : 'Liniowy'}</button>`).join('')}</div>
+    <p class="tiny muted" id="taxnote" style="margin:8px 0 0"></p></div>
+  <div class="card"><div class="eyebrow">Kredyt (opcjonalnie)</div>${f('wklad', 'Wkład własny (% ceny)', 'puste = bez kredytu')}${f('oproc', 'Oprocentowanie (% rocznie)', '')}${f('lata', 'Okres (lata)', '25')}</div>
+  <div id="ires"></div>`;
+  return [html, v => {
+    $('[data-back]', v).onclick = () => history.length > 1 ? history.back() : go('#/rynek');
+    const num = s => { const n = parseFloat(String(s).replace(/\s/g, '').replace(',', '.')); return Number.isFinite(n) ? n : ''; };
+    const calc = () => {
+      ls.set('am-invest', JSON.stringify(I)); $('#taxnote', v).textContent = TAX[I.podatek].n + '. Bez składki zdrowotnej, ulg i kwoty wolnej; to wskazówka, nie porada podatkowa.';
+      const r = investCalc(I), box = $('#ires', v);
+      if (!r.ok) { box.innerHTML = `<div class="card"><p class="small muted" style="margin:0">${r.reason}</p></div>`; return; }
+      const sv = sensitivity(I);
+      box.innerHTML = `<div class="card hero"><div class="lbl">Zwrot netto po podatku</div><div class="big gold">${pct1(r.netPost)}</div><div class="sub">rocznie od całego poniesionego kosztu ${zl(r.koszt)}</div></div>
+      <div class="stats"><div class="stat"><b>${pct1(r.gross)}</b><span>brutto (czynsz / cena)</span></div><div class="stat"><b>${pct1(r.netPre)}</b><span>netto przed podatkiem</span></div><div class="stat"><b>${r.payback ? r.payback.toFixed(1).replace('.', ',') : '—'}</b><span>lat do zwrotu</span></div></div>
+      <div class="card"><div class="eyebrow">Rok w liczbach</div><div class="kv"><span>Przychód (czynsz za ${12 - (I.pustostan === '' ? 1 : I.pustostan)} mies.)</span><b>${zl(r.rev)}</b></div><div class="kv"><span>Koszty właściciela i zarządzanie</span><b>−${zl(r.opex)}</b></div><div class="kv"><span>Podatek</span><b>−${zl(r.tax)}</b></div><div class="kv"><span>Zysk po podatku</span><b>${zl(r.taxless)}</b></div>
+        ${r.loan ? `<div class="kv"><span>Rata kredytu (${zl(r.rata)} mies.)</span><b>−${zl(r.rata * 12)}</b></div><div class="kv"><span>Przepływ gotówki rocznie</span><b style="color:${r.cf >= 0 ? 'var(--ok)' : 'var(--bad)'}">${r.cf >= 0 ? '' : '−'}${zl(Math.abs(r.cf))}</b></div><div class="kv"><span>Przepływ miesięcznie</span><b style="color:${r.cf >= 0 ? 'var(--ok)' : 'var(--bad)'}">${r.cf >= 0 ? '' : '−'}${zl(Math.abs(r.cfMies))}</b></div><div class="kv"><span>Własny kapitał</span><b>${zl(r.equity)}</b></div><div class="kv"><span>Zwrot z kapitału własnego (gotówka)</span><b>${r.coc != null ? pct1(r.coc) : '—'}</b></div><p class="tiny muted" style="margin:8px 0 0">Odsetki w 1. roku ok. ${zl(r.interestYear1)}; w tym rachunku nie obniżają podatku (przy najmie prywatnym nie są kosztem). Zwrot z kapitału nie wlicza spłaty kapitału kredytu.</p>` : ''}</div>
+      <div class="card"><div class="eyebrow">A gdyby…</div>${barChart(sv.map(x => ({ name: x.name, y: x.y, sub: r.loan ? 'przepływ ' + zl(x.cf / 12) + ' mies.' : 'zysk po podatku ' + zl(x.cf) })), { ref: r.netPost, label: 'Zwrot netto w scenariuszach' }).replace(/miasto /g, 'bazowy ')}<p class="tiny muted" style="margin:8px 0 0">Zwrot netto po podatku w kilku scenariuszach. Czynsz ofertowy bywa wyższy od faktycznie uzyskiwanego, więc sprawdź też wariant −10%.</p></div>`;
+    };
+    calc();
+    $$('[data-iv]', v).forEach(i => i.addEventListener('input', () => { I[i.dataset.iv] = num(i.value); calc(); }));
+    $$('[data-ic]', v).forEach(g => $$('button', g).forEach(b => b.onclick = () => { I[g.dataset.ic] = b.dataset.v; $$('button', g).forEach(x => x.classList.toggle('on', x === b)); calc(); }));
+    const fs = $('[data-act="from-s"]', v); if (fs) fs.onclick = () => { I.cena = roundTo(ls1.res.total.mid, 1000); render(); };
+    const fn = $('[data-act="from-n"]', v); if (fn) fn.onclick = () => { I.czynsz = roundTo(ln.res.total.mid, 10); render(); };
+  }];
+}
+
+/* ---------- jedna karta naraz + dziennik błędów ---------- */
+// Dwie karty tej samej aplikacji mają wspólną bazę, ale osobną pamięć: nieaktualna karta potrafiła wysłać na serwer „usunięcia”. Blokada (Web Locks) pozwala pisać tylko jednej karcie.
+function lockOverlay(msg, steal) {
+  document.getElementById('lockov')?.remove(); const d = document.createElement('div'); d.id = 'lockov';
+  d.innerHTML = `<div class="lockbox"><h3>Aplikacja jest otwarta w innej karcie</h3><p>${msg}</p>${steal ? '<button class="btn" id="lk-use">Używaj tej karty</button>' : '<button class="btn" id="lk-re">Wczytaj ponownie</button>'}</div>`;
+  document.body.appendChild(d); const b = d.querySelector('button'); b.onclick = () => steal ? acquireLock(true).then(() => location.reload()) : location.reload();
+}
+async function acquireLock(steal = false) {
+  if (!navigator.locks) return true;
+  return new Promise(res => {
+    navigator.locks.request('am-wycena-app', steal ? { steal: true } : { ifAvailable: true }, lock => {
+      if (!lock) { res(false); return; }
+      document.getElementById('lockov')?.remove(); res(true);
+      return new Promise(() => { });                                   // trzymamy blokadę do zamknięcia karty
+    }).catch(() => { sync.freeze(); lockOverlay('Inna karta przejęła aplikację, więc ta przestała zapisywać dane. Zamknij ją albo wczytaj ponownie.', false); });
+  });
+}
+function logErr(kind, msg) { try { const l = JSON.parse(ls.get('am-errlog') || '[]'); l.unshift({ t: Date.now(), k: kind, m: String(msg).slice(0, 300), v: VERSION }); ls.set('am-errlog', JSON.stringify(l.slice(0, 30))); } catch { } }
+addEventListener('error', e => logErr('błąd', (e.message || '') + (e.filename ? ' @' + String(e.filename).split('/').pop() + ':' + e.lineno : '')));
+addEventListener('unhandledrejection', e => logErr('obietnica', e.reason && (e.reason.message || e.reason)));
+
 /* ---------- start ---------- */
 window.addEventListener('hashchange', render);
 document.addEventListener('click', e => { const b = e.target.closest('[data-back]'); if (b && !b.onclick) history.length > 1 ? history.back() : go('#/wycena'); });
-load().then(() => {
-  render(); sync.start(); checkRcn();
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkRcn(); });
-  setInterval(() => { if (document.visibilityState === 'visible') checkRcn(); }, 30 * 60e3);
+async function boot() {
+  const got = await acquireLock(false);
+  await load(); render();
+  if (!got) { sync.freeze(); lockOverlay('Ta aplikacja jest już otwarta w innej karcie lub oknie. Dwie karty naraz mogą wzajemnie psuć dane, więc ta karta nie zapisuje niczego. Zamknij tamtą kartę albo przejmij aplikację tutaj.', true); }
+  else { sync.start(); checkRcn(); }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && got) checkRcn(); });
+  setInterval(() => { if (got && document.visibilityState === 'visible') checkRcn(); }, 30 * 60e3);
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
     const had = !!navigator.serviceWorker.controller; let done = false;
     navigator.serviceWorker.addEventListener('controllerchange', () => { if (had && !done) { done = true; location.reload(); } });   // nowa wersja przejęła kontrolę: odśwież raz
     navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => { });
   }
-  window.__am = { S, save, render, go, sync, checkRcn, getMap: () => mapCtl, importOffers: (found, opt) => applyCollection(found, opt), statusFn };
-});
+  window.__am = { S, save, render, go, sync, checkRcn, got, getMap: () => mapCtl, importOffers: (found, opt) => applyCollection(found, opt), statusFn };
+}
+boot();

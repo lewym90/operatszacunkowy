@@ -26,7 +26,7 @@ export function decodeCode(s) {
  */
 export function createSync({ kv, adapters, hooks = {}, fetchFn = (...a) => fetch(...a), now = () => Date.now() }) {
   const status = { state: 'off', last: 0, error: '', pushed: 0, pulled: 0 };
-  let busy = false, again = false, timer = null, poll = null, massOK = false;
+  let busy = false, again = false, timer = null, poll = null, massOK = false, frozen = false;
   const emit = patch => { Object.assign(status, patch); hooks.onStatus && hooks.onStatus({ ...status }); };
 
   async function call(cfg, path, body) {
@@ -74,6 +74,7 @@ export function createSync({ kv, adapters, hooks = {}, fetchFn = (...a) => fetch
   }
 
   async function run() {
+    if (frozen) return;                                  // ta karta straciła prawo do zapisu (aplikacja otwarta w innej karcie)
     if (busy) { again = true; return; }
     const cfg = await kv.get('sync', null); if (!cfg) { emit({ state: 'off' }); return; }
     busy = true; again = false; emit({ state: 'syncing', error: '', pushed: 0, pulled: 0 });
@@ -145,5 +146,5 @@ export function createSync({ kv, adapters, hooks = {}, fetchFn = (...a) => fetch
     if (typeof document !== 'undefined') document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') run(); });
     if (typeof window !== 'undefined') window.addEventListener('online', () => run());
   }
-  return { allowMassDelete: () => { massOK = true; }, run, schedule, connect, disconnect, start, status: () => ({ ...status }), config: () => kv.get('sync', null) };
+  return { freeze: () => { frozen = true; clearTimeout(timer); clearInterval(poll); }, allowMassDelete: () => { massOK = true; }, run, schedule, connect, disconnect, start, status: () => ({ ...status }), config: () => kv.get('sync', null) };
 }

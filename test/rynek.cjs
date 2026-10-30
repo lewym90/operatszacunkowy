@@ -1,5 +1,5 @@
 // E2E zakładki Rynek: syntetyczne RCN z trendem +8%/rok i oferty w 3 dzielnicach; sprawdza wykresy, filtry i brak błędów.
-const { chromium } = require('/opt/npm-tools/node_modules/playwright'); const { spawn } = require('child_process'); const fs = require('fs'), path = require('path');
+let _pw; try { _pw = require('playwright'); } catch { _pw = require('/opt/npm-tools/node_modules/playwright'); } const { chromium } = _pw; const { spawn } = require('child_process'); const fs = require('fs'), path = require('path');
 const SP = process.argv[2], OUT = SP + '/shots-rynek'; fs.mkdirSync(OUT, { recursive: true });
 let seed = 11; const rnd = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
 const NOW = Date.now(), YR = 365.25 * 864e5;

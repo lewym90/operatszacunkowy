@@ -1,6 +1,6 @@
 // E2E: teczka nieruchomości (utworzenie z wyceny, zdjęcie, notatka, drugie wycenienie z automatycznym powiązaniem, wykres) i kontrola własnych umów.
 // Wymaga najpierw uruchomienia test/rynek.cjs (tworzy rcn_trend.json w katalogu roboczym).
-const { chromium } = require('/opt/npm-tools/node_modules/playwright'); const { spawn, execSync } = require('child_process'); const fs = require('fs'), path = require('path');
+let _pw; try { _pw = require('playwright'); } catch { _pw = require('/opt/npm-tools/node_modules/playwright'); } const { chromium } = _pw; const { spawn, execSync } = require('child_process'); const fs = require('fs'), path = require('path');
 const SP = process.argv[2], OUT = SP + '/shots-teczka'; fs.mkdirSync(OUT, { recursive: true });
 const rcn = SP + '/rcn_trend.json'; if (!fs.existsSync(rcn)) { console.error('brak ' + rcn + ' (uruchom najpierw rynek.cjs)'); process.exit(2); }
 const png = SP + '/foto-test.png'; execSync(`python3 -c "from PIL import Image; Image.new('RGB',(1600,1200),(180,140,60)).save('${png}')"`);

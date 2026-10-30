@@ -1,6 +1,6 @@
 // Przegląd wszystkich grup przycisków wyboru (.chips, .seg): po kliknięciu przycisk ma być podświetlony (klasa "on"),
 // a w grupach jednokrotnego wyboru pozostałe nie. Dane: rcn_trend.json z rynek.cjs + syntetyczne oferty.
-const { chromium } = require('/opt/npm-tools/node_modules/playwright'); const { spawn } = require('child_process'); const fs = require('fs'), path = require('path');
+let _pw; try { _pw = require('playwright'); } catch { _pw = require('/opt/npm-tools/node_modules/playwright'); } const { chromium } = _pw; const { spawn } = require('child_process'); const fs = require('fs'), path = require('path');
 const SP = process.argv[2], rcn = SP + '/rcn_trend.json';
 let seed = 3; const rnd = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
 const DZ = [{ n: 'Śródmieście', st: ['Lipowa', 'Narutowicza', 'Jasna'] }, { n: 'Wrotków', st: ['Granata', 'Wrotkowska', 'Hutnicza'] }, { n: 'Czuby', st: ['Dworska', 'Rudnicka', 'Wileńska'] }];
