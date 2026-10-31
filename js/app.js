@@ -11,7 +11,7 @@ import { LAYERS as OSM, loadPois, nearest } from './osm.js';
 import { exposure, trendSeries, yieldByDistrict, districtAssigner, lineChart, barChart, bindCharts } from './rynek.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer } from './mapa.js';
 
-const VERSION = '1.18.0';
+const VERSION = '1.18.1';
 const S = { wlasne: [], teczki: [], foto: {},
   offers: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -415,7 +415,7 @@ function viewOferty() {
   const dz = [...new Set(S.offers.map(o => o.dzielnica).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pl'));
   const html = head('Oferty', 'Ogłoszenia najmu w bazie') + safeBanner() + `
   <div class="card"><div id="of-filters">
-    <div class="field"><span>Status</span>${chips('status', [['', 'Wszystkie'], ['nowe', 'Nowe'], ['aktualne', 'Aktualne'], ['nieaktualne', 'Nieaktualne']])}</div>
+    <div class="field"><span>Status</span>${chips('status', [['', 'Wszystkie'], ['zmiany', 'Zmiany cen'], ['nowe', 'Nowe ogłoszenia'], ['aktualne', 'Aktualne'], ['nieaktualne', 'Nieaktualne']])}</div>
     <div class="field"><span>Liczba pokoi</span>${chips('pokoje', [['', 'Wszystkie'], ['1', '1 pokój'], ['2', '2 pokoje'], ['3', '3 i więcej']])}</div>
     <div class="field"><span>${M2S.mieszkanie[0]}</span>${chips('metraz', M2S.mieszkanie[1])}</div>
     <div class="field"><span>Dzielnica</span><select class="in" id="of-dz"><option value="">Wszystkie</option>${dz.map(d => `<option ${f.dz === d ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select></div>
@@ -427,7 +427,7 @@ function viewOferty() {
     const draw = () => {
       const [r0, r1] = rangeOf(f.metraz), ord = { nowe: 0, aktualne: 1, nieaktualne: 2 };
       const all = S.offers.map(o => [o, st(o)]);
-      const rows = all.filter(([o, s]) => (!f.status || s === f.status) && (f.pokoje === '' || (f.pokoje === '3' ? o.pokoje >= 3 : o.pokoje === +f.pokoje)) && (!f.metraz || (o.m2 >= r0 && o.m2 < r1)) && (!f.dz || o.dzielnica === f.dz)
+      const rows = all.filter(([o, s]) => (!f.status || (f.status === 'zmiany' ? !!(o.hc && o.hc.length > 1) : s === f.status)) && (f.pokoje === '' || (f.pokoje === '3' ? o.pokoje >= 3 : o.pokoje === +f.pokoje)) && (!f.metraz || (o.m2 >= r0 && o.m2 < r1)) && (!f.dz || o.dzielnica === f.dz)
         && f.attrs.every(k => o.attrs && o.attrs[k] === 1) && (!f.parking || (o.parking && o.parking.stan === f.parking))).sort((a, b) => ord[a[1]] - ord[b[1]] || (b[0].ts || 0) - (a[0].ts || 0));
       const shown = rows.slice(0, f.lim);
       const prevTxt = o => { const h = (o.hc || []).map(x => x[1]).slice(0, -1).reverse(); return h.length ? ` <span class="prev">(poprzednio ${h.map(x => fmt(x) + ' zł').join(', ')})</span>` : ''; };

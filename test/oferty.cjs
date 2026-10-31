@@ -29,6 +29,8 @@ const SP = process.argv[2]; const assert = require('assert');
   const pt2 = await p.$$eval('.orow .p', a => a.map(x => x.textContent)).then(a => a.find(t => /poprzednio/.test(t))); assert(/2\s?400 zł\s*\(poprzednio 2\s?500 zł, 2\s?100 zł\)/.test(pt2), 'wiele zmian: ' + pt2);
   const links = await p.$$eval('.orow a.oin', a => a.map(x => [x.href, x.target, x.rel])); assert.strictEqual(links.length, 8); assert(links[0][1] === '_blank' && /noopener/.test(links[0][2]));
   const first = await p.$eval('.orow .bd', e => e.textContent); assert.strictEqual(first, 'nowe');
+  await p.click('[data-of=status] [data-v=zmiany]'); assert.strictEqual(await p.$$eval('.orow', a => a.length), 1, 'zmiany cen'); assert(/poprzednio/.test(await p.$eval('.orow .p', e => e.textContent)));
+  await p.click('[data-of=status] [data-v=nowe]'); assert.strictEqual(await p.$$eval('.orow', a => a.length), 2, 'nowe ogłoszenia');
   await p.click('[data-of=status] [data-v=nieaktualne]'); assert.strictEqual(await p.$$eval('.orow', a => a.length), 2);
   await p.click('[data-of=status] [data-v=""]'); await p.click('[data-of=parking] [data-v=dodatkowo]'); assert.strictEqual(await p.$$eval('.orow', a => a.length), 2);
   await p.click('[data-of=parking] [data-v=""]'); await p.selectOption('#of-dz', 'Czuby'); const cz = await p.$$eval('.orow', a => a.length); assert.strictEqual(cz, 4, 'Czuby ' + cz);
