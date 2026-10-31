@@ -11,7 +11,7 @@ import { LAYERS as OSM, loadPois, nearest } from './osm.js';
 import { exposure, trendSeries, yieldByDistrict, districtAssigner, lineChart, barChart, bindCharts } from './rynek.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer } from './mapa.js';
 
-const VERSION = '1.17.0';
+const VERSION = '1.18.0';
 const S = { wlasne: [], teczki: [], foto: {},
   offers: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -430,11 +430,12 @@ function viewOferty() {
       const rows = all.filter(([o, s]) => (!f.status || s === f.status) && (f.pokoje === '' || (f.pokoje === '3' ? o.pokoje >= 3 : o.pokoje === +f.pokoje)) && (!f.metraz || (o.m2 >= r0 && o.m2 < r1)) && (!f.dz || o.dzielnica === f.dz)
         && f.attrs.every(k => o.attrs && o.attrs[k] === 1) && (!f.parking || (o.parking && o.parking.stan === f.parking))).sort((a, b) => ord[a[1]] - ord[b[1]] || (b[0].ts || 0) - (a[0].ts || 0));
       const shown = rows.slice(0, f.lim);
+      const prevTxt = o => { const h = (o.hc || []).map(x => x[1]).slice(0, -1).reverse(); return h.length ? ` <span class="prev">(poprzednio ${h.map(x => fmt(x) + ' zł').join(', ')})</span>` : ''; };
       const row = ([o, s]) => {
         const title = esc([o.ulica, o.dzielnica].filter(Boolean).join(', ') || 'Oferta najmu'), pk = parkNote(o.parking);
         const meta = `${String(o.m2).replace('.', ',')} m² · ${o.pokoje} pok.${o.pietro != null ? ' · ' + (o.pietro === 0 ? 'parter' : o.pietro + '. p.') : ''}${o.czynsz ? ' · czynsz adm. ' + fmt(o.czynsz) + ' zł' : ''}`;
         const badges = `${s !== 'aktualne' ? `<i class="bd ${s}">${s}</i>` : ''}${pk ? `<i class="bd park">${esc(pk)}</i>` : ''}${o.flagi && o.flagi.length ? '<i class="bd warn">podejrzana</i>' : ''}`;
-        const inner = `<div class="t"><b>${title}</b>${o.url ? '<span class="ext" aria-hidden="true">↗</span>' : ''}</div><div class="p">${fmt(o.cena)} zł</div><div class="m">${meta}</div><div class="b">${badges}</div>`;
+        const inner = `<div class="t"><b>${title}</b>${o.url ? '<span class="ext" aria-hidden="true">↗</span>' : ''}</div><div class="p">${fmt(o.cena)} zł${prevTxt(o)}</div><div class="m">${meta}</div><div class="b">${badges}</div>`;
         return `<div class="orow ${o.wlaczone === false ? 'dis' : ''}">${o.url ? `<a class="oin" href="${esc(o.url)}" target="_blank" rel="noopener noreferrer">${inner}</a>` : `<div class="oin">${inner}</div>`}<button type="button" class="otg" data-id="${o.id}" aria-label="${o.wlaczone === false ? 'Włącz ofertę do wycen' : 'Wyłącz ofertę z wycen'}">${o.wlaczone === false ? 'wyłączona' : 'w wycenach'}</button></div>`;
       };
       $('#of-list', v).innerHTML = S.offers.length ? `<div class="eyebrow">Pokazano ${fmt(shown.length)} z ${fmt(rows.length)} (w bazie ${fmt(S.offers.length)})</div>${shown.map(row).join('') || '<p class="small muted" style="margin:10px 0 0">Żadna oferta nie spełnia filtrów.</p>'}${rows.length > shown.length ? `<div class="gap"></div><button class="btn ghost" id="of-more">Pokaż więcej</button>` : ''}`
