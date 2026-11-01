@@ -7,11 +7,11 @@ import { esc, $, $$, fmt, roundTo, toast, openSheet, closeSheet, countUp, saveFi
 import { buildReport, makePdf } from './report.js';
 import { createSync, DEFAULT_URL, encodeCode, decodeCode } from './sync.js';
 import { investCalc, sensitivity, TAX } from './invest.js';
-import { LAYERS as OSM, loadPois, nearest } from './osm.js';
+import { LAYERS as OSM, loadPois, nearest, osmUrl } from './osm.js';
 import { exposure, trendSeries, yieldByDistrict, districtAssigner, lineChart, barChart, bindCharts } from './rynek.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer } from './mapa.js';
 
-const VERSION = '1.18.1';
+const VERSION = '1.19.0';
 const S = { wlasne: [], teczki: [], foto: {},
   offers: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -855,7 +855,7 @@ function viewMapa() {
   <div class="card"><div id="mapfilters">${filters()}</div></div>
   <div class="card mapcard"><div class="mapbox" id="mapbox"><div class="empty">Ładuję mapę…</div></div><div id="maplegend" style="margin-top:10px"></div><button class="tilesw" id="tilesw" type="button"></button></div>
   <div class="card"><div id="mapstat" class="small muted"></div></div>
-  <div class="card"><div class="eyebrow">Warstwy z OpenStreetMap</div><div class="chips" data-multi="1" id="olay">${Object.entries(OSM).map(([k, l]) => `<button type="button" class="chip" data-v="${k}">${l.n}</button>`).join('')}</div><div id="olst" class="tiny muted" style="margin-top:10px">Dotknij, aby pokazać na mapie. Dane pobierane z OpenStreetMap i zapamiętywane na 30 dni.</div></div>`;
+  <div class="card"><div class="eyebrow">Warstwy z OpenStreetMap</div><div class="chips" data-multi="1" id="olay">${Object.entries(OSM).map(([k, l]) => `<button type="button" class="chip" data-v="${k}">${l.n}</button>`).join('')}</div><div id="olst" class="tiny muted" style="margin-top:10px">Dotknij, aby pokazać na mapie. Dane z OpenStreetMap, odświeżane co tydzień na serwerze.</div></div>`;
   return [html, async v => {
     let ctl = null, subj = S.last.sprzedaz?.res?.ok && (S.last.sprzedaz.subj.kat || 'mieszkanie') === 'mieszkanie' ? S.last.sprzedaz.res.subLL : null;
     const stat = t => { $('#mapstat', v).innerHTML = t; };
@@ -895,9 +895,9 @@ function viewMapa() {
     tilesBtn.onclick = () => { ls.set('am-tiles', ls.get('am-tiles') === 'light' ? 'dark' : 'light'); applyTiles(); }; applyTiles();
     const olay = {};
     const olStatus = async () => {
-      const on = Object.keys(olay).filter(k => olay[k]), box = $('#olst', v); if (!on.length) { box.textContent = 'Dotknij, aby pokazać na mapie. Dane pobierane z OpenStreetMap i zapamiętywane na 30 dni.'; return; }
+      const on = Object.keys(olay).filter(k => olay[k]), box = $('#olst', v); if (!on.length) { box.textContent = 'Dotknij, aby pokazać na mapie. Dane z OpenStreetMap, odświeżane co tydzień na serwerze.'; return; }
       const ls = S.last.sprzedaz; const ll = ls?.res?.ok ? ls.res.subLL : subj; const parts = [];
-      if (ll) for (const k of on) { try { const { pts } = await loadPois(k); const n = nearest(pts, ll); if (n) parts.push(`${OSM[k].one}: ${n.m < 1000 ? n.m + ' m' : (n.m / 1000).toFixed(1).replace('.', ',') + ' km'}${n.p.name ? ' (' + esc(n.p.name) + ')' : ''}`); } catch { } }
+      if (ll) for (const k of on) { try { const { pts } = await loadPois(k, { url: osmUrl(S.ust.rcnUrl) }); const n = nearest(pts, ll); if (n) parts.push(`${OSM[k].one}: ${n.m < 1000 ? n.m + ' m' : (n.m / 1000).toFixed(1).replace('.', ',') + ' km'}${n.p.name ? ' (' + esc(n.p.name) + ')' : ''}`); } catch { } }
       box.innerHTML = (parts.length ? `Od ostatnio wycenianej nieruchomości (w linii prostej), najbliżej: ${parts.join(', ')}. ` : '') + '© współtwórcy OpenStreetMap.';
     };
     $$('#olay button', v).forEach(b => b.onclick = async () => {
@@ -905,7 +905,7 @@ function viewMapa() {
       if (olay[k]) { olay[k].remove(); olay[k] = null; b.classList.remove('on'); return olStatus(); }
       b.classList.add('on'); $('#olst', v).textContent = 'Pobieram dane…';
       try {
-        const { pts } = await loadPois(k), g = ctl.L.layerGroup();
+        const { pts } = await loadPois(k, { url: osmUrl(S.ust.rcnUrl) }), g = ctl.L.layerGroup();
         for (const p of pts) ctl.L.circleMarker([p.lat, p.lon], { radius: 4, weight: 1, color: 'rgba(11,11,13,.9)', fillColor: OSM[k].color, fillOpacity: .95 }).bindTooltip(p.name ? esc(p.name) : OSM[k].one).addTo(g);
         g.addTo(ctl.map); olay[k] = g; await olStatus();
       } catch (e) { b.classList.remove('on'); $('#olst', v).textContent = e.message; }

@@ -8,7 +8,7 @@ const offers = []; for (let i = 0; i < 150; i++) { const d = DZ[i % 3], m2 = Mat
 (async () => {
   const srv = spawn('python3', ['-m', 'http.server', '8765', '-d', path.resolve(__dirname, '..')], { stdio: 'ignore' }); await new Promise(r => setTimeout(r, 800));
   const b = await chromium.launch(); const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, serviceWorkers: 'block' });
-  await ctx.route(/overpass/, r => r.fulfill({ contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ elements: [{ type: 'node', lat: 51.246, lon: 22.568, tags: { name: 'Test' } }, { type: 'way', center: { lat: 51.25, lon: 22.57 }, tags: {} }] }) }));
+  await ctx.route(/osm_lublin\.json/, r => r.fulfill({ contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ meta: {}, layers: { przystanki: [[51.246, 22.568]], szkoly: [[51.25, 22.57]], przedszkola: [[51.25, 22.57]], sklepy: [[51.25, 22.57]], parki: [[51.25, 22.57]], zdrowie: [[51.25, 22.57]], uczelnie: [[51.25, 22.57]] } }) }));
   const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push('PAGEERROR ' + e.message)); p.on('dialog', d => d.accept());
   await p.goto('http://localhost:8765/index.html#/dane'); await p.waitForTimeout(2500); await p.setInputFiles('#frcn', rcn); await p.waitForTimeout(2500);
   await p.evaluate(o => { window.__am.S.offers = o; }, offers);
@@ -36,7 +36,7 @@ const offers = []; for (let i = 0; i < 150; i++) { const d = DZ[i % 3], m2 = Mat
   const go = h => async () => { await p.goto('http://localhost:8765/index.html' + h); await p.waitForTimeout(900); };
   await audit('Wycena sprzedaż', go('#/wycena'));
   await audit('Wycena najem', async () => { await go('#/wycena')(); await p.evaluate(() => { window.__am.S.form.tryb = 'najem'; window.__am.render(); }); });
-  await audit('Mapa', go('#/mapa')); await audit('Rynek', go('#/rynek')); await audit('Oferty', go('#/oferty')); await audit('Historia', go('#/historia')); await audit('Dane', go('#/dane')); await audit('Ustawienia', go('#/ust'));
+  await p.evaluate(() => { window.__am.S.ust.rcnUrl = 'http://localhost:1/operat-data/rcn_lublin.json'; }); await audit('Mapa', go('#/mapa')); await audit('Rynek', go('#/rynek')); await audit('Oferty', go('#/oferty')); await audit('Historia', go('#/historia')); await audit('Dane', go('#/dane')); await audit('Ustawienia', go('#/ust'));
   await audit('Umowa (arkusz)', async () => { await go('#/dane')(); await p.click('[data-act=own]'); });
   await audit('Import (arkusz filtrów)', async () => { await go('#/dane')(); await p.evaluate(() => document.querySelector('[data-act=pdf]') && 0); });
   console.log('sprawdzonych przycisków:', checked); console.log(bad.length ? 'BŁĘDY PODŚWIETLENIA:\n' + bad.join('\n') : 'wszystkie przyciski poprawnie się podświetlają'); console.log('JS:', errs.length ? errs : 'brak');

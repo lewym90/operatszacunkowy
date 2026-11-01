@@ -1,5 +1,4 @@
-// Warstwy mapy z OpenStreetMap (punkt 28): przystanki, szkoły, przedszkola, sklepy, parki. Dane pobiera przeglądarka z publicznego serwisu Overpass
-// (dane © współtwórcy OpenStreetMap, licencja ODbL), zapisuje je lokalnie na 30 dni. Nic nie jest wysyłane poza zapytaniem o obszar Lublina.
+// Warstwy mapy z OpenStreetMap: przystanki, szkoły, przedszkola, sklepy, parki, przychodnie, uczelnie (dane © współtwórcy OpenStreetMap, ODbL).
 import * as store from './store.js';
 import { haversine } from './engine.js';
 export const LAYERS = {
@@ -8,22 +7,26 @@ export const LAYERS = {
   przedszkola: { n: 'Przedszkola', color: '#E2795C', q: 'nwr["amenity"="kindergarten"]', one: 'przedszkole' },
   sklepy: { n: 'Sklepy', color: '#A5CF7E', q: 'nwr["shop"="supermarket"]', one: 'supermarket' },
   parki: { n: 'Parki', color: '#5EB1A5', q: 'nwr["leisure"="park"]', one: 'park' },
+  zdrowie: { n: 'Przychodnie', color: '#B58BD6', one: 'przychodnia lub szpital' },
+  uczelnie: { n: 'Uczelnie', color: '#E6A15A', one: 'uczelnia' },
 };
-const BBOX = '51.15,22.38,51.33,22.73', TTL = 30 * 864e5, URLS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
-export function parseOverpass(j) {
-  const out = []; for (const e of (j && j.elements) || []) { const la = e.lat ?? e.center?.lat, lo = e.lon ?? e.center?.lon; if (la == null || lo == null) continue; out.push({ lat: +la.toFixed(5), lon: +lo.toFixed(5), name: (e.tags && (e.tags.name || e.tags.ref)) || '' }); }
-  return out;
+const BBOX = '51.15,22.38,51.33,22.73', TTL = 864e5;
+// Dane punktów przygotowuje serwer (osm_lublin.json, odświeżany co tydzień), aplikacja tylko go czyta i zapamiętuje na 24 h.
+export const osmUrl = rcnUrl => rcnUrl ? rcnUrl.replace(/[^/]*$/, 'osm_lublin.json') : '';
+export async function loadAll({ url, force = false, fetchFn = fetch } = {}) {
+  const c = await store.get('osm-file');
+  if (!force && c && c.ts && Date.now() - c.ts < TTL && c.layers) return { layers: c.layers, meta: c.meta, cached: true };
+  let err = null;
+  if (!url) err = 'brak adresu danych (Dane → adres pliku z serwera)';
+  else try { const r = await fetchFn(url, { cache: 'no-store' }); if (!r.ok) throw new Error(r.status === 404 ? 'serwer nie ma jeszcze pliku z otoczeniem (uruchom install_osm.sh)' : 'HTTP ' + r.status); const j = await r.json(); if (!j || !j.layers) throw new Error('zły format pliku'); await store.set('osm-file', { ts: Date.now(), layers: j.layers, meta: j.meta }); return { layers: j.layers, meta: j.meta, cached: false }; }
+  catch (e) { err = e.message; }
+  if (c && c.layers) return { layers: c.layers, meta: c.meta, cached: true, stale: true };
+  throw new Error('Dane otoczenia niedostępne: ' + err + '.');
 }
-export async function loadPois(key, { force = false, fetchFn = fetch } = {}) {
-  const L = LAYERS[key]; if (!L) throw new Error('nieznana warstwa');
-  const c = await store.get('osm-' + key);
-  if (!force && c && c.ts && Date.now() - c.ts < TTL && c.pts) return { pts: c.pts, cached: true, ts: c.ts };
-  const q = `[out:json][timeout:40];${L.q}(${BBOX});out center tags;`; let lastErr = null;
-  for (const u of URLS) {
-    try { const r = await fetchFn(u + '?data=' + encodeURIComponent(q)); if (!r.ok) throw new Error('HTTP ' + r.status); const pts = parseOverpass(await r.json()); if (!pts.length) throw new Error('pusta odpowiedź'); await store.set('osm-' + key, { ts: Date.now(), pts }); return { pts, cached: false, ts: Date.now() }; }
-    catch (e) { lastErr = e; }
-  }
-  if (c && c.pts) return { pts: c.pts, cached: true, stale: true, ts: c.ts };
-  throw new Error('Nie udało się pobrać danych z OpenStreetMap (' + (lastErr && lastErr.message) + '). Spróbuj za chwilę.');
+export async function loadPois(key, opts = {}) {
+  if (!LAYERS[key]) throw new Error('nieznana warstwa');
+  const { layers } = await loadAll(opts); const pts = (layers[key] || []).map(p => ({ lat: p[0], lon: p[1] }));
+  if (!pts.length) throw new Error('brak punktów tej warstwy w pliku z serwera');
+  return { pts };
 }
 export function nearest(pts, ll) { let b = null, bd = 1e9; for (const p of pts) { const d = haversine(ll, [p.lat, p.lon]); if (d < bd) { bd = d; b = p; } } return b ? { p: b, m: Math.round(bd * 1000) } : null; }

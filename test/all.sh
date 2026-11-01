@@ -15,4 +15,5 @@ node test/teczka.cjs "$SP"
 node test/raport.cjs "$SP"
 node test/kalkulator.cjs "$SP"
 node test/osm.cjs
+python3 test/osm_analiza_test.py
 echo "WSZYSTKIE TESTY OK"

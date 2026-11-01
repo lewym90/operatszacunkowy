@@ -22,3 +22,7 @@ Skrypt wypisze klucz. Potem w Caddy trzeba przekierować `/operat-sync/*` na `12
 
 - `GET  /v1/ping`  → `{ok, v, records}`
 - `POST /v1/sync`  `{since, changes:[{c,id,ts,del?,d?}]}` → `{cursor, more, records:[...]}`
+
+## Punkty otoczenia z OpenStreetMap (osm_lublin.json)
+`sudo bash install_osm.sh` (z katalogu server/ pobranego repo) kopiuje tools/osm_export.py, włącza cotygodniowy timer operat-osm.timer i od razu robi pierwsze pobranie do /var/www/operat-data/osm_lublin.json. Aplikacja czyta plik spod tego samego adresu co rcn_lublin.json. Podgląd: `journalctl -u operat-osm -f`. Za mały lub pusty wynik nie podmienia poprzedniego pliku.
+Test, czy otoczenie poprawia wycenę: `python3 tools/osm_analiza.py /var/www/operat-data/rcn_lublin.json /var/www/operat-data/osm_lublin.json`.
