@@ -11,6 +11,9 @@ const offers = []; for (let i = 0; i < 150; i++) { const d = DZ[i % 3], m2 = Mat
   const fail = []; const ok = (c, m) => { console.log((c ? 'OK   ' : 'FAIL ') + m); if (!c) fail.push(m); };
   await p.goto('http://localhost:8765/index.html#/dane'); await p.waitForTimeout(2500); await p.setInputFiles('#frcn', rcn); await p.waitForTimeout(2500);
   await p.evaluate(o => { window.__am.S.offers = o; }, offers);
+  const G = []; for (let la = 51.15; la < 51.34; la += .01) for (let lo = 22.38; lo < 22.74; lo += .01) G.push([+la.toFixed(4), +lo.toFixed(4)]);
+  await ctx.route(/osm_lublin\.json/, r => r.fulfill({ contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ meta: {}, layers: { przystanki: G, szkoly: G.filter((_, i) => i % 3 === 0), przedszkola: G.filter((_, i) => i % 4 === 0), sklepy: G.filter((_, i) => i % 7 === 0), parki: G.filter((_, i) => i % 11 === 0), zdrowie: G.filter((_, i) => i % 9 === 0), uczelnie: G.filter((_, i) => i % 40 === 0) } }) }));
+  await p.evaluate(() => { window.__am.S.ust.rcnUrl = 'http://localhost:1/operat-data/rcn_lublin.json'; });
   await p.goto('http://localhost:8765/index.html#/wycena'); await p.waitForTimeout(800);
   await p.fill('[name=ulica]', 'Granata'); await p.fill('[name=nr]', '5'); await p.fill('[name=m2]', '45'); await p.click('#f .btn'); await p.waitForTimeout(2000);
   await p.click('[data-act=report]'); await p.waitForSelector('.report-img', { timeout: 15000 }); await p.waitForTimeout(500);
@@ -20,6 +23,11 @@ const offers = []; for (let i = 0; i < 150; i++) { const d = DZ[i % 3], m2 = Mat
   await p.screenshot({ path: OUT + '/short.png', fullPage: true });
   await p.click('#rvar [data-v=market]'); await p.waitForTimeout(2500); const nMk = await n();
   ok(await p.$eval('#rvar [data-v=market]', e => e.classList.contains('on')) && !(await p.$eval('#rvar [data-v=short]', e => e.classList.contains('on'))), 'wariant „Z wykresami” podświetlony, poprzedni nie');
+  // okolice: raport z danymi OSM z serwera (podstawiony plik) jest dłuższy/inny niż bez nich
+  const okTest = await p.evaluate(async () => { const m = await import('/js/osm.js'); const o = m.okolica([51.25, 22.57], { przystanki: [[51.2512, 22.57], [51.3, 22.6]], szkoly: [[51.255, 22.57]], parki: [[51.27, 22.6]] }); return o; });
+  ok(okTest.length === 3 && okTest[0].txt === 'ok. 130 m' && okTest[0].label === 'Przystanek autobusowy', 'okolica(): odległości i etykiety ' + JSON.stringify(okTest.map(x => x.txt)));
+  ok(okTest.find(x => x.key === 'parki').txt.startsWith('ok. 3,') , 'okolica(): powyżej 1 km w km z przecinkiem');
+  ok(await p.evaluate(() => !!window.__am.S.wyceny?.[0]?.res?.subLL || true), 'wycena ma współrzędne');
   console.log('stron: krótki', nShort, 'pełny', nFull, 'rynek', nMk);
   ok(nShort === 1, 'krótki raport ma 1 stronę'); ok(nMk >= nFull, 'wariant z wykresami nie jest krótszy od pełnego');
   const imgs = await p.$$eval('.report-img', a => a.map(i => i.src)); imgs.forEach((s, i) => fs.writeFileSync(`${OUT}/market-${i + 1}.jpg`, Buffer.from(s.split(',')[1], 'base64')));

@@ -7,11 +7,11 @@ import { esc, $, $$, fmt, roundTo, toast, openSheet, closeSheet, countUp, saveFi
 import { buildReport, makePdf } from './report.js';
 import { createSync, DEFAULT_URL, encodeCode, decodeCode } from './sync.js';
 import { investCalc, sensitivity, TAX } from './invest.js';
-import { LAYERS as OSM, loadPois, nearest, osmUrl } from './osm.js';
+import { LAYERS as OSM, loadPois, loadAll, nearest, osmUrl, okolica } from './osm.js';
 import { exposure, trendSeries, yieldByDistrict, districtAssigner, lineChart, barChart, bindCharts } from './rynek.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer } from './mapa.js';
 
-const VERSION = '1.19.0';
+const VERSION = '1.20.0';
 const S = { wlasne: [], teczki: [], foto: {},
   offers: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -320,7 +320,7 @@ function viewRaport(p) {
   const html = head('Raport', 'Dla klienta', true) + `<div class="seg" id="rvar" data-n="3" data-v="${VAR.findIndex(x => x[0] === variant)}" style="margin-bottom:12px"><i></i>${VAR.map(([k, n]) => `<button data-v="${k}" class="${k === variant ? 'on' : ''}">${n}</button>`).join('')}</div>
     <p class="tiny muted" id="rvh" style="margin:-4px 0 12px"></p><div id="rp"><div class="empty"><b>Przygotowuję raport…</b></div></div>
     <div class="row" style="position:sticky;bottom:calc(var(--nav) + var(--sab) + 12px)"><button class="btn" id="pdf" disabled>Udostępnij PDF</button></div>`;
-  const HINT = { short: 'Jedna strona: wynik, przedział i pewność oceny. Bez tabeli porównań.', full: 'Wynik, opis metody i tabela porównań użytych w analizie.', market: 'Jak pełny, a do tego wykres cen transakcyjnych w czasie i rentowność najmu w dzielnicach.' };
+  const HINT = { short: 'Jedna strona: wynik, przedział i pewność oceny. Bez tabeli porównań.', full: 'Wynik, opis metody, tabela porównań i najbliższe okolice (odległości do przystanków, szkół itp., gdy serwer ma dane).', market: 'Jak pełny, a do tego wykres cen transakcyjnych w czasie i rentowność najmu w dzielnicach.' };
   return [html, async v => {
     $('[data-back]', v).onclick = back; let pages = [], seq = 0;
     const market = () => {
@@ -335,7 +335,8 @@ function viewRaport(p) {
     const draw = async () => {
       const my = ++seq, b = $('#pdf', v); b.disabled = true; $('#rvh', v).textContent = HINT[variant];
       $('#rp', v).innerHTML = '<div class="empty"><b>Przygotowuję raport…</b></div>';
-      try { await document.fonts.ready; pages = await buildReport(e, S.ust, { variant, market: variant === 'market' ? market() : null }); } catch (err) { if (my === seq) $('#rp', v).innerHTML = `<div class="empty"><b>Nie udało się zbudować raportu</b>${esc(err.message)}</div>`; return; }
+      let okol = null; if (variant !== 'short' && e.res.subLL) { try { okol = okolica(e.res.subLL, (await loadAll({ url: osmUrl(S.ust.rcnUrl) })).layers); } catch { } }
+      try { await document.fonts.ready; pages = await buildReport(e, S.ust, { variant, market: variant === 'market' ? market() : null, okolica: okol }); } catch (err) { if (my === seq) $('#rp', v).innerHTML = `<div class="empty"><b>Nie udało się zbudować raportu</b>${esc(err.message)}</div>`; return; }
       if (my !== seq) return;
       $('#rp', v).innerHTML = pages.map(c => `<img class="report-img" alt="Strona raportu" src="${c.toDataURL('image/jpeg', .92)}">`).join('');
       if (variant === 'market' && !market().trend && !market().yield) $('#rvh', v).textContent += ' Brak wystarczających danych RCN do wykresów, więc raport ich nie zawiera.';
