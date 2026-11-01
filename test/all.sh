@@ -16,4 +16,5 @@ node test/raport.cjs "$SP"
 node test/kalkulator.cjs "$SP"
 node test/osm.cjs
 python3 test/osm_analiza_test.py
+python3 test/osm_silnik_test.py
 echo "WSZYSTKIE TESTY OK"
