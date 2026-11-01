@@ -7,30 +7,34 @@ Metoda: ridge na log(cena/m²), walidacja krzyżowa 5-krotna (błąd liczony na 
   M1+warstwa = M1 + otoczenie jednej warstwy, M1+wszystkie = M1 + otoczenie wszystkich warstw
   M0+otoczenie = M0 + otoczenie wszystkich warstw (co samo otoczenie mówi o cenie, bez położenia)
 Użycie: python3 osm_analiza.py rcn_lublin.json osm_lublin.json"""
-import json, math, random, statistics, sys
+import json, math, random, re, statistics, sys
 
 def load(p): return json.load(open(p, encoding='utf-8'))
 
 def prep(rcn):
+    # Te same reguły co w aplikacji (js/rcn.js + engine.js): wolny rynek lub pierwotna bezprzetargowa, pełna własność, cena samego lokalu.
     C = {c: i for i, c in enumerate(rcn['cols'])}; cnt = {}
     for r in rcn['rows']: cnt[r[C['tran']]] = cnt.get(r[C['tran']], 0) + 1
-    rows = []
+    rows, seen = [], set()
     for r in rcn['rows']:
         g = lambda k: r[C[k]]
-        if g('funkcja') != 'mieszkalna' or g('rynek') != 'wolnyRynek' or g('udzial') or cnt.get(g('tran'), 0) != 1: continue
-        if not g('cena') or not g('m2') or g('lat') is None or g('lon') is None or not (15 <= g('m2') <= 150): continue
-        d = str(g('data') or ''); t = None
-        try: t = int(d[:4]) + (int(d[5:7]) - 1) / 12
-        except Exception:
-            if g('rok'): t = g('rok') + .5
-        if t is None or not (2015 <= t <= 2030): continue
-        rows.append(dict(y=math.log(g('cena') / g('m2')), m2=g('m2'), izby=g('izby') or 0, t=t, lat=g('lat'), lon=g('lon')))
+        if g('funkcja') != 'mieszkalna': continue
+        if not (g('rodzaj') == 'wolnyRynek' or (g('rodzaj') == 'sprzedazBezprzetargowa' and g('rynek') == 'rynekPierwotny')): continue
+        key = (g('id'), g('tran'))
+        if key in seen: continue
+        seen.add(key)
+        u = g('udzial')
+        if not (u is None or u == '' or re.match(r'^1(/1|\.0+)?$', str(u).strip())): continue
+        cenaTr = float(g('cena') or 0); cenaN = float(g('cena_nier') or 0); multi = cnt[g('tran')] > 1; split = multi and 0 < cenaN < cenaTr - 1
+        if multi and not split: continue
+        cena = cenaN if split else cenaTr; m2 = float(g('m2') or 0); izby = float(g('izby') or 0)
+        d = str(g('data') or '')
+        if not re.match(r'^\d{4}-\d{2}-\d{2}$', d) or not (2005 <= int(d[:4]) <= 2030): continue
+        if not (cena > 0 and 12 <= m2 <= 250 and izby > 0) or g('lat') is None or g('lon') is None: continue
+        rows.append(dict(y=math.log(cena / m2), m2=m2, izby=izby, t=int(d[:4]) + (int(d[5:7]) - 1) / 12, lat=g('lat'), lon=g('lon')))
+    if len(rows) < 100: return rows
     ys = sorted(r['y'] for r in rows); lo, hi = ys[int(len(ys) * .01)], ys[int(len(ys) * .99)]
-    rows = [r for r in rows if lo <= r['y'] <= hi]
-    iz = statistics.median([r['izby'] for r in rows if r['izby']] or [2])
-    for r in rows:
-        if not r['izby']: r['izby'] = iz
-    return rows
+    return [r for r in rows if lo <= r['y'] <= hi]
 
 KX = 111.32 * 0.6258  # km na stopień długości przy ~51,2°N
 KY = 111.32
@@ -102,8 +106,9 @@ def knn_feature(rows, train_idx, k=20):
 
 def main():
     rcn, osm = load(sys.argv[1]), load(sys.argv[2]); rows = prep(rcn); n = len(rows)
-    print(f'Transakcje do analizy: {n} (mieszkania, wolny rynek, jedna nieruchomość w akcie, bez udziałów)')
+    print(f'Transakcje do analizy: {n} (mieszkania, rynek jak w wycenie, pełna własność, cena samego lokalu)')
     if n < 500: sys.exit('Za mało transakcji do rzetelnego testu.')
+    print(f'(Uwaga: modele uczone na wszystkich latach naraz, z czasem jako zmienną.)')
     L = osm['layers']; names = osm['meta'].get('nazwy', {})
     poi = {}
     for k, pts in L.items():
