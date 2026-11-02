@@ -12,7 +12,7 @@ import { geocode, neighbors, suggest as suggestAddr } from './geokod.js';
 import { exposure, trendSeries, yieldByDistrict, districtAssigner, lineChart, barChart, bindCharts } from './rynek.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer } from './mapa.js';
 
-const VERSION = '1.21.1';
+const VERSION = '1.21.2';
 const S = { wlasne: [], teczki: [], foto: {},
   offers: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -136,7 +136,7 @@ function viewWycena() {
     ${sale || !flat ? `<div class="grid3"><label class="field"><span>Ulica${flat ? '' : ' (opcjonalnie)'}</span><input class="in" name="ulica" list="dl-st" value="${esc(f.ulica)}" placeholder="np. Bluszczowa"></label>
       <label class="field"><span>Nr</span><input class="in" name="nr" value="${esc(f.nr)}" inputmode="text" placeholder="13"></label></div>`
       : `<label class="field"><span>Dzielnica (opcjonalnie)</span><input class="in" name="dzielnica" list="dl-dz" value="${esc(f.dzielnica)}" placeholder="np. Śródmieście"></label>
-      <div class="grid3"><label class="field"><span>Ulica (dzielnica uzupełni się sama)</span><input class="in" name="ulica" list="dl-st" value="${esc(f.ulica)}" placeholder="np. Granata"></label>
+      <div class="grid3"><label class="field"><span>Ulica</span><input class="in" name="ulica" list="dl-st" value="${esc(f.ulica)}" placeholder="np. Granata"></label>
       <label class="field"><span>Nr budynku</span><input class="in" name="nr" value="${esc(f.nr)}" inputmode="text" placeholder="1"></label></div>
       <p class="tiny muted" style="margin:-6px 0 12px">Ulica i numer budynku dają dokładne odległości do przystanków, szkół i innych ważnych miejsc.</p>`}
     <datalist id="dl-st">${S.streets.map(s => `<option value="${esc(s)}">`).join('')}</datalist><datalist id="dl-dz">${dz.map(s => `<option value="${esc(s)}">`).join('')}</datalist>

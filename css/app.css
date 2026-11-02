@@ -67,7 +67,7 @@ h1, h2, h3 { font-family: var(--display); font-weight: 400; margin: 0; letter-sp
 .seg button.on { color: #17130A; }
 
 /* formularz */
-.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; } .grid3 { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; } .grid3 { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; align-items: end; }
 .field { display: block; margin-bottom: 12px; } .field > span { display: block; font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--ash); margin-bottom: 6px; font-weight: 600; }
 .in { width: 100%; background: var(--g1); border: 1px solid var(--line2); border-radius: 14px; padding: 13px 14px; font-size: 16px; outline: none; transition: border-color .25s, box-shadow .25s, background .25s; -webkit-appearance: none; appearance: none; }
 .in:focus { border-color: rgba(200, 164, 77, .6); box-shadow: 0 0 0 4px rgba(200, 164, 77, .12); background: #16161A; }
