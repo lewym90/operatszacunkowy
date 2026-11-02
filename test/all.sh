@@ -2,6 +2,9 @@
 # Testy niewymagające prywatnych danych (używane w CI i lokalnie): jednostkowe + przeglądarkowe na danych syntetycznych.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# Straznik: pusty/niezgodny service worker psuje tryb offline i aktualizacje (zdarzylo sie w 1.20.0-1.21.2)
+V=$(grep -o "const VERSION = '[0-9.]*'" js/app.js | grep -o "[0-9][0-9.]*")
+[ -s sw.template.js ] && [ -s sw.js ] && grep -q "am-wycena-v$V" sw.template.js && grep -q "am-wycena-v$V" sw.js || { echo "BLAD: sw.js/sw.template.js puste albo wersja != $V (uruchom: python3 tools/mksw.py . )"; exit 1; }
 SP="${1:-$(mktemp -d)}"
 node test/ulice.test.mjs
 node test/najemkat.test.mjs
