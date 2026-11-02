@@ -62,6 +62,10 @@ const offers = []; for (let i = 0; i < 150; i++) { const d = DZ[i % 3], m2 = Mat
   if (rb) { await rb.click(); await p.waitForSelector('.report-img', { timeout: 15000 }); await p.waitForTimeout(800); const imgs2 = await p.$$eval('.report-img', a => a.map(i => i.src)); imgs2.forEach((s, i) => fs.writeFileSync(`${OUT}/najem-${i + 1}.jpg`, Buffer.from(s.split(',')[1], 'base64'))); ok(imgs2.length >= 2, 'raport najmu zbudowany: stron ' + imgs2.length); }
   await rent('Krężnicka', '275');
   ok(await p.$eval('#okol', e => /nie ma budynku/.test(e.textContent) && !!e.querySelector('#ok-pin') && !e.querySelector('.okgrid')), 'brak adresu w rejestrze: komunikat, wskazanie na mapie, ŻADNYCH odległości');
+  await rent('Granta', '1');
+  await p.waitForSelector('#ok-sg [data-sg]', { timeout: 6000 }); ok(await p.$eval('#ok-sg', e => /Czy chodziło o/.test(e.textContent) && /Granata 1/.test(e.textContent)), 'literówka „Granta”: podpowiedź z oficjalną nazwą (do potwierdzenia)');
+  ok(await p.$eval('#okol', e => !e.querySelector('.okgrid')), 'literówka: bez potwierdzenia nie ma odległości');
+  await p.click('#ok-sg [data-sg]'); await p.waitForTimeout(800); ok(await p.$eval('#okol', e => /Granata 1/.test(e.textContent) && e.querySelectorAll('.okt').length === 7), 'po potwierdzeniu podpowiedzi: odległości od właściwego budynku');
   await rent('Rokickiego', '2');
   ok(await p.$eval('#okol', e => /nie ma budynku/.test(e.textContent) && !e.querySelector('.okgrid')), 'fałszywe trafienie innej ulicy odrzucone (Rokickiego ≠ Ruckiego)');
   await rent('Granata', '');

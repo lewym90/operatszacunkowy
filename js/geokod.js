@@ -74,3 +74,26 @@ export async function neighbors({ ulica, nr, miasto = 'Lublin', fetchFn = fetch,
   }
   return out.slice(0, 4);
 }
+
+// Podpowiedzi przy literówce („Granta” zamiast „Granata”): ulice o niemal takiej samej nazwie, ale TYLKO te, dla których numer istnieje w rejestrze.
+// Użytkownik zawsze widzi oficjalną nazwę i sam ją potwierdza; nic nie jest podstawiane automatycznie.
+export function editDistance(a, b) {
+  const m = a.length, n = b.length; if (!m || !n) return Math.max(m, n); let prev = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) { const cur = [i]; for (let j = 1; j <= n; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = cur; }
+  return prev[n];
+}
+export function nearName(typed, official) {
+  const u = streetTokens(typed), o = streetTokens(official); if (!u.length || !o.length) return false;
+  return u.every(t => o.some(w => sameWord(t, w) || editDistance(t, w) <= Math.max(1, Math.floor(Math.min(t.length, w.length) / 4))));
+}
+export async function suggest({ ulica, nr, miasto = 'Lublin', fetchFn = fetch, known = [] } = {}) {
+  ulica = String(ulica || '').trim(); nr = String(nr || '').trim(); if (!ulica || !nr) return [];
+  const names = new Map();
+  try { (await query(miasto, ulica, '', fetchFn)).forEach(x => { if (x.street && nearName(ulica, x.street)) names.set(fold(x.street), x.street); }); } catch { }
+  for (const k of known) if (nearName(ulica, k)) names.set(fold(k), k);
+  const out = [];
+  for (const name of [...names.values()].slice(0, 4)) {
+    try { const rows = await query(miasto, name, nr, fetchFn); const x = rows.find(r => fold(r.city) === fold(miasto) && normNr(r.number) === normNr(nr) && streetMatches(name, r.street)); if (x && !out.some(o => fold(o.street) === fold(x.street))) out.push({ street: x.street, number: x.number, code: x.code || null, city: x.city, ll: pt(x), source: 'prg', ok: true }); } catch { }
+  }
+  return out;
+}

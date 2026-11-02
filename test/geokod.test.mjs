@@ -31,4 +31,15 @@ r = await geocode({ ulica: 'Krężnicka', nr: '275', fetchFn: reply([]) }); asse
 r = await geocode({ ulica: 'Wincentego', nr: '1', fetchFn: reply([G, { ...G, street: 'Wincentego Pola', ulic: '2' }]) }); assert(!r.ok && r.code === 'niejednoznaczne' && r.candidates.length === 2, 'kilka pasujących ulic: wybór');
 r = await geocode({ ulica: 'Granata', nr: '1b', fetchFn: reply([{ ...G, number: '1B' }]) }); assert(r.ok, 'numer z literą, wielkość liter bez znaczenia');
 r = await geocode({ ulica: 'Granata', nr: '99', fetchFn: async () => { throw new Error('offline'); } }); assert(!r.ok && r.code === 'siec', 'brak sieci i brak pamięci: komunikat o błędzie połączenia, bez współrzędnych');
+// literówka: Granta → podpowiedź Granata (tylko gdy numer istnieje), Rokickiego → bez podpowiedzi
+import { suggest, nearName, editDistance } from '../js/geokod.js';
+assert(editDistance('granta', 'granata') === 1 && nearName('Granta', 'Ks. Wincentego Granata'), 'literówka Granta ≈ Granata');
+assert(!nearName('Rokickiego', 'Władysława Ruckiego'), 'Rokickiego nie jest „blisko” Ruckiego');
+const byAddr = a => async u => { const q = decodeURIComponent(new URL(u).searchParams.get('address')).replace(/^Lublin,\s*/, ''); const hit = a[q]; return { ok: true, json: async () => ({ results: hit ? Object.fromEntries(hit.map((r, i) => [String(i + 1), r])) : null }) }; };
+let sg = await suggest({ ulica: 'Granta', nr: '1', fetchFn: byAddr({ 'Granta': [{ city: 'Lublin', street: 'Ks. Wincentego Granata' }], 'Ks. Wincentego Granata 1': [G] }) });
+assert(sg.length === 1 && sg[0].street === 'Ks. Wincentego Granata', 'podpowiedź z geokodera');
+sg = await suggest({ ulica: 'Granta', nr: '1', known: ['Granata', 'Zamojska'], fetchFn: byAddr({ 'Granata 1': [G] }) });
+assert(sg.length === 1 && sg[0].number === '1', 'podpowiedź z listy ulic aplikacji');
+sg = await suggest({ ulica: 'Granta', nr: '777', known: ['Granata'], fetchFn: byAddr({}) }); assert(sg.length === 0, 'brak podpowiedzi, gdy numer nie istnieje w rejestrze');
+sg = await suggest({ ulica: 'Rokickiego', nr: '2', known: [], fetchFn: byAddr({ 'Rokickiego': [{ city: 'Lublin', street: 'Władysława Ruckiego' }], 'Władysława Ruckiego 2': [{ ...G, street: 'Władysława Ruckiego', number: '2' }] }) }); assert(sg.length === 0, 'inna ulica nie jest podpowiadana jako literówka');
 console.log('OK geokod');

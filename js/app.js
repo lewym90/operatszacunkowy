@@ -8,11 +8,11 @@ import { buildReport, makePdf } from './report.js';
 import { createSync, DEFAULT_URL, encodeCode, decodeCode } from './sync.js';
 import { investCalc, sensitivity, TAX } from './invest.js';
 import { LAYERS as OSM, loadPois, loadAll, nearest, osmUrl, okolica } from './osm.js';
-import { geocode, neighbors } from './geokod.js';
+import { geocode, neighbors, suggest as suggestAddr } from './geokod.js';
 import { exposure, trendSeries, yieldByDistrict, districtAssigner, lineChart, barChart, bindCharts } from './rynek.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer } from './mapa.js';
 
-const VERSION = '1.21.0';
+const VERSION = '1.21.1';
 const S = { wlasne: [], teczki: [], foto: {},
   offers: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -316,11 +316,13 @@ async function okolMount(e, v) {
         <details style="margin-top:12px"><summary class="small" style="color:var(--gold-l);cursor:pointer">Zmień adres lub wskaż na mapie</summary>${form}<div class="gap"></div><button class="btn ghost" id="ok-pin" type="button">Wskaż budynek na mapie</button></details>`;
     } else {
       inner = `<p class="small" style="margin:0">${esc(er ? er.message : 'Podaj ulicę i numer budynku.')}</p>${er && er.code === 'niejednoznaczne' ? `<div class="chips" style="margin-top:10px">${er.candidates.map((c, i) => `<button type="button" class="chip" data-cand="${i}">${esc(c.street + ' ' + c.number)}</button>`).join('')}</div>` : ''}
-        ${form}${er && er.code === 'nie_znaleziono' ? '<div class="gap"></div><button class="btn ghost" id="ok-nb" type="button">Pokaż najbliższe numery w rejestrze</button><div id="ok-nbl" class="tiny muted" style="margin-top:8px"></div>' : ''}<div class="gap"></div><button class="btn ghost" id="ok-pin" type="button">Wskaż budynek na mapie</button>`;
+        ${form}${er && er.code === 'nie_znaleziono' ? '<div id="ok-sg" class="small" style="margin-top:12px"></div><div class="gap"></div><button class="btn ghost" id="ok-nb" type="button">Pokaż najbliższe numery w rejestrze</button><div id="ok-nbl" class="tiny muted" style="margin-top:8px"></div>' : ''}<div class="gap"></div><button class="btn ghost" id="ok-pin" type="button">Wskaż budynek na mapie</button>`;
     }
     box.innerHTML = `<div class="card"><div class="eyebrow">Najbliższe okolice</div>${inner}<div id="ok-map"></div></div>`;
     const go1 = $('#ok-go', box); if (go1) go1.onclick = async () => { const q = { ulica: $('#ok-ul', box).value.trim(), nr: $('#ok-nr', box).value.trim() }; await draw(true); const r = await ensureGeo(e, q); if (!r.ok) e.geoErr = { ...r, q }; await draw(); };
     $$('[data-cand]', box).forEach(b => b.onclick = () => { const c = er.candidates[+b.dataset.cand]; e.geo = { ok: true, ll: c.ll, street: c.street, number: c.number, code: c.code, city: 'Lublin', source: 'prg' }; e.geoErr = null; if (e.id) save.wyceny(); draw(); });
+    const sgBox = $('#ok-sg', box); if (sgBox) { const q = (er && er.q) || { ulica: e.subj.ulica, nr: e.subj.nr }; suggestAddr({ ...q, known: S.streets || [] }).then(list => { if (!sgBox.isConnected || !list.length) return;
+      sgBox.innerHTML = 'Czy chodziło o: ' + list.map((c, i) => `<button type="button" class="chip" data-sg="${i}">${esc(c.street + ' ' + c.number)}</button>`).join(' '); $$('[data-sg]', sgBox).forEach(b3 => b3.onclick = () => { const c = list[+b3.dataset.sg]; e.geo = { ok: true, ll: c.ll, street: c.street, number: c.number, code: c.code, city: c.city || 'Lublin', source: 'prg' }; e.geoErr = null; if (e.id) save.wyceny(); draw(); }); }); }
     const nb = $('#ok-nb', box); if (nb) nb.onclick = async () => { const o = $('#ok-nbl', box); o.textContent = 'Szukam…'; const q = (er && er.q) || { ulica: e.subj.ulica, nr: e.subj.nr }; const list = await neighbors(q); o.innerHTML = list.length ? 'Najbliższe numery w rejestrze: ' + list.map(x => `<button type="button" class="chip" data-nbn="${esc(x.number)}">${esc(x.street + ' ' + x.number)}</button>`).join(' ') : 'Nie znaleziono sąsiednich numerów tej ulicy w rejestrze.'; $$('[data-nbn]', o).forEach(b2 => b2.onclick = async () => { await draw(true); const r2 = await ensureGeo(e, { ulica: q.ulica, nr: b2.dataset.nbn }); if (!r2.ok) e.geoErr = { ...r2, q: { ulica: q.ulica, nr: b2.dataset.nbn } }; draw(); }); };
     const pin = $('#ok-pin', box); if (pin) pin.onclick = async () => {
       const mb = $('#ok-map', box); mb.innerHTML = '<div class="mapbox" id="ok-pm" style="height:300px;margin-top:12px"></div><p class="tiny muted" style="margin:8px 0">Dotknij mapy w miejscu budynku (można przybliżyć). Potem zatwierdź.</p><button class="btn" id="ok-ok" type="button" disabled>Zatwierdź położenie</button>';
