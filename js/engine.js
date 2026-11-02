@@ -365,15 +365,6 @@ function yoyOf(base, nowTs, rynek) {
   const md = v => { v.sort((x, y) => x - y); return v[v.length >> 1]; };
   return Math.max(-0.10, Math.min(0.15, md(A) / md(B) - 1));
 }
-// Współrzędne nieruchomości z RCN po adresie (ten sam budynek) albo środek ulicy (≥3 transakcje). Używane tam, gdzie wynik nie niesie współrzędnych (np. raport najmu).
-export function locateSubject(tx, subject) {
-  if (subject.latlon) return { ll: subject.latlon, kind: 'podane' };
-  if (!subject.ulica) return null;
-  const same = tx.filter(t => t.lat != null && addrKey(t.ulica, t.nr) === addrKey(subject.ulica, subject.nr || ''));
-  if (subject.nr && same.length) return { ll: avgLL(same), kind: 'ten sam budynek w RCN' };
-  const st = tx.filter(t => t.lat != null && streetKey(t.ulica) === streetKey(subject.ulica));
-  return st.length >= 3 ? { ll: avgLL(st), kind: 'środek ulicy wg RCN (przybliżone)' } : null;
-}
 export function estimateSale(tx, subject, opts = {}) {
   const now = opts.year || new Date().getFullYear();
   const notes = [], unused = []; let r_g = null;

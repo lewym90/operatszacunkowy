@@ -126,9 +126,9 @@ export async function buildReport(e, ust, opts = {}) {
     if (H - 190 - y < need) { footer(pages.length); newPage(false); }
     text('Najbliższe okolice', 34, C.ink, 400, 'Marcellus'); y += 6;
     const cw2 = (W - 2 * M) / 2;
-    ok.forEach((o, i) => { const x = M + (i % 2) * cw2, yy = y + Math.floor(i / 2) * 76; ctx.font = '400 21px Archivo'; ctx.fillStyle = C.ink2; ctx.fillText(o.label.toUpperCase(), x, yy); ctx.font = '700 28px Archivo'; ctx.fillStyle = C.ink; ctx.fillText(o.txt, x, yy + 32); });
+    ok.forEach((o, i) => { const x = M + (i % 2) * cw2, yy = y + Math.floor(i / 2) * 76; ctx.font = '400 21px Archivo'; ctx.fillStyle = C.ink2; ctx.fillText(o.label.toUpperCase(), x, yy); ctx.font = '700 28px Archivo'; ctx.fillStyle = C.ink; ctx.fillText(o.txtR, x, yy + 32); });
     y += Math.ceil(ok.length / 2) * 76 + 10;
-    text('Odległość w linii prostej od nieruchomości do najbliższego punktu danego rodzaju. Dane: OpenStreetMap (© współtwórcy OpenStreetMap).' + (opts.okolicaNote || ''), 21, C.ink2, 400, 'Archivo', 1.38); y += 22;
+    text((opts.okolicaNote ? opts.okolicaNote + ' ' : '') + 'Odległość w linii prostej od budynku do najbliższego punktu danego rodzaju. Dane punktów: OpenStreetMap (© współtwórcy OpenStreetMap).', 21, C.ink2, 400, 'Archivo', 1.38); y += 22;
   }
   if (variant === 'market' && opts.market) {
     const mk = opts.market, need = 700;

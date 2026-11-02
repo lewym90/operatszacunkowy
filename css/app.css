@@ -297,3 +297,6 @@ select.in { background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://ww
 
 #tabs a .nb { position: absolute; top: 5px; left: calc(50% + 6px); min-width: 17px; height: 17px; padding: 0 5px; border-radius: 9px; background: var(--warn); color: #0B0B0D; font: 700 10.5px/17px var(--text); text-align: center; font-style: normal; letter-spacing: 0; }
 .seg[data-n="3"] { }
+
+.okgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; } .okt { padding: 12px 14px; border: 1px solid var(--line2); border-radius: 14px; background: var(--g1); display: flex; flex-direction: column; gap: 4px; } .okt span { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--ash); } .okt b { font: 400 22px var(--display); color: var(--gold-l); }
+@media (min-width: 720px) { .okgrid { grid-template-columns: repeat(3, 1fr); } }

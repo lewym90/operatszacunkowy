@@ -31,10 +31,12 @@ export async function loadPois(key, opts = {}) {
 }
 export function nearest(pts, ll) { let b = null, bd = 1e9; for (const p of pts) { const d = haversine(ll, [p.lat, p.lon]); if (d < bd) { bd = d; b = p; } } return b ? { p: b, m: Math.round(bd * 1000) } : null; }
 
-// Najbliższe punkty każdego rodzaju od podanego punktu (w linii prostej), do raportu dla klienta. Zaokrąglenie: do 10 m, od 1 km do 0,1 km.
+// Najbliższe punkty każdego rodzaju od podanego punktu (w linii prostej). m = metry (do 1 m), txt = zapis dla panelu, txtR = zapis do raportu (zaokrąglony do 10 m, „ok.”).
+const fmtKm = m => (m / 1000).toFixed(2).replace('.', ',') + ' km';
 export function okolica(ll, layers) {
   const out = [];
   for (const [k, L] of Object.entries(LAYERS)) { const pts = (layers[k] || []).map(p => ({ lat: p[0], lon: p[1] })); if (!pts.length) continue; const n = nearest(pts, ll); if (!n) continue;
-    const m = n.m < 1000 ? Math.max(10, Math.round(n.m / 10) * 10) : Math.round(n.m / 100) * 100; out.push({ key: k, label: L.rep || L.n, m, txt: m < 1000 ? 'ok. ' + m + ' m' : 'ok. ' + (m / 1000).toFixed(1).replace('.', ',') + ' km' }); }
+    const m = n.m, r10 = Math.max(10, Math.round(m / 10) * 10);
+    out.push({ key: k, label: L.rep || L.n, m, txt: m < 1000 ? m + ' m' : fmtKm(m), txtR: r10 < 1000 ? 'ok. ' + r10 + ' m' : 'ok. ' + (Math.round(m / 100) / 10).toFixed(1).replace('.', ',') + ' km' }); }
   return out;
 }

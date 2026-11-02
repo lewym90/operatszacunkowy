@@ -1,5 +1,5 @@
 import * as store from './store.js';
-import { estimateRent, estimateRentKat, estimateSale, estimateSaleKat, parkingExtra, crossCheckRent, inferDistrict, ATTRS, learnPremiums, grossYield, addrKey, migrateAddrKey, normStreet, normDz, YEAR_BANDS, yearBand, locateSubject } from './engine.js';
+import { estimateRent, estimateRentKat, estimateSale, estimateSaleKat, parkingExtra, crossCheckRent, inferDistrict, ATTRS, learnPremiums, grossYield, addrKey, migrateAddrKey, normStreet, normDz, YEAR_BANDS, yearBand } from './engine.js';
 import { rcnToObjects, inneToObjects, katalog, KAT, KAT_ORDER, POD_TXT } from './rcn.js';
 import { linesFromPdf, offersFromLines, offerKey } from './pdfimport.js';
 import { flags as offerFlags } from './parseOtodom.js';
@@ -8,10 +8,11 @@ import { buildReport, makePdf } from './report.js';
 import { createSync, DEFAULT_URL, encodeCode, decodeCode } from './sync.js';
 import { investCalc, sensitivity, TAX } from './invest.js';
 import { LAYERS as OSM, loadPois, loadAll, nearest, osmUrl, okolica } from './osm.js';
+import { geocode, neighbors } from './geokod.js';
 import { exposure, trendSeries, yieldByDistrict, districtAssigner, lineChart, barChart, bindCharts } from './rynek.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer } from './mapa.js';
 
-const VERSION = '1.20.1';
+const VERSION = '1.21.0';
 const S = { wlasne: [], teczki: [], foto: {},
   offers: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -135,7 +136,9 @@ function viewWycena() {
     ${sale || !flat ? `<div class="grid3"><label class="field"><span>Ulica${flat ? '' : ' (opcjonalnie)'}</span><input class="in" name="ulica" list="dl-st" value="${esc(f.ulica)}" placeholder="np. Bluszczowa"></label>
       <label class="field"><span>Nr</span><input class="in" name="nr" value="${esc(f.nr)}" inputmode="text" placeholder="13"></label></div>`
       : `<label class="field"><span>Dzielnica (opcjonalnie)</span><input class="in" name="dzielnica" list="dl-dz" value="${esc(f.dzielnica)}" placeholder="np. Śródmieście"></label>
-      <label class="field"><span>Ulica (opcjonalnie; dzielnica uzupełni się sama)</span><input class="in" name="ulica" list="dl-st" value="${esc(f.ulica)}" placeholder="np. Granata"></label>`}
+      <div class="grid3"><label class="field"><span>Ulica (dzielnica uzupełni się sama)</span><input class="in" name="ulica" list="dl-st" value="${esc(f.ulica)}" placeholder="np. Granata"></label>
+      <label class="field"><span>Nr budynku</span><input class="in" name="nr" value="${esc(f.nr)}" inputmode="text" placeholder="1"></label></div>
+      <p class="tiny muted" style="margin:-6px 0 12px">Ulica i numer budynku dają dokładne odległości do przystanków, szkół i innych ważnych miejsc.</p>`}
     <datalist id="dl-st">${S.streets.map(s => `<option value="${esc(s)}">`).join('')}</datalist><datalist id="dl-dz">${dz.map(s => `<option value="${esc(s)}">`).join('')}</datalist>
     <div class="grid2"><label class="field"><span>${M2_LBL[kat] || 'Powierzchnia użytkowa (m²)'}</span><input class="in" name="m2" inputmode="decimal" value="${esc(f.m2)}" placeholder="${kat === 'dzialka' ? '1000' : '45,5'}"></label>
       ${kat === 'dom' ? `<label class="field"><span>Powierzchnia działki (m²)</span><input class="in" name="dzm2" inputmode="decimal" value="${esc(f.dzm2)}" placeholder="opcjonalnie"></label>` : ['mieszkanie', 'obiekt'].includes(kat) ? `<label class="field"><span>Rok budowy (opcj.)</span><input class="in" name="rok" inputmode="numeric" maxlength="4" value="${esc(f.rok)}" placeholder="np. 1978"></label>` : '<div></div>'}</div>
@@ -270,6 +273,7 @@ function viewWynik(p) {
   const withLL = r.comps.filter(c => c.lat != null);
   if (sale && r.subLL && withLL.length >= 3) html += `<div class="card"><div class="eyebrow">Położenie porównań</div><div class="mapbox sm" id="resmap">${mapSVG(r)}</div><div id="reslegend"></div><p class="tiny muted" style="margin:8px 0 0">Złoty pierścień: lokal wyceniany (${esc(r.llKind || '')}). Większy punkt = większa waga porównania; kolor = cena za m². Dotknij punktu, aby zobaczyć transakcję.</p></div>`;
   html += `<div class="card"><div class="eyebrow">Porównania (${r.comps.length})</div><div id="comps">${r.comps.slice(0, 10).map((c, i) => compHTML(c, i, sale)).join('')}</div>${r.comps.length > 10 ? '<button class="btn ghost" data-act="more" style="margin-top:10px">Pokaż wszystkie</button>' : ''}</div>
+  <div id="okol"></div>
   <div class="row">${saved ? '' : '<button class="btn ghost" data-act="save">Zapisz do historii</button>'}<button class="btn" data-act="report">Raport dla klienta</button></div>
   <div class="gap"></div><button class="btn ghost" data-act="calc">Kalkulator inwestycyjny</button>
   ${saved ? `<div class="gap"></div><button class="btn ghost" data-act="tec">${e.teczka && S.teczki.some(t => t.id === e.teczka) ? 'Teczka: ' + esc(tName(S.teczki.find(t => t.id === e.teczka))) : 'Dodaj do teczki nieruchomości'}</button>` : ''}
@@ -278,6 +282,7 @@ function viewWynik(p) {
     $('[data-back]', v).onclick = () => (saved ? go('#/historia') : go('#/wycena'));
     $$('[data-cu]', v).forEach(el => countUp(el, +el.dataset.cu));
     const rmEl = $('#resmap', v); if (rmEl) resMap(rmEl, r, v);
+    okolMount(e, v);
     const more = $('[data-act="more"]', v); if (more) more.onclick = () => { $('#comps', v).innerHTML = r.comps.map((c, i) => compHTML(c, i, sale)).join(''); more.remove(); };
     $('[data-act="calc"]', v).onclick = () => { if (sale) S.invest.cena = roundTo(r.total.mid, 1000); else S.invest.czynsz = roundTo(r.total.mid, 10); ls.set('am-invest', JSON.stringify(S.invest)); go('#/kalkulator'); };
     const tcb = $('[data-act="tec"]', v); if (tcb) tcb.onclick = () => teczkaSheet(e);
@@ -286,6 +291,50 @@ function viewWynik(p) {
     const rl = $('[data-act="real"]', v); if (rl) rl.onclick = () => realSheet(e);
   }];
 }
+/* ---------- NAJBLIŻSZE OKOLICE (położenie budynku z rejestru adresów PRG) ---------- */
+let geoCtl = null;
+async function ensureGeo(e, q) {
+  if (!q && e.geo && e.geo.ok) return e.geo;
+  const r = await geocode({ ulica: q ? q.ulica : e.subj.ulica, nr: q ? q.nr : e.subj.nr });
+  if (r.ok) { e.geo = r; e.geoErr = null; } else { e.geoErr = r; if (q) e.geo = null; }
+  if (e.id) save.wyceny();
+  return r;
+}
+const okTiles = list => `<div class="okgrid">${list.map(o => `<div class="okt"><span>${esc(o.label)}</span><b>${esc(o.txt)}</b></div>`).join('')}</div>`;
+async function okolMount(e, v) {
+  const box = $('#okol', v); if (!box) return;
+  const draw = async (pending) => {
+    const g = e.geo && e.geo.ok ? e.geo : null, er = e.geoErr;
+    const form = `<div class="grid3" style="margin-top:12px"><label class="field"><span>Ulica</span><input class="in" id="ok-ul" value="${esc((er && er.q && er.q.ulica) ?? e.subj.ulica ?? '')}"></label><label class="field"><span>Nr budynku</span><input class="in" id="ok-nr" value="${esc((er && er.q && er.q.nr) ?? e.subj.nr ?? '')}"></label></div><button class="btn ghost" id="ok-go" type="button">Szukaj budynku</button>`;
+    let inner;
+    if (pending) inner = '<p class="small muted" style="margin:0">Ustalam położenie budynku w rejestrze adresów…</p>';
+    else if (g) {
+      let tiles = '';
+      try { const L = await loadAll({ url: osmUrl(S.ust.rcnUrl) }); tiles = okTiles(okolica(g.ll, L.layers)); } catch (x) { tiles = `<p class="small muted" style="margin:10px 0 0">${esc(x.message)}</p>`; }
+      inner = `<p class="small" style="margin:0 0 4px"><b>${esc(g.street)} ${esc(g.number)}</b>, ${esc(g.city || 'Lublin')}${g.code ? ' (' + esc(g.code) + ')' : ''}</p>
+        <p class="tiny muted" style="margin:0 0 12px">${g.source === 'prg' ? 'Położenie budynku z urzędowego rejestru adresów (Państwowy Rejestr Granic, GUGiK). Sprawdź, czy to właściwy adres.' : 'Położenie wskazane ręcznie na mapie.'} Odległości w linii prostej.</p>${tiles}
+        <details style="margin-top:12px"><summary class="small" style="color:var(--gold-l);cursor:pointer">Zmień adres lub wskaż na mapie</summary>${form}<div class="gap"></div><button class="btn ghost" id="ok-pin" type="button">Wskaż budynek na mapie</button></details>`;
+    } else {
+      inner = `<p class="small" style="margin:0">${esc(er ? er.message : 'Podaj ulicę i numer budynku.')}</p>${er && er.code === 'niejednoznaczne' ? `<div class="chips" style="margin-top:10px">${er.candidates.map((c, i) => `<button type="button" class="chip" data-cand="${i}">${esc(c.street + ' ' + c.number)}</button>`).join('')}</div>` : ''}
+        ${form}${er && er.code === 'nie_znaleziono' ? '<div class="gap"></div><button class="btn ghost" id="ok-nb" type="button">Pokaż najbliższe numery w rejestrze</button><div id="ok-nbl" class="tiny muted" style="margin-top:8px"></div>' : ''}<div class="gap"></div><button class="btn ghost" id="ok-pin" type="button">Wskaż budynek na mapie</button>`;
+    }
+    box.innerHTML = `<div class="card"><div class="eyebrow">Najbliższe okolice</div>${inner}<div id="ok-map"></div></div>`;
+    const go1 = $('#ok-go', box); if (go1) go1.onclick = async () => { const q = { ulica: $('#ok-ul', box).value.trim(), nr: $('#ok-nr', box).value.trim() }; await draw(true); const r = await ensureGeo(e, q); if (!r.ok) e.geoErr = { ...r, q }; await draw(); };
+    $$('[data-cand]', box).forEach(b => b.onclick = () => { const c = er.candidates[+b.dataset.cand]; e.geo = { ok: true, ll: c.ll, street: c.street, number: c.number, code: c.code, city: 'Lublin', source: 'prg' }; e.geoErr = null; if (e.id) save.wyceny(); draw(); });
+    const nb = $('#ok-nb', box); if (nb) nb.onclick = async () => { const o = $('#ok-nbl', box); o.textContent = 'Szukam…'; const q = (er && er.q) || { ulica: e.subj.ulica, nr: e.subj.nr }; const list = await neighbors(q); o.innerHTML = list.length ? 'Najbliższe numery w rejestrze: ' + list.map(x => `<button type="button" class="chip" data-nbn="${esc(x.number)}">${esc(x.street + ' ' + x.number)}</button>`).join(' ') : 'Nie znaleziono sąsiednich numerów tej ulicy w rejestrze.'; $$('[data-nbn]', o).forEach(b2 => b2.onclick = async () => { await draw(true); const r2 = await ensureGeo(e, { ulica: q.ulica, nr: b2.dataset.nbn }); if (!r2.ok) e.geoErr = { ...r2, q: { ulica: q.ulica, nr: b2.dataset.nbn } }; draw(); }); };
+    const pin = $('#ok-pin', box); if (pin) pin.onclick = async () => {
+      const mb = $('#ok-map', box); mb.innerHTML = '<div class="mapbox" id="ok-pm" style="height:300px;margin-top:12px"></div><p class="tiny muted" style="margin:8px 0">Dotknij mapy w miejscu budynku (można przybliżyć). Potem zatwierdź.</p><button class="btn" id="ok-ok" type="button" disabled>Zatwierdź położenie</button>';
+      try {
+        const center = g ? g.ll : undefined, ctl = await createMap($('#ok-pm', box), { center, zoom: center ? 18 : 12 }); let ll = null, mk = null;
+        ctl.map.on('click', ev => { ll = [+ev.latlng.lat.toFixed(6), +ev.latlng.lng.toFixed(6)]; if (mk) mk.remove(); mk = ctl.L.marker(ll).addTo(ctl.map); $('#ok-ok', box).disabled = false; });
+        $('#ok-ok', box).onclick = () => { if (!ll) return; const q = (er && er.q) || { ulica: e.subj.ulica, nr: e.subj.nr }; e.geo = { ok: true, ll, street: q.ulica || 'wskazany budynek', number: q.nr || '', code: null, city: 'Lublin', source: 'reczne' }; e.geoErr = null; if (e.id) save.wyceny(); ctl.destroy(); draw(); };
+      } catch (x) { mb.innerHTML = `<p class="small muted">Mapa niedostępna: ${esc(x.message)}</p>`; }
+    };
+  };
+  if (e.geo && e.geo.ok) return draw();
+  await draw(true); await ensureGeo(e); await draw();
+}
+
 const subj_m2 = e => e.subj.m2;
 function compHTML(c, i, sale) {
   const w = Math.max(6, Math.round(c.w * 100));
@@ -335,10 +384,11 @@ function viewRaport(p) {
     const draw = async () => {
       const my = ++seq, b = $('#pdf', v); b.disabled = true; $('#rvh', v).textContent = HINT[variant];
       $('#rp', v).innerHTML = '<div class="empty"><b>Przygotowuję raport…</b></div>';
-      let okol = null, okNote = ''; if (variant !== 'short') { const loc = e.res.subLL ? { ll: e.res.subLL, kind: e.res.llKind || '' } : locateSubject(S.tx, e.subj); if (loc) { try { okol = okolica(loc.ll, (await loadAll({ url: osmUrl(S.ust.rcnUrl) })).layers); okNote = /przybliż/.test(loc.kind) ? ' Położenie ustalono orientacyjnie (środek ulicy), więc odległości mogą się nieco różnić.' : ''; } catch { } } }
-      try { await document.fonts.ready; pages = await buildReport(e, S.ust, { variant, market: variant === 'market' ? market() : null, okolica: okol, okolicaNote: okNote }); } catch (err) { if (my === seq) $('#rp', v).innerHTML = `<div class="empty"><b>Nie udało się zbudować raportu</b>${esc(err.message)}</div>`; return; }
+      let okol = null, okSrc = '', okMiss = false; if (variant !== 'short') { try { const g = await ensureGeo(e); if (g.ok) { okol = okolica(g.ll, (await loadAll({ url: osmUrl(S.ust.rcnUrl) })).layers); okSrc = g.source === 'prg' ? `Położenie budynku: ${g.street} ${g.number}, ${g.city || 'Lublin'} (Państwowy Rejestr Granic, GUGiK).` : 'Położenie budynku wskazano ręcznie na mapie.'; } else okMiss = true; } catch { okMiss = true; } }
+      try { await document.fonts.ready; pages = await buildReport(e, S.ust, { variant, market: variant === 'market' ? market() : null, okolica: okol, okolicaNote: okSrc }); } catch (err) { if (my === seq) $('#rp', v).innerHTML = `<div class="empty"><b>Nie udało się zbudować raportu</b>${esc(err.message)}</div>`; return; }
       if (my !== seq) return;
       $('#rp', v).innerHTML = pages.map(c => `<img class="report-img" alt="Strona raportu" src="${c.toDataURL('image/jpeg', .92)}">`).join('');
+      if (okMiss) $('#rvh', v).textContent += ' Brak położenia budynku, więc raport nie zawiera odległości do ważnych miejsc (uzupełnisz je w wyniku wyceny).';
       if (variant === 'market' && !market().trend && !market().yield) $('#rvh', v).textContent += ' Brak wystarczających danych RCN do wykresów, więc raport ich nie zawiera.';
       b.disabled = false;
     };
