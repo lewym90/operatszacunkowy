@@ -48,5 +48,12 @@ const offers = []; for (let i = 0; i < 150; i++) { const d = DZ[i % 3], m2 = Mat
   await p.click('[data-oc=kat] [data-v=lokal]'); ok(await p.$eval('[data-oc=kat] [data-v=lokal]', e => e.classList.contains('on')) && !(await p.$eval('[data-oc=kat] [data-v=mieszkanie]', e => e.classList.contains('on'))), 'rodzaj „Lokal użytkowy” podświetlony');
   await p.fill('#o-ul', 'Granata'); await p.fill('#o-m2', '80'); await p.fill('#o-ce', '4800'); await p.click('#o-ok'); await p.waitForTimeout(700);
   ok(await p.evaluate(() => window.__am.S.wlasne.some(w => w.kat === 'lokal' && w.m2 === 80)), 'umowa lokalu zapisana bez liczby pokoi');
+  // raport najmu z okolicą: współrzędne z RCN po ulicy (wynik najmu ich nie niesie)
+  const loc = await p.evaluate(async () => { const m = await import('/js/engine.js'); const r = m.locateSubject(window.__am.S.tx, { ulica: 'Granata', nr: '5' }); return r && { kind: r.kind, ok: Array.isArray(r.ll) && r.ll[0] > 51 }; });
+  ok(loc && loc.ok, 'locateSubject znajduje położenie po ulicy: ' + JSON.stringify(loc));
+  await p.goto('http://localhost:8765/index.html#/wycena'); await p.waitForTimeout(600); await p.click('.seg button[data-t=najem]'); await p.waitForTimeout(400);
+  await p.fill('[name=ulica]', 'Granata'); await p.fill('[name=dzielnica]', 'Wrotków'); await p.fill('[name=m2]', '45'); await p.click('#f .btn'); await p.waitForTimeout(2200);
+  const rb = await p.$('[data-act=report]'); ok(!!rb, 'wynik najmu ma przycisk raportu');
+  if (rb) { await rb.click(); await p.waitForSelector('.report-img', { timeout: 15000 }); await p.waitForTimeout(800); await p.screenshot({ path: OUT + '/najem.png', fullPage: true }); const imgs2 = await p.$$eval('.report-img', a => a.map(i => i.src)); imgs2.forEach((s, i) => fs.writeFileSync(`${OUT}/najem-${i + 1}.jpg`, Buffer.from(s.split(',')[1], 'base64'))); ok(imgs2.length >= 2, 'raport najmu zbudowany: stron ' + imgs2.length); }
   console.log('BŁĘDY:', errs.length ? errs : 'brak'); await b.close(); srv.kill(); if (fail.length || errs.length) process.exit(1);
 })().catch(e => { console.error('TEST PADŁ', e); process.exit(1); });

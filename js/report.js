@@ -128,7 +128,7 @@ export async function buildReport(e, ust, opts = {}) {
     const cw2 = (W - 2 * M) / 2;
     ok.forEach((o, i) => { const x = M + (i % 2) * cw2, yy = y + Math.floor(i / 2) * 76; ctx.font = '400 21px Archivo'; ctx.fillStyle = C.ink2; ctx.fillText(o.label.toUpperCase(), x, yy); ctx.font = '700 28px Archivo'; ctx.fillStyle = C.ink; ctx.fillText(o.txt, x, yy + 32); });
     y += Math.ceil(ok.length / 2) * 76 + 10;
-    text('Odległość w linii prostej od nieruchomości do najbliższego punktu danego rodzaju. Dane: OpenStreetMap (© współtwórcy OpenStreetMap).', 21, C.ink2, 400, 'Archivo', 1.38); y += 22;
+    text('Odległość w linii prostej od nieruchomości do najbliższego punktu danego rodzaju. Dane: OpenStreetMap (© współtwórcy OpenStreetMap).' + (opts.okolicaNote || ''), 21, C.ink2, 400, 'Archivo', 1.38); y += 22;
   }
   if (variant === 'market' && opts.market) {
     const mk = opts.market, need = 700;

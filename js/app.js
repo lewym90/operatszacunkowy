@@ -1,5 +1,5 @@
 import * as store from './store.js';
-import { estimateRent, estimateRentKat, estimateSale, estimateSaleKat, parkingExtra, crossCheckRent, inferDistrict, ATTRS, learnPremiums, grossYield, addrKey, migrateAddrKey, normStreet, normDz, YEAR_BANDS, yearBand } from './engine.js';
+import { estimateRent, estimateRentKat, estimateSale, estimateSaleKat, parkingExtra, crossCheckRent, inferDistrict, ATTRS, learnPremiums, grossYield, addrKey, migrateAddrKey, normStreet, normDz, YEAR_BANDS, yearBand, locateSubject } from './engine.js';
 import { rcnToObjects, inneToObjects, katalog, KAT, KAT_ORDER, POD_TXT } from './rcn.js';
 import { linesFromPdf, offersFromLines, offerKey } from './pdfimport.js';
 import { flags as offerFlags } from './parseOtodom.js';
@@ -11,7 +11,7 @@ import { LAYERS as OSM, loadPois, loadAll, nearest, osmUrl, okolica } from './os
 import { exposure, trendSeries, yieldByDistrict, districtAssigner, lineChart, barChart, bindCharts } from './rynek.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer } from './mapa.js';
 
-const VERSION = '1.20.0';
+const VERSION = '1.20.1';
 const S = { wlasne: [], teczki: [], foto: {},
   offers: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -335,8 +335,8 @@ function viewRaport(p) {
     const draw = async () => {
       const my = ++seq, b = $('#pdf', v); b.disabled = true; $('#rvh', v).textContent = HINT[variant];
       $('#rp', v).innerHTML = '<div class="empty"><b>Przygotowuję raport…</b></div>';
-      let okol = null; if (variant !== 'short' && e.res.subLL) { try { okol = okolica(e.res.subLL, (await loadAll({ url: osmUrl(S.ust.rcnUrl) })).layers); } catch { } }
-      try { await document.fonts.ready; pages = await buildReport(e, S.ust, { variant, market: variant === 'market' ? market() : null, okolica: okol }); } catch (err) { if (my === seq) $('#rp', v).innerHTML = `<div class="empty"><b>Nie udało się zbudować raportu</b>${esc(err.message)}</div>`; return; }
+      let okol = null, okNote = ''; if (variant !== 'short') { const loc = e.res.subLL ? { ll: e.res.subLL, kind: e.res.llKind || '' } : locateSubject(S.tx, e.subj); if (loc) { try { okol = okolica(loc.ll, (await loadAll({ url: osmUrl(S.ust.rcnUrl) })).layers); okNote = /przybliż/.test(loc.kind) ? ' Położenie ustalono orientacyjnie (środek ulicy), więc odległości mogą się nieco różnić.' : ''; } catch { } } }
+      try { await document.fonts.ready; pages = await buildReport(e, S.ust, { variant, market: variant === 'market' ? market() : null, okolica: okol, okolicaNote: okNote }); } catch (err) { if (my === seq) $('#rp', v).innerHTML = `<div class="empty"><b>Nie udało się zbudować raportu</b>${esc(err.message)}</div>`; return; }
       if (my !== seq) return;
       $('#rp', v).innerHTML = pages.map(c => `<img class="report-img" alt="Strona raportu" src="${c.toDataURL('image/jpeg', .92)}">`).join('');
       if (variant === 'market' && !market().trend && !market().yield) $('#rvh', v).textContent += ' Brak wystarczających danych RCN do wykresów, więc raport ich nie zawiera.';
