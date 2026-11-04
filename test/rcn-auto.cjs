@@ -12,7 +12,7 @@ const put = (wersja, extra = 0) => { const pack = { ...base, meta: { ...base.met
   await new Promise(r => setTimeout(r, 900));
   const b = await chromium.launch(), errs = [], ctx = await b.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block' }), p = await ctx.newPage();
   p.on('pageerror', e => errs.push('PAGEERROR ' + e.message)); p.on('console', m => { if (m.type() === 'error' && !/favicon/.test(m.text())) errs.push('CONSOLE ' + m.text()); });
-  const U = 'http://localhost:8796/index.html', RURL = 'http://127.0.0.1:8795/rcn_lublin.json', st = () => p.evaluate(() => ({ n: window.__am.S.tx.length, w: window.__am.S.rcn?.meta?.wersja, rows: window.__am.S.rcn?.rows.length }));
+  const U = 'http://localhost:8796/index.html', RURL = 'http://127.0.0.1:8795/rcn_lublin.json', st = () => p.evaluate(() => ({ n: window.__am.S.tx.length, w: window.__am.S.rcn?.meta?.wersja, rows: window.__am.S.rcn?.nRows }));
   await p.goto(U); await p.waitForTimeout(1500);
   // urządzenie z samym adresem pliku (np. po synchronizacji ustawień) i bez danych RCN: ma pobrać samo
   await p.evaluate(url => { window.__am.S.ust.rcnUrl = url; }, RURL); await p.evaluate(() => window.__am.checkRcn()); await p.waitForTimeout(2500);

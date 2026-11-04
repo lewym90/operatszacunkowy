@@ -13,7 +13,7 @@ import { geocode, neighbors, suggest as suggestAddr } from './geokod.js';
 import { exposure, trendSeries, yieldByDistrict, districtAssigner, lineChart, barChart, bindCharts } from './rynek.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer, districtCenters } from './mapa.js';
 
-const VERSION = '1.23.4';
+const VERSION = '1.23.5';
 const S = { wlasne: [], teczki: [], foto: {}, dokumenty: [],
   offers: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -44,9 +44,12 @@ async function load() {
   { const m = {}; let ch = false; for (const [k, v] of Object.entries(S.budynki)) { const nk = migrateAddrKey(k); if (nk !== k) ch = true; m[nk] = v; } if (ch) { S.budynki = m; store.set('budynki', m); } }
   S.ust = { ...S.ust, ...(await store.get('ust', {})) }; S.rcn = S.safe ? null : await store.get('rcn', null); S.rcnInne = S.safe ? null : await store.get('rcnInne', null); setTx();
 }
+// Surowe wiersze RCN zwalniamy po przeliczeniu (zostają w bazie urządzenia): w pamięci były podwójnie, a duże zużycie sprawia, że iPhone szybciej zamyka aplikację w tle.
 function setTx() {
-  const st = {}; S.tx = S.rcn ? rcnToObjects(S.rcn, st) : [];
-  S.inne = S.rcnInne ? inneToObjects(S.rcnInne, st) : []; S.stats = st; S.pool = S.tx.concat(S.inne);
+  if (!S.rcn) { S.tx = []; S.stA = {}; } else if (S.rcn.rows) { const st = {}; S.tx = rcnToObjects(S.rcn, st); S.stA = st; S.rcn = { meta: S.rcn.meta, nRows: S.rcn.rows.length }; }
+  if (!S.rcnInne) { S.inne = []; S.stB = {}; } else if (S.rcnInne.rows) { const st = {}; S.inne = inneToObjects(S.rcnInne, st); S.stB = st; S.rcnInne = { meta: S.rcnInne.meta, nRows: S.rcnInne.rows.length }; }
+  const st = {}; for (const part of [S.stA, S.stB]) for (const [k, v] of Object.entries(part)) { const d = st[k] || (st[k] = { rynkowe: 0, nierynkowe: 0 }); d.rynkowe += v.rynkowe || 0; d.nierynkowe += v.nierynkowe || 0; }
+  S.stats = st; S.pool = S.tx.concat(S.inne);
   S.streets = [...new Set(S.pool.map(t => t.ulica).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pl'));
 }
 const DEF_UST = JSON.stringify(S.ust);
@@ -223,7 +226,7 @@ function readForm(v) {
 }
 function submitForm() {
   const c = computeEntry(S.form); if (c.err) return toast(c.err);
-  S.last[S.form.tryb] = c.entry; go('#/wynik/' + S.form.tryb);
+  S.last[S.form.tryb] = c.entry; store.set('last', S.last); go('#/wynik/' + S.form.tryb);
 }
 // Liczy wycenę z danych formularza. Używane przez formularz i przez pełną analizę z teczki.
 function computeEntry(f) {
@@ -617,12 +620,12 @@ function viewDane() {
 }
 async function setRcn(pack, quiet) {
   if (!pack || !Array.isArray(pack.cols) || !Array.isArray(pack.rows) || !pack.cols.includes('cena')) throw new Error('nieznany format');
-  S.rcn = pack; setTx(); await store.set('rcn', pack);
+  await store.set('rcn', pack); S.rcn = pack; setTx();
   if (!quiet) { toast(`Wczytano ${fmt(S.tx.length)} transakcji`); render(); }
 }
 async function setRcnInne(pack, quiet) {
   if (!pack || !Array.isArray(pack.cols) || !Array.isArray(pack.rows) || !pack.cols.includes('nier')) throw new Error('nieznany format pliku domów i gruntów');
-  S.rcnInne = pack; setTx(); await store.set('rcnInne', pack);
+  await store.set('rcnInne', pack); S.rcnInne = pack; setTx();
   if (!quiet) { toast(`Wczytano ${fmt(S.inne.length)} transakcji domów, obiektów i gruntów`); render(); }
 }
 const innePath = url => url.replace(/[^/]*$/, 'rcn_inne.json');
@@ -901,7 +904,7 @@ async function fullAnalysis(t) {
   const prev = tr => { const w = tWyceny(t.id); return (w.filter(e => e.subj.tryb === tr).pop() || w[w.length - 1] || { subj: {} }).subj; };
   const form = tryb => { const q = prev(tryb), same = q.tryb === tryb; return { tryb, kat, pod: q.pod || '', dzm2: q.dzm2 ? String(q.dzm2) : '', ulica: String(t.ulica).trim(), nr: String(t.nr).trim(), dzielnica: t.dzielnica || (same && q.dzielnica) || '', m2: String(t.m2), pokoje: flat ? +t.pokoje : 2, pietro: t.pietro === '' || t.pietro == null ? null : +t.pietro, rok: t.rok ? String(t.rok) : (q.rok ? String(q.rok) : ''), rynek: q.rynek || '', standard: q.standard || '', meble: same && q.meble ? q.meble : '', zapamietaj: false, ud: same && q.attrs ? Object.keys(q.attrs).filter(k => q.attrs[k] && k !== 'garaz') : [], parking: (same && q.parking) || 'brak' }; };
   const out = { ts: Date.now(), kroki: [] }, krok = (k, ok, txt) => out.kroki.push({ k, ok, txt });
-  const run = tryb => { const c = computeEntry(form(tryb)); if (c.err) return { txt: c.err }; const e = c.entry; if (!e.res.ok) return { txt: e.res.reason }; e.id = uid(); e.teczka = t.id; S.wyceny.unshift(e); S.last[tryb] = e; return { e }; };
+  const run = tryb => { const c = computeEntry(form(tryb)); if (c.err) return { txt: c.err }; const e = c.entry; if (!e.res.ok) return { txt: e.res.reason }; e.id = uid(); e.teczka = t.id; S.wyceny.unshift(e); S.last[tryb] = e; store.set('last', S.last); return { e }; };
   const a = run('sprzedaz'), b = ['dom', 'lokal', 'obiekt', 'garaz', 'mieszkanie'].includes(kat) ? run('najem') : { txt: 'Najem nie dotyczy tej kategorii.' };
   krok('Wycena sprzedaży', !!a.e, a.e ? '' : a.txt); krok('Wycena najmu', !!b.e, b.e ? '' : b.txt);
   if (a.e || b.e) save.wyceny();
@@ -1256,12 +1259,34 @@ function logErr(kind, msg) { try { const l = JSON.parse(ls.get('am-errlog') || '
 addEventListener('error', e => logErr('błąd', (e.message || '') + (e.filename ? ' @' + String(e.filename).split('/').pop() + ':' + e.lineno : '')));
 addEventListener('unhandledrejection', e => logErr('obietnica', e.reason && (e.reason.message || e.reason)));
 
+/* ---------- powrót do aplikacji ---------- */
+// iPhone zamyka aplikacje z ekranu początkowego w tle i uruchamia je od nowa. Zapisujemy, gdzie użytkownik był, i po ponownym starcie wracamy w to miejsce.
+const SESJA = 'am-sesja', SESJA_MS = 12 * 3600e3;
+function zapiszSesje() {
+  try {
+    const v = $('#view'), a = document.activeElement;
+    if (v?.dataset.view === 'wycena' && $('#f', v)) readForm(v);
+    if (a && a.matches?.('[data-tk]')) a.dispatchEvent(new Event('change', { bubbles: true }));   // wpisane pole teczki zapisuje się dopiero przy wyjściu z pola
+    if (viewTeczka.tm) { clearTimeout(viewTeczka.tm); viewTeczka.tm = null; save.teczki(); }
+    if (location.hash) ls.set(SESJA, JSON.stringify({ t: Date.now(), h: location.hash, y: Math.round(window.scrollY), form: S.form, mapa: S.mapa, rynek: S.rynek, hist: S.histTab }));
+  } catch { }
+}
+addEventListener('pagehide', zapiszSesje); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') zapiszSesje(); });
+async function wznowSesje() {   // tylko przy starcie bez adresu widoku, czyli z ikony; zwraca, ile przewinąć
+  if (location.hash) return null;
+  try {
+    const z = JSON.parse(ls.get(SESJA) || 'null'); if (!z || Date.now() - z.t > SESJA_MS || !z.h) return null;
+    Object.assign(S.form, z.form || {}); Object.assign(S.mapa, z.mapa || {}); Object.assign(S.rynek, z.rynek || {}); if (z.hist) S.histTab = z.hist;
+    S.last = (await store.get('last', null)) || S.last; history.replaceState(null, '', z.h); return z.y || 0;
+  } catch { return null; }
+}
+
 /* ---------- start ---------- */
 window.addEventListener('hashchange', render);
 document.addEventListener('click', e => { const b = e.target.closest('[data-back]'); if (b && !b.onclick) history.length > 1 ? history.back() : go('#/wycena'); });
 async function boot() {
   const got = await acquireLock(false);
-  await load(); render();
+  await load(); const wznow = await wznowSesje(); render(); if (wznow) setTimeout(() => window.scrollTo(0, wznow), 80);
   if (!got) { sync.freeze(); lockOverlay('Ta aplikacja jest już otwarta w innej karcie lub oknie. Dwie karty naraz mogą wzajemnie psuć dane, więc ta karta nie zapisuje niczego. Zamknij tamtą kartę albo przejmij aplikację tutaj.', true); }
   else { sync.start(); checkRcn(); }
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && got) checkRcn(); });

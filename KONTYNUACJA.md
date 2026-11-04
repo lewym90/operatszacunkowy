@@ -1,6 +1,6 @@
 # KONTYNUACJA — OPERAT SZACUNKOWY (AM Nieruchomości)
 
-Plik przekazania pracy między kontami/sesjami Claude. Stan na **2026-11-04, wersja aplikacji 1.23.4** (pełna analiza z teczki, IRR/NPV, jakość porównań, porównanie wycen, promienie, nowe raporty z numeracją, mapa rentowności).
+Plik przekazania pracy między kontami/sesjami Claude. Stan na **2026-11-04, wersja aplikacji 1.23.5** (pełna analiza z teczki, IRR/NPV, jakość porównań, porównanie wycen, promienie, nowe raporty z numeracją, mapa rentowności).
 Ten plik zawiera całą wiedzę potrzebną do kontynuacji: nie wymaga dostępu do poprzednich rozmów ani do poprzedniego projektu Claude.
 
 > **UWAGA — repozytorium jest PUBLICZNE (GitHub Pages).** W tym pliku nie ma i nie wolno zapisywać haseł, kluczy, tokenów, kodu synchronizacji „AMSYNC1:…”, adresu IP serwera ani danych ofert/klientów. Nigdy nie wklejaj klucza synchronizacji do czatu ani na zrzut ekranu — właściciel wpisuje go sam.
@@ -192,6 +192,7 @@ Ogłoszenie Otodom (dane strukturalne) zawiera: tytuł, rok budowy (`build_year`
 - 1.23.0 pełna analiza z teczki (`fullAnalysis`, widok `#/analiza/<id>`, wynik w `t.analiza`, cechy spoza teczki z ostatniej wyceny tej teczki); kalkulator: `holdCalc`, `irr`, `npv`, `scenarios`, `whatIf` w `js/invest.js`; `js/jakosc.js`: `qualityOf`, `compWhy`, `diffWyceny` (nie zmieniają wyniku); `promienie`, `opisLokalizacji` w `js/osm.js`; raporty: inwest, lokal, rent, rynek, stopka „Orientacyjna analiza, nie operat szacunkowy…”, numer `AM/rok/nnnn-XX` (XX = urządzenie) nadawany przy zapisie PDF, kolekcja `dokumenty`; mapa: tryb Rentowność, grupowanie w `DotsLayer`. `rentPair`: para tylko przy tym samym rodzaju i metrażu, tej samej teczce lub adresie, do 180 dni. Raport najmu bez tabeli konkretnych ofert (zasada 7). Naprawiony stary błąd: serwer nie znał kolekcji `teczki`, więc teczki nie synchronizowały się; poprawka serwera: `server/update_sync.sh`, strażnik w `test/all.sh`.
 - 1.23.1 sekcja „Porównanie rynkowe” w raporcie najmu (pełny i z wykresami, od 10 porównań): rozkład czynszów wszystkich ofert użytych w wycenie, ceny jak w ofertach, bez adresów (`rentBins`, `marketCv`). Decyzja właściciela: nazwa ogólna, bez nazwy portalu.
 - 1.23.4 ikona ze zdjęciem domu, kluczem i planem (grafika właściciela) w `icons/ikona2-*`; przy każdej zmianie ikony nowa nazwa pliku, bo iOS trzyma starą w pamięci. 1.23.2 poprzednia ikona (dom, wykres, lupa) (nowe nazwy plików, bo iOS trzymał starą ikonę w pamięci); logo AM zostaje w `icons/logo-am.png` (ekran startowy, nagłówki, raport).
+- 1.23.5 powrót po zamknięciu przez iOS: `am-sesja` (widok, przewinięcie, formularz, filtry, 12 h), `S.last` w bazie, bez ekranu powitalnego; surowe wiersze RCN nie zostają w pamięci (`S.rcn` = tylko meta, nRows; dane w IndexedDB).
 
 ## 11. Lista pomysłów i stan (numeracja ustalona z właścicielem 30.10)
 
@@ -226,7 +227,7 @@ Nie teraz: prognozy cen (najpierw walidacja, dane tylko z okresu wzrostu), wycen
 ### Do zrobienia przez właściciela
 - Na serwerze: `curl -fsSL https://lewym90.github.io/operatszacunkowy/server/update_sync.sh | bash` (teczki i historia dokumentów zaczną się synchronizować).
 - Do decyzji: `DEFAULT_URL` w `js/sync.js` zawiera adres IP serwera w publicznym repo (stare, wbrew zasadzie z początku pliku).
-- Zamknąć i otworzyć aplikację na wszystkich urządzeniach (jedna karta naraz), żeby pobrała 1.23.4 (przy problemach z odświeżeniem: zamknąć aplikację całkiem i otworzyć dwa razy).
+- Zamknąć i otworzyć aplikację na wszystkich urządzeniach (jedna karta naraz), żeby pobrała 1.23.5 (przy problemach z odświeżeniem: zamknąć aplikację całkiem i otworzyć dwa razy).
 - Sprawdzić na telefonie: najem → ulica „Granata”, nr „1” (karta „Najbliższe okolice”), to samo w sprzedaży; Mapa → warstwy OSM.
 - Ok. 7 listopada zrobić kolejne pełne zebranie ofert najmu.
 - Opcjonalnie: wgrać własne logo, dodać umowy domów/lokali/hal, uruchomić eksport RCN dla Chełma, Zamościa, Puław.

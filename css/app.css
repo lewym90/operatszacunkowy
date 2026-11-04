@@ -365,3 +365,6 @@ select.in { background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://ww
 .bubble-t { background: transparent !important; border: 0 !important; box-shadow: none !important; color: #0B0B0D !important; font: 700 12px var(--text); padding: 0; } .bubble-t::before { display: none; }
 .zoomin { margin-top: 8px; padding: 6px 10px; border-radius: 9px; background: rgba(200, 164, 77, .16); border: 1px solid var(--line); color: var(--gold-l); font-size: 12px; }
 #rvar { margin-bottom: 12px; }
+
+/* powrót do aplikacji po zamknięciu przez system: bez ekranu powitalnego */
+.resume #splash { display: none; }
