@@ -56,7 +56,7 @@ export async function buildReport(e, ust, opts = {}) {
       if (logo) { if (custom) { ctx.fillStyle = '#FFFFFF'; ctx.beginPath(); ctx.roundRect(M, 40, 156, 156, 18); ctx.fill(); const k = Math.min(132 / logo.width, 132 / logo.height); ctx.drawImage(logo, M + 78 - logo.width * k / 2, 118 - logo.height * k / 2, logo.width * k, logo.height * k); } else ctx.drawImage(logo, M, 40, 156, 156); }
       ctx.fillStyle = C.goldL; ctx.font = '400 54px Marcellus'; ctx.fillText(ust.biuro || 'Biuro nieruchomości', M + 196, 112);
       ctx.fillStyle = C.bone; ctx.font = '400 26px Archivo'; ctx.fillText(ust.haslo || '', M + 196, 158);
-      ctx.textAlign = 'right'; ctx.fillStyle = C.ash || '#9A978F'; ctx.font = '400 24px Archivo'; ctx.fillText(new Date(e.ts).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' }), W - M, 112); ctx.textAlign = 'left';
+      ctx.textAlign = 'right'; ctx.fillStyle = C.ash || '#9A978F'; ctx.font = '400 24px Archivo'; ctx.fillText(new Date(opts.docNo ? Date.now() : e.ts).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' }), W - M, 112); if (opts.docNo) { ctx.font = '400 22px Archivo'; ctx.fillText('Dokument ' + opts.docNo, W - M, 150); if (opts.docWid) ctx.fillText('Wycena ' + opts.docWid, W - M, 182); } ctx.textAlign = 'left';
       y = 330;
     } else { ctx.fillStyle = C.gold; ctx.fillRect(0, 0, W, 10); y = 110; }
   };
@@ -65,13 +65,62 @@ export async function buildReport(e, ust, opts = {}) {
     for (const ln of wrap(ctx, t, maxW)) { ctx.fillText(ln, M, y); y += size * lh; }
   };
   const footer = n => {
+    ctx.font = '400 21px Archivo'; ctx.fillStyle = C.ink2; ctx.textAlign = 'center'; ctx.fillText('Orientacyjna analiza, nie operat szacunkowy w rozumieniu ustawy o gospodarce nieruchomościami.', W / 2, H - 34); ctx.textAlign = 'left';
     ctx.fillStyle = C.line; ctx.fillRect(M, H - 118, W - 2 * M, 2);
     ctx.font = '400 22px Archivo'; ctx.fillStyle = C.ink2;
     const who = [ust.agent ? 'Sporządził: ' + ust.agent : '', ust.biuro, ust.tel, ust.email, ust.www].filter(Boolean).join('  ·  ');
     ctx.fillText(who, M, H - 70); ctx.textAlign = 'right'; ctx.fillText(`Strona ${n}/${pages.length}`, W - M, H - 70); ctx.textAlign = 'left';
   };
 
+  const ensure = h => { if (H - 190 - y < h) { footer(pages.length); newPage(false); } };
+  const pl1 = x => x == null ? '—' : plN(x) + '%', zl = x => money(x) + ' zł', sg = x => (x >= 0 ? '+' : '−') + money(Math.abs(x)) + ' zł';
+  const kvRows = rows => rows.forEach(([a, b]) => { ensure(50); ctx.font = '400 25px Archivo'; ctx.fillStyle = C.ink2; ctx.fillText(a, M, y); ctx.font = '700 26px Archivo'; ctx.fillStyle = C.ink; ctx.textAlign = 'right'; ctx.fillText(b, W - M, y); ctx.textAlign = 'left'; ctx.fillStyle = C.line; ctx.fillRect(M, y + 14, W - 2 * M, 2); y += 50; });
+  const table = (hdr, xs, rows, rowH = 46) => { ctx.font = '700 21px Archivo'; ctx.fillStyle = C.goldD; hdr.forEach((h, i) => { ctx.textAlign = i ? 'right' : 'left'; ctx.fillText(h.toUpperCase(), xs[i], y); }); ctx.textAlign = 'left'; ctx.fillStyle = C.line; ctx.fillRect(M, y + 14, W - 2 * M, 2); y += 52;
+    rows.forEach(rw => { ensure(50); ctx.font = '400 25px Archivo'; ctx.fillStyle = C.ink; rw.forEach((v, i) => { ctx.textAlign = i ? 'right' : 'left'; ctx.fillText(String(v), xs[i], y); }); ctx.textAlign = 'left'; y += rowH; }); y += 10; };
+  const adres = [s.ulica, s.nr].filter(Boolean).join(' ') || s.dzielnica || '';
+  const finish = disc => {
+    ctx.font = '400 22px Archivo'; const dl = wrap(ctx, disc, W - 2 * M - 48), dh = dl.length * 31 + 44;
+    if (y + dh > H - 140) { footer(pages.length); newPage(false); }
+    ctx.font = '400 22px Archivo'; ctx.fillStyle = '#F2EEE2'; ctx.beginPath(); ctx.roundRect(M, y, W - 2 * M, dh, 18); ctx.fill(); ctx.fillStyle = C.ink2; dl.forEach((l, i) => ctx.fillText(l, M + 24, y + 38 + i * 31));
+    footer(pages.length);
+    pages.forEach((p, i) => { const c2 = p.getContext('2d'); c2.fillStyle = C.paper; c2.fillRect(W - M - 260, H - 100, 260, 40); c2.fillStyle = C.ink2; c2.font = '400 22px Archivo'; c2.textAlign = 'right'; c2.fillText(`Strona ${i + 1}/${pages.length}`, W - M, H - 70); c2.textAlign = 'left'; });
+    return pages;
+  };
+  const trendCh = mk => { ensure(620); text('Ceny transakcyjne w czasie', 34, C.ink, 400, 'Marcellus'); y += 6; text(mk.trendLabel || '', 23, C.ink2); y += 8; lineChartCv(ctx, mk.trend.points, M, y, W - 2 * M, 380); y += 410;
+    text(`Mediana ceny za m² (akty notarialne, RCN) w okresach ${mk.trend.step === 12 ? 'rocznych' : mk.trend.step === 6 ? 'półrocznych' : 'kwartalnych'}; pasmo to środkowe 50% transakcji. Podstawa: ${money(mk.trend.n)} transakcji.${mk.trend.yoy ? ` Zmiana rok do roku: ${mk.trend.yoy.pct >= 0 ? '+' : ''}${plN(mk.trend.yoy.pct)}%.` : ''}`, 22, C.ink2, 400, 'Archivo', 1.38); y += 22; };
+  const yieldCh = mk => { const rows = mk.yield.rows.slice(0, 10); ensure(130 + rows.length * 50 + 120); text('Rentowność najmu w dzielnicach', 34, C.ink, 400, 'Marcellus'); y += 6; y = barChartCv(ctx, rows, mk.yield.city.y, M, y, W - 2 * M); y += 16;
+    text('Roczny czynsz z ofert do mediany ceny transakcyjnej tego samego metrażu; wartość brutto, przed podatkiem i kosztami. Linia pionowa: średnia dla miasta.', 22, C.ink2, 400, 'Archivo', 1.38); y += 22; };
+  const okolTab = (RH = 76) => { const ok = opts.okolica; ensure(130 + Math.ceil(ok.length / 2) * RH + 70); text('Najbliższe okolice', 34, C.ink, 400, 'Marcellus'); y += 6; const cw2 = (W - 2 * M) / 2;
+    ok.forEach((o, i) => { const x = M + (i % 2) * cw2, yy = y + Math.floor(i / 2) * RH; ctx.font = '400 21px Archivo'; ctx.fillStyle = C.ink2; ctx.fillText(o.label.toUpperCase(), x, yy); ctx.font = '700 28px Archivo'; ctx.fillStyle = C.ink; ctx.fillText(o.txtR, x, yy + 32); }); y += Math.ceil(ok.length / 2) * RH + 10; };
+  const okolSrc = () => { text((opts.okolicaNote ? opts.okolicaNote + ' ' : '') + 'Odległość w linii prostej od budynku do najbliższego punktu danego rodzaju. Dane punktów: OpenStreetMap (© współtwórcy OpenStreetMap).', 21, C.ink2, 400, 'Archivo', 1.38); y += 22; };
+  const D1 = 'Niniejsze zestawienie ma charakter wyłącznie orientacyjny i informacyjny. ';
+  const SPEC = { inwest: 'Analiza inwestycyjna', lokal: 'Analiza lokalizacji', rent: 'Rentowność najmu', rynek: 'Raport rynku lokalnego' };
   newPage(true);
+  if (SPEC[variant]) {
+    text(SPEC[variant], 50, C.ink, 400, 'Marcellus', 1.25); y += 6;
+    text(variant === 'rynek' ? 'Lublin i okolice' : [adres, adres ? 'Lublin' : '', String(s.m2).replace('.', ',') + ' m²'].filter(Boolean).join(', ').replace(/Lublin, /, 'Lublin · '), 28, C.ink2); y += 22;
+    if (variant === 'inwest') { const { inp: I, h, scen } = opts.invest;
+      text('Założenia', 34, C.ink, 400, 'Marcellus'); y += 6;
+      kvRows([['Cena zakupu', zl(+I.cena)], ['Czynsz miesięczny', zl(+I.czynsz)], ['Całkowity koszt zakupu', zl(h.koszt)], ['Własny kapitał na start', zl(h.equity)], ...(h.loan ? [['Kredyt', `${zl(h.loan)}, rata ${zl(h.rata)}`]] : []), ['Okres inwestycji', h.N + ' lat'], ['Zmiana wartości rocznie', plN(+I.wzrost || 0) + '%']]); y += 24;
+      text('Wyniki', 34, C.ink, 400, 'Marcellus'); y += 6;
+      kvRows([['Zwrot brutto', pl1(h.gross)], ['Zwrot netto po podatku', pl1(h.netPost)], ['Cash-on-cash', pl1(h.coc)], ['Okres zwrotu', h.payback ? plN(h.payback) + ' lat' : '—'], ['Przepływ miesięczny', sg(h.cfMies)], ['Wartość przy sprzedaży', zl(h.wartosc)], ['Zysk całkowity', sg(h.zysk)], ['ROI za cały okres', pl1(h.roi)], ['IRR rocznie', pl1(h.irr)], ...(h.npv != null ? [[`NPV przy ${plN(h.dyskonto)}%`, sg(h.npv)]] : [])]); y += 24;
+      ensure(300); text('Scenariusze', 34, C.ink, 400, 'Marcellus'); y += 6;
+      table(['Scenariusz', 'Zwrot netto', 'IRR', 'Zysk'], [M, 700, 860, W - M], scen.map(x => [x.name, pl1(x.r.netPost), pl1(x.r.irr), sg(x.r.zysk)]));
+      text(scen.filter(x => x.name !== 'Bazowy').map(x => `${x.name}: ${x.opis}.`).join(' '), 22, C.ink2, 400, 'Archivo', 1.38); y += 22;
+      return finish(D1 + 'Wyniki wynikają z podanych założeń i nie są prognozą ani poradą inwestycyjną lub podatkową. Podatek liczony orientacyjnie, bez składki zdrowotnej, ulg i podatku od sprzedaży.');
+    }
+    if (variant === 'lokal') { if (opts.okolicaOpis) { text(opts.okolicaOpis, 25, C.ink); y += 12; } okolTab(64);
+      if (opts.promienie && opts.promienie.length) { ensure(120 + opts.promienie.length * 46); text('Liczba punktów w promieniach od budynku', 34, C.ink, 400, 'Marcellus'); y += 6; const xs = [M, 590, 720, 850, 970, W - M]; table(['', ...opts.radii], xs, opts.promienie.map(x => [x.label, ...x.n]), 38); }
+      okolSrc(); return finish(D1 + 'Opis powstał wyłącznie z policzonych punktów mapowych, których kompletność zależy od danych OpenStreetMap. Nie stanowi oceny atrakcyjności nieruchomości.');
+    }
+    if (variant === 'rent') { const p = opts.pair; kvRows([['Szacunkowa wartość', zl(round(p.wartosc, 1000))], ['Szacunkowy czynsz miesięcznie', zl(round(p.czynsz, 10))], ['Rentowność brutto rocznie', pl1(p.y)]]); y += 16;
+      text('Roczny czynsz do szacunkowej wartości, przed podatkiem, kosztami, remontami i pustostanami. Rzeczywisty zwrot jest niższy.', 24, C.ink2); y += 18; if (opts.market?.yield) yieldCh(opts.market);
+      return finish(D1 + 'Czynsze pochodzą z cen ofertowych, które mogą być wyższe od faktycznie uzgodnionych.');
+    }
+    if (opts.market?.trend) trendCh(opts.market); if (opts.market?.yield) yieldCh(opts.market);
+    if (opts.market?.exp) { const X = opts.market.exp; ensure(160); text('Czas ekspozycji ofert najmu', 34, C.ink, 400, 'Marcellus'); y += 6; text(`Połowa ofert znikała w ciągu ${Math.round(X.days.med)} dni (środkowe 50%: ${Math.round(X.days.p25)}–${Math.round(X.days.p75)} dni), na podstawie ${X.nGone} ofert. Zniknięcie oferty nie zawsze oznacza wynajem.`, 24, C.ink2); y += 22; }
+    return finish(D1 + 'Ceny transakcyjne pochodzą z Rejestru Cen Nieruchomości, czynsze z cen ofertowych. Ceny zmieniają się też ze standardem i metrażem, więc to wskazówka o rynku, nie wycena.');
+  }
   text(sale ? 'Orientacyjna analiza wartości nieruchomości' : 'Orientacyjna analiza czynszu najmu', 50, C.ink, 400, 'Marcellus', 1.25); y += 10;
   // dane nieruchomości
   const lok = sale ? [s.ulica, s.nr].filter(Boolean).join(' ') : [s.dzielnica, s.ulica].filter(Boolean).join(', ');
@@ -122,13 +171,7 @@ export async function buildReport(e, ust, opts = {}) {
   y += 14;
   }
   if (variant !== 'short' && opts.okolica && opts.okolica.length) {
-    const ok = opts.okolica, need = 130 + Math.ceil(ok.length / 2) * 76 + 70;
-    if (H - 190 - y < need) { footer(pages.length); newPage(false); }
-    text('Najbliższe okolice', 34, C.ink, 400, 'Marcellus'); y += 6;
-    const cw2 = (W - 2 * M) / 2;
-    ok.forEach((o, i) => { const x = M + (i % 2) * cw2, yy = y + Math.floor(i / 2) * 76; ctx.font = '400 21px Archivo'; ctx.fillStyle = C.ink2; ctx.fillText(o.label.toUpperCase(), x, yy); ctx.font = '700 28px Archivo'; ctx.fillStyle = C.ink; ctx.fillText(o.txtR, x, yy + 32); });
-    y += Math.ceil(ok.length / 2) * 76 + 10;
-    text((opts.okolicaNote ? opts.okolicaNote + ' ' : '') + 'Odległość w linii prostej od budynku do najbliższego punktu danego rodzaju. Dane punktów: OpenStreetMap (© współtwórcy OpenStreetMap).', 21, C.ink2, 400, 'Archivo', 1.38); y += 22;
+    okolTab(); if (opts.okolicaOpis) { ensure(90); text(opts.okolicaOpis, 24, C.ink); y += 10; } okolSrc();
   }
   if (variant === 'market' && opts.market) {
     const mk = opts.market, need = 700;
@@ -148,14 +191,9 @@ export async function buildReport(e, ust, opts = {}) {
     }
   }
   // zastrzeżenie
+  // zastrzeżenie
   const disc = `Niniejsze zestawienie ma charakter wyłącznie orientacyjny i informacyjny. Sporządzono je metodą porównawczą na podstawie ${sale ? 'cen transakcyjnych z Rejestru Cen Nieruchomości' : 'cen ofertowych z ogłoszeń'}, bez oględzin nieruchomości oraz bez badania jej stanu prawnego i technicznego. Nie jest wyceną sporządzoną przez rzeczoznawcę majątkowego i nie może jej zastępować. Rzeczywista cena lub czynsz zależą od stanu nieruchomości, negocjacji i sytuacji rynkowej.`;
-  ctx.font = '400 22px Archivo'; const dl = wrap(ctx, disc, W - 2 * M - 48), dh = dl.length * 31 + 44;
-  if (y + dh > H - 140) { footer(pages.length); newPage(false); }
-  ctx.fillStyle = '#F2EEE2'; ctx.beginPath(); ctx.roundRect(M, y, W - 2 * M, dh, 18); ctx.fill(); ctx.fillStyle = C.ink2; dl.forEach((l, i) => ctx.fillText(l, M + 24, y + 38 + i * 31));
-  footer(pages.length);
-  // numeracja po zbudowaniu całości
-  pages.forEach((p, i) => { const c2 = p.getContext('2d'); c2.fillStyle = C.paper; c2.fillRect(W - M - 260, H - 100, 260, 40); c2.fillStyle = C.ink2; c2.font = '400 22px Archivo'; c2.textAlign = 'right'; c2.fillText(`Strona ${i + 1}/${pages.length}`, W - M, H - 70); });
-  return pages;
+  return finish(disc);
 }
 
 // Minimalny zapis PDF: jedna strona A4 = jeden obraz JPEG.

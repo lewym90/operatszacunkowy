@@ -40,3 +40,28 @@ export function okolica(ll, layers) {
     out.push({ key: k, label: L.rep || L.n, m, txt: m < 1000 ? m + ' m' : fmtKm(m), txtR: r10 < 1000 ? 'ok. ' + r10 + ' m' : 'ok. ' + (Math.round(m / 100) / 10).toFixed(1).replace('.', ',') + ' km' }); }
   return out;
 }
+
+/* Analiza lokalizacji: ile punktów każdego rodzaju leży w promieniach od budynku. Punkty to wyłącznie dane z pliku OpenStreetMap, bez ocen. */
+export const PROMIENIE = [300, 500, 1000, 2000, 3000];
+export const promLbl = r => r < 1000 ? r + ' m' : (r / 1000) + ' km';
+export function promienie(ll, layers, radii = PROMIENIE) {
+  const out = [];
+  for (const [k, L] of Object.entries(LAYERS)) { const pts = layers[k] || []; if (!pts.length) continue;
+    const dist = pts.map(p => haversine(ll, [p[0], p[1]]) * 1000); out.push({ key: k, label: L.n, n: radii.map(r => dist.filter(d => d <= r).length), m: Math.round(Math.min(...dist)) }); }
+  return out;
+}
+const FORM = { przystanki: ['przystanek', 'przystanki', 'przystanków'], szkoly: ['szkoła', 'szkoły', 'szkół'], przedszkola: ['przedszkole', 'przedszkola', 'przedszkoli'], sklepy: ['supermarket', 'supermarkety', 'supermarketów'], parki: ['park', 'parki', 'parków'], zdrowie: ['przychodnia lub szpital', 'przychodnie lub szpitale', 'przychodni lub szpitali'], uczelnie: ['uczelnia', 'uczelnie', 'uczelni'] };
+export const plForm = (n, f) => n === 1 ? f[0] : (n % 10 >= 2 && n % 10 <= 4 && !(n % 100 >= 12 && n % 100 <= 14)) ? f[1] : f[2];
+const countTxt = (rows, i) => rows.filter(r => r.n[i]).map(r => `${r.n[i]} ${plForm(r.n[i], FORM[r.key])}`);
+const list = a => a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' i ' + a[a.length - 1];
+// Opis powstaje tylko z policzonych punktów. i = indeks promienia (domyślnie 500 m i 1 km).
+export function opisLokalizacji(rows, radii = PROMIENIE) {
+  if (!rows || !rows.length) return '';
+  const i5 = radii.indexOf(500), i1 = radii.indexOf(1000), a = countTxt(rows, i5), b = countTxt(rows, i1); let t = '';
+  if (a.length) t = `W promieniu 500 m od budynku: ${list(a)}.`;
+  if (b.length && b.join() !== a.join()) t += `${t ? ' ' : ''}W promieniu 1 km: ${list(b)}.`;
+  if (!t) t = 'W promieniu 1 km od budynku nie ma w danych mapowych punktów tych rodzajów.';
+  const brak = rows.filter(r => !r.n[i1]).map(r => `${FORM[r.key][0]}: ok. ${r.m < 950 ? Math.round(r.m / 10) * 10 + ' m' : (Math.round(r.m / 100) / 10).toFixed(1).replace('.', ',') + ' km'}`);
+  if (brak.length && b.length) t += ` Dalej niż 1 km, najbliższe: ${brak.join('; ')}.`;
+  return t;
+}
