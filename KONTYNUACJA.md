@@ -1,6 +1,6 @@
 # KONTYNUACJA — OPERAT SZACUNKOWY (AM Nieruchomości)
 
-Plik przekazania pracy między kontami/sesjami Claude. Stan na **2026-11-04, wersja aplikacji 1.22.0** (nowa szata: ekran Start, kafelki, pasek Więcej; kolory, fonty i logo bez zmian).
+Plik przekazania pracy między kontami/sesjami Claude. Stan na **2026-11-04, wersja aplikacji 1.23.0** (pełna analiza z teczki, IRR/NPV, jakość porównań, porównanie wycen, promienie, nowe raporty z numeracją, mapa rentowności).
 Ten plik zawiera całą wiedzę potrzebną do kontynuacji: nie wymaga dostępu do poprzednich rozmów ani do poprzedniego projektu Claude.
 
 > **UWAGA — repozytorium jest PUBLICZNE (GitHub Pages).** W tym pliku nie ma i nie wolno zapisywać haseł, kluczy, tokenów, kodu synchronizacji „AMSYNC1:…”, adresu IP serwera ani danych ofert/klientów. Nigdy nie wklejaj klucza synchronizacji do czatu ani na zrzut ekranu — właściciel wpisuje go sam.
@@ -189,6 +189,7 @@ Ogłoszenie Otodom (dane strukturalne) zawiera: tytuł, rok budowy (`build_year`
 - 1.21.0 dokładny budynek z PRG, pole Nr budynku, karta w panelu i raporcie. 1.21.1 podpowiedzi przy literówce. 1.21.2 układ pól ulica/numer. 1.21.3 naprawa: `sw.template.js` i `sw.js` były puste od 1.20.0 (brak trybu offline/aktualizacji cache); przywrócone, dodany strażnik w `test/all.sh`.
 
 - 1.22.0 nowa szata wg projektu właściciela (układ jak w projekcie, kolory onyx/złoto, Marcellus + Archivo, logo AM bez zmian): ekran Start, nagłówek z menu, karta wyniku z dużą wartością, Rynek z zakresem Miasto/Dzielnica/Promień, wskaźniki kalkulatora nad formularzem, lista Raporty. Świadome odstępstwa: pewność jako poziom (niska/średnia/wysoka), nie procent (zasada 1); zdjęcie w wyniku tylko z teczki; analiza wrażliwości jako wykres, nie suwaki.
+- 1.23.0 pełna analiza z teczki (`fullAnalysis`, widok `#/analiza/<id>`, wynik w `t.analiza`, cechy spoza teczki z ostatniej wyceny tej teczki); kalkulator: `holdCalc`, `irr`, `npv`, `scenarios`, `whatIf` w `js/invest.js`; `js/jakosc.js`: `qualityOf`, `compWhy`, `diffWyceny` (nie zmieniają wyniku); `promienie`, `opisLokalizacji` w `js/osm.js`; raporty: inwest, lokal, rent, rynek, stopka „Orientacyjna analiza, nie operat szacunkowy…”, numer `AM/rok/nnnn-XX` (XX = urządzenie) nadawany przy zapisie PDF, kolekcja `dokumenty`; mapa: tryb Rentowność, grupowanie w `DotsLayer`. `rentPair`: para tylko przy tym samym rodzaju i metrażu, tej samej teczce lub adresie, do 180 dni. Raport najmu bez tabeli konkretnych ofert (zasada 7). Naprawiony stary błąd: serwer nie znał kolekcji `teczki`, więc teczki nie synchronizowały się; poprawka serwera: `server/update_sync.sh`, strażnik w `test/all.sh`.
 
 ## 11. Lista pomysłów i stan (numeracja ustalona z właścicielem 30.10)
 
@@ -216,12 +217,14 @@ Gdy właściciel zapyta „co jeszcze jest do zrobienia”, podać punkty z sekc
 - Wybór miasta w aplikacji (punkt 14).
 
 ### Ocena listy rozwoju właściciela (4.11.2026)
-Najpierw: analiza jednym kliknięciem z teczki; IRR/NPV/scenariusze w kalkulatorze; „dlaczego to porównanie” i jakość materiału; lokalizacja w promieniach z opisem z danych OSM; nowe typy raportów i numeracja; lejek CRM razem z ochroną danych klientów; mapa rentowności.
+Zrobione w 1.23.0: analiza z teczki, IRR/NPV/scenariusze, jakość porównań, porównanie wycen, lokalizacja w promieniach, nowe raporty i numeracja, mapa rentowności. Następne: lejek CRM razem z ochroną danych klientów.
 Czeka na dane lub zgodę: rekomendacja ceny ofertowej i okazje rynkowe (oferty sprzedaży, punkt 15 i 20); inne miasta (punkt 14).
 Nie teraz: prognozy cen (najpierw walidacja, dane tylko z okresu wzrostu), wycena ze zdjęć (brak danych), cechy spoza RCN w doborze sprzedaży, księgi wieczyste, zespół i API.
 
 ### Do zrobienia przez właściciela
-- Zamknąć i otworzyć aplikację na wszystkich urządzeniach (jedna karta naraz), żeby pobrała 1.22.0 (przy problemach z odświeżeniem: zamknąć aplikację całkiem i otworzyć dwa razy).
+- Na serwerze: `curl -fsSL https://lewym90.github.io/operatszacunkowy/server/update_sync.sh | bash` (teczki i historia dokumentów zaczną się synchronizować).
+- Do decyzji: `DEFAULT_URL` w `js/sync.js` zawiera adres IP serwera w publicznym repo (stare, wbrew zasadzie z początku pliku).
+- Zamknąć i otworzyć aplikację na wszystkich urządzeniach (jedna karta naraz), żeby pobrała 1.23.0 (przy problemach z odświeżeniem: zamknąć aplikację całkiem i otworzyć dwa razy).
 - Sprawdzić na telefonie: najem → ulica „Granata”, nr „1” (karta „Najbliższe okolice”), to samo w sprzedaży; Mapa → warstwy OSM.
 - Ok. 7 listopada zrobić kolejne pełne zebranie ofert najmu.
 - Opcjonalnie: wgrać własne logo, dodać umowy domów/lokali/hal, uruchomić eksport RCN dla Chełma, Zamościa, Puław.

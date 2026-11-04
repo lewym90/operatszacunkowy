@@ -88,8 +88,23 @@ const dt = ts => ts ? new Date(ts).toLocaleDateString('pl-PL', { year: 'numeric'
 export const popupSale = s => `<b>${esc([s.ulica, s.nr].filter(Boolean).join(' ') || (s.kat && s.kat !== 'mieszkanie' ? KAT[s.kat].n : 'Transakcja'))}</b><br>${fmt(s.cena)} zł · ${String(s.m2).replace('.', ',')} m²${s.izby ? ' · ' + s.izby + ' pok.' : ''}${s.dzm2 ? ' · działka ' + fmt(s.dzm2) + ' m²' : ''}<br><b>${fmt(s.pm2)} zł/m²</b><br><span class="tiny">akt: ${dt(s.ts)}${s.kat === 'mieszkanie' || s.kat === 'dom' || s.kat === 'obiekt' ? ' · rynek ' + rynekTxt(s.rynek) : ''}${s.pod ? ' · ' + esc(POD_TXT[s.pod] || s.pod) : ''}</span>`;
 export const popupOffer = (o, approx) => `${o.url ? `<a href="${esc(o.url)}" target="_blank" rel="noopener noreferrer"><b>${esc([o.ulica, o.dzielnica].filter(Boolean).join(', ') || 'Oferta najmu')}</b> ↗</a>` : `<b>${esc([o.ulica, o.dzielnica].filter(Boolean).join(', ') || 'Oferta najmu')}</b>`}<br>${fmt(o.cena)} zł/mies. · ${String(o.m2).replace('.', ',')} m² · ${o.pokoje} pok.${o.pietro != null ? ' · ' + (o.pietro === 0 ? 'parter' : o.pietro + '. p.') : ''}<br><b>${fmt(o.cena / o.m2)} zł/m²</b>${o.czynsz ? `<br><span class="tiny">czynsz adm. ${fmt(o.czynsz)} zł</span>` : ''}<br><span class="tiny">${approx ? 'położenie przybliżone (środek dzielnicy)' : 'położenie: środek ulicy'}</span>`;
 
+// Środki dzielnic: mediana środków ulic z ofert, które mają ulicę i dzielnicę (min. 2 ulice). Klucz: nazwa dzielnicy po normalizacji przez norm.
+export function districtCenters(offers, centers, norm = x => x) {
+  const dz = new Map();
+  for (const o of offers) if (o.ulica && o.dzielnica) { const c = centers.get(normStreet(o.ulica)), k = norm(o.dzielnica); if (c) { const d = dz.get(k) || dz.set(k, new Map()).get(k); d.set(normStreet(o.ulica), c); } }
+  const out = new Map(); for (const [k, m] of dz) if (m.size >= 2) { const v = [...m.values()]; out.set(k, { lat: med(v.map(c => c.lat)), lon: med(v.map(c => c.lon)), ulic: v.length }); }
+  return out;
+}
+// Grupowanie punktów w siatce ekranu: kratka z min. minN punktami to jedna grupa, reszta zostaje pojedynczymi punktami. project(it) daje {x,y} w pikselach.
+export function clusterItems(items, project, cell = 58, minN = 3) {
+  const g = new Map(); for (const it of items) { const p = project(it), k = Math.floor(p.x / cell) + ':' + Math.floor(p.y / cell); (g.get(k) || g.set(k, []).get(k)).push({ it, p }); }
+  const groups = [], single = [];
+  for (const a of g.values()) { if (a.length < minN) { a.forEach(x => single.push(x)); continue; } const v = a.map(x => x.it.v); groups.push({ n: a.length, x: a.reduce((s, q) => s + q.p.x, 0) / a.length, y: a.reduce((s, q) => s + q.p.y, 0) / a.length, med: med(v), p25: quant(v, .25), p75: quant(v, .75), items: a.map(x => x.it) }); }
+  return { groups, single };
+}
+
 // Warstwa punktów rysowana na jednej kanwie. Kliknięcie szuka najbliższego punktu w promieniu ok. 14 px.
-function DotsLayer(L, items, color, popup) {
+function DotsLayer(L, items, color, popup, group) {
   const Cls = L.Layer.extend({
     initialize() { this._it = items; this._col = items.map(it => color(it.v)); },
     onAdd(map) {
@@ -103,6 +118,15 @@ function DotsLayer(L, items, color, popup) {
       c.width = Math.round(s.x * dpr); c.height = Math.round(s.y * dpr); c.style.width = s.x + 'px'; c.style.height = s.y + 'px';
       const x = c.getContext('2d'); x.setTransform(dpr, 0, 0, dpr, 0, 0); x.lineWidth = .6; x.strokeStyle = 'rgba(11,11,13,.85)'; x.globalAlpha = .82;
       const r = Math.max(2.2, Math.min(5, (m.getZoom() - 8) * .55 + 1.6));
+      this._gr = []; this._si = null;
+      if (group && m.getZoom() < 15 && this._it.length > 12) {   // przy oddaleniu grupy z liczbą punktów; od zbliżenia 15 pojedyncze transakcje
+        const bd = m.getBounds().pad(.1), z = m.getZoom(), o = m.project(m.containerPointToLatLng([0, 0]), z), vis = this._it.filter(it => bd.contains([it.lat, it.lon])), { groups, single } = clusterItems(vis, it => m.project([it.lat, it.lon], z));   // kratki w układzie mapy: grupy nie skaczą przy przesuwaniu
+        for (const q of groups) { q.x -= o.x; q.y -= o.y; } for (const q of single) q.p = { x: q.p.x - o.x, y: q.p.y - o.y }; this._si = single.map(q => q.it);
+        for (const { it, p } of single) { x.fillStyle = color(it.v); x.beginPath(); x.arc(p.x, p.y, r, 0, 6.2832); x.fill(); x.stroke(); }
+        x.font = '700 12px Archivo, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
+        for (const q of groups) { const rr = Math.min(24, 12 + Math.log2(q.n) * 2); q.r = rr; x.globalAlpha = .9; x.fillStyle = color(q.med); x.beginPath(); x.arc(q.x, q.y, rr, 0, 6.2832); x.fill(); x.globalAlpha = 1; x.lineWidth = 1.5; x.stroke(); x.fillStyle = '#0B0B0D'; x.fillText(q.n > 999 ? String(Math.round(q.n / 100) / 10).replace('.', ',') + ' tys.' : q.n, q.x, q.y + 1); }
+        this._gr = groups; return;
+      }
       for (let i = 0; i < this._it.length; i++) {
         const it = this._it[i], p = m.latLngToContainerPoint([it.lat, it.lon]); if (p.x < -8 || p.y < -8 || p.x > s.x + 8 || p.y > s.y + 8) continue;
         x.fillStyle = this._col[i]; x.beginPath(); x.arc(p.x, p.y, r, 0, 6.2832); x.fill(); x.stroke();
@@ -110,7 +134,13 @@ function DotsLayer(L, items, color, popup) {
     },
     _click(e) {
       const m = this._m; let best = null, bd = 14 * 14;
-      for (const it of this._it) { const p = m.latLngToContainerPoint([it.lat, it.lon]), d = (p.x - e.containerPoint.x) ** 2 + (p.y - e.containerPoint.y) ** 2; if (d < bd) { bd = d; best = it; } }
+      for (const q of this._gr || []) if ((q.x - e.containerPoint.x) ** 2 + (q.y - e.containerPoint.y) ** 2 <= (q.r + 3) ** 2) {
+        const el = L.DomUtil.create('div'); el.innerHTML = `<b>${fmt(q.n)} transakcji</b><br>mediana <b>${fmt(q.med)} zł/m²</b><br>środkowe 50%: ${fmt(q.p25)}–${fmt(q.p75)} zł/m²<br>`;
+        const b = L.DomUtil.create('button', 'zoomin', el); b.type = 'button'; b.textContent = 'Przybliż ten obszar'; const ll = L.latLngBounds(q.items.map(i => [i.lat, i.lon]));
+        b.onclick = () => { m.closePopup(); m.fitBounds(ll, { padding: [30, 30], maxZoom: 16 }); };
+        L.popup().setLatLng(m.containerPointToLatLng([q.x, q.y])).setContent(el).openOn(m); return;
+      }
+      for (const it of this._si || this._it) { const p = m.latLngToContainerPoint([it.lat, it.lon]), d = (p.x - e.containerPoint.x) ** 2 + (p.y - e.containerPoint.y) ** 2; if (d < bd) { bd = d; best = it; } }
       if (best) L.popup().setLatLng([best.lat, best.lon]).setContent(popup(best)).openOn(m);
     },
   });
@@ -127,8 +157,9 @@ export async function createMap(el, opts = {}) {
   const api = {
     L, map,
     clear() { layer.remove(); layer = L.layerGroup().addTo(map); },
-    dots(items, color, popup) {   // items: [{lat,lon,v,...}]
+    dots(items, color, popup, opt = {}) {   // items: [{lat,lon,v,...}]; opt.group: grupowanie przy oddaleniu
       api.items = items;
+      if (opt.group) { new DotsLayer(L, items, color, popup, true).addTo(layer); return items.map(it => [it.lat, it.lon]); }
       if (items.length > 1500) {   // duże zbiory: jedna kanwa zamiast tysięcy osobnych obiektów (mniej pamięci, płynne przesuwanie na tabletach)
         const lyr = new DotsLayer(L, items, color, popup); lyr.addTo(layer); return items.map(it => [it.lat, it.lon]);
       }
@@ -137,6 +168,7 @@ export async function createMap(el, opts = {}) {
       return pts;
     },
     cells(cells, color, popup) { for (const c of cells) L.rectangle(c.bounds, { weight: .6, color: 'rgba(11,11,13,.7)', fillColor: color(c.med), fillOpacity: .62 }).bindPopup(() => popup(c)).addTo(layer); },
+    bubbles(items, color, popup) { for (const it of items) L.circleMarker([it.lat, it.lon], { radius: 24, weight: 1.5, color: 'rgba(11,11,13,.9)', fillColor: color(it.v), fillOpacity: .78 }).bindPopup(() => popup(it)).bindTooltip(it.txt, { permanent: true, direction: 'center', className: 'bubble-t' }).addTo(layer); },
     subject(ll, label) { if (!ll) return; L.circleMarker(ll, { radius: 11, weight: 2.5, color: '#E6CE94', fillOpacity: 0 }).bindTooltip(label || 'Wyceniane mieszkanie').addTo(layer); L.circleMarker(ll, { radius: 3.5, weight: 0, fillColor: '#E6CE94', fillOpacity: 1 }).addTo(layer); },
     fit(pts, pad = 24) { if (pts && pts.length > 1) map.fitBounds(L.latLngBounds(pts), { padding: [pad, pad], maxZoom: 16 }); else if (pts && pts.length === 1) map.setView(pts[0], 15); },
     destroy() { map.remove(); },

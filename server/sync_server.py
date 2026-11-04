@@ -17,7 +17,7 @@ HOST = os.environ.get('OPERAT_SYNC_HOST', '127.0.0.1')
 PORT = int(os.environ.get('OPERAT_SYNC_PORT', '18795'))
 MAX_BODY = 60 * 1024 * 1024
 PAGE = 2000
-COLLS = {'offers', 'wlasne', 'wyceny', 'budynki', 'ust'}
+COLLS = {'offers', 'wlasne', 'wyceny', 'teczki', 'dokumenty', 'budynki', 'ust'}
 LOCK = threading.Lock()
 
 
