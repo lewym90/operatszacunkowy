@@ -23,12 +23,13 @@ const offers = []; for (let i = 0; i < 150; i++) { const d = DZ[i % 3], m2 = Mat
   await p.screenshot({ path: OUT + '/01-rynek.png', fullPage: true });
   await p.tap('#rtrend svg circle:nth-of-type(8)').catch(() => { }); await p.waitForTimeout(200); console.log('odczyt:', await p.$eval('#rtrend .chart-read', e => e.innerText));
   await p.click('[data-rf=rynek] [data-v=wtorny]'); await p.waitForTimeout(300); const n2 = await p.$eval('#rtrend .stats', e => e.innerText.replace(/\n/g, ' ')); console.log('wtórny:', n2);
-  await p.selectOption('#rf-dz', 'Wrotków'); await p.waitForTimeout(500); const dzs = await p.$eval('#rtrend .stats', e => e.innerText.replace(/\n/g, ' ')); console.log('dzielnica Wrotków:', dzs); if (!/\b1 \d{3} transakcji|\d{3,4}\s+transakcji/.test(dzs) || /3000/.test(dzs)) { console.log('FAIL filtr dzielnicy'); errs.push('dzielnica'); }
+  await p.click('[data-zk=dzielnica]'); await p.waitForTimeout(200); await p.selectOption('#rf-dz', 'Wrotków'); await p.waitForTimeout(500); const dzs = await p.$eval('#rtrend .stats', e => e.innerText.replace(/\n/g, ' ')); console.log('dzielnica Wrotków:', dzs); if (!/\b1 \d{3} transakcji|\d{3,4}\s+transakcji/.test(dzs) || /3000/.test(dzs)) { console.log('FAIL filtr dzielnicy'); errs.push('dzielnica'); }
   console.log('opcje listy dzielnic:', await p.$$eval('#rf-dz option', o => o.map(x => x.value).join(', ')));
-  await p.selectOption('#rf-dz', '');
+  await p.click('[data-zk=promien]'); await p.waitForTimeout(200);
   await p.fill('#rf-ul', 'gran'); await p.waitForTimeout(300); const sgs = await p.$$eval('.suggest .sg', e => e.map(x => x.textContent)); console.log('podpowiedzi ulic dla "gran":', sgs.join(' | ')); if (!sgs.includes('Granata')) errs.push('brak podpowiedzi'); await p.screenshot({ path: OUT + '/03-podpowiedzi.png' }); await p.dispatchEvent('.suggest .sg:first-child', 'pointerdown'); await p.waitForTimeout(500); console.log('wybrana ulica:', await p.$eval('#rf-ul', e => e.value)); await p.waitForTimeout(400); console.log('okolica Granata:', await p.$eval('#rtrend .stats', e => e.innerText.replace(/\n/g, ' ')));
   await p.screenshot({ path: OUT + '/02-okolica.png', fullPage: true });
   const nav = await p.$eval('#tabs .in-tabs', e => { const r = e.getBoundingClientRect(); return { w: r.width, sw: e.scrollWidth, vw: innerWidth }; }); console.log('nav', nav);
+  const kpy = await (async () => { await p.goto("http://localhost:8765/index.html#/rynek"); await p.waitForTimeout(900); return p.$eval("#kp-y", e => e.textContent); })(); console.log("kafelek rentowności:", kpy); if (!/%/.test(kpy)) errs.push("brak rentowności na kafelku"); 
   console.log('BŁĘDY:', errs.length ? errs : 'brak'); await b.close(); srv.kill();
   if (!(pts >= 10) || !(bars >= 3) || errs.length) process.exit(1);
 })().catch(e => { console.error('TEST PADŁ', e); process.exit(1); });

@@ -12,7 +12,7 @@ import { geocode, neighbors, suggest as suggestAddr } from './geokod.js';
 import { exposure, trendSeries, yieldByDistrict, districtAssigner, lineChart, barChart, bindCharts } from './rynek.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer } from './mapa.js';
 
-const VERSION = '1.21.3';
+const VERSION = '1.22.0';
 const S = { wlasne: [], teczki: [], foto: {},
   offers: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -79,15 +79,27 @@ function paintSync(st) {
 }
 
 /* ---------- router ---------- */
-const TABS = [['wycena', 'Wycena'], ['mapa', 'Mapa'], ['rynek', 'Rynek'], ['oferty', 'Oferty'], ['dane', 'Dane'], ['historia', 'Historia'], ['ust', 'Ustawienia']];
-function tabs(active) {
-  $('#tabs').innerHTML = '<div class="in-tabs"><div class="brand"><img src="icons/logo-am.png" alt=""><b>OPERAT SZACUNKOWY</b><span>AM Nieruchomości</span></div>' + TABS.map(([k, n]) => `<a href="#/${k}" class="${k === active ? 'on' : ''}">${ICON[k === 'wycena' ? 'wycena' : k]}${k === 'historia' && remindN() ? `<i class="nb">${remindN()}</i>` : ''}<span>${n}</span></a>`).join('') + '</div>';
+// Na telefonie dolny pasek: Start, Wycena, Mapa, Rynek, Więcej (reszta w menu). Na komputerze boczne menu pokazuje wszystko.
+const TABS = [['start', 'Start'], ['wycena', 'Wycena'], ['mapa', 'Mapa'], ['rynek', 'Rynek'], ['oferty', 'Oferty'], ['historia', 'Teczki'], ['dane', 'Dane'], ['ust', 'Ustawienia']];
+const MAIN = ['start', 'wycena', 'mapa', 'rynek'];
+const MENU = [['oferty', 'Monitoring ofert', 'oferty'], ['historia', 'Teczki i historia', 'teczki'], ['raporty', 'Raporty PDF', 'raport'], ['kalkulator', 'Kalkulator inwestycyjny', 'kalk'], ['dane', 'Dane i import', 'dane'], ['ust', 'Ustawienia', 'ust']];
+function menuSheet() {
+  const n = remindN();
+  openSheet(`<div class="eyebrow">Więcej</div><div class="menu-list">${MENU.map(([k, l, ic]) => `<a href="#/${k}" class="menu-it">${ICON[ic]}<span>${l}</span>${k === 'historia' && n ? `<i class="nb">${n}</i>` : ''}</a>`).join('')}</div>`, p => $$('a', p).forEach(a => a.addEventListener('click', closeSheet)));
 }
+function tabs(active) {
+  const n = remindN();
+  $('#tabs').innerHTML = '<div class="in-tabs"><div class="brand"><img src="icons/logo-am.png" alt=""><b>OPERAT SZACUNKOWY</b><span>AM Nieruchomości</span></div>' + TABS.map(([k, l]) => `<a href="#/${k}" class="${k === active ? 'on' : ''}${MAIN.includes(k) ? '' : ' xtra'}">${ICON[k]}${k === 'historia' && n ? `<i class="nb">${n}</i>` : ''}<span>${l}</span></a>`).join('')
+    + `<button type="button" class="more ${MAIN.includes(active) ? '' : 'on'}" data-menu aria-label="Więcej">${ICON.wiecej}${n ? `<i class="nb">${n}</i>` : ''}<span>Więcej</span></button></div>`;
+}
+document.addEventListener('click', e => { if (e.target.closest('[data-menu]')) menuSheet(); });
 function render() {
-  const h = location.hash.replace(/^#\/?/, '') || 'wycena', p = h.split('/');
+  const h = location.hash.replace(/^#\/?/, '') || 'start', p = h.split('/');
   let html = '', mount = null, tab = p[0];
   closeSheet(); if (mapCtl) { try { mapCtl.destroy(); } catch { } mapCtl = null; }
-  if (p[0] === 'mapa') [html, mount] = viewMapa();
+  if (p[0] === 'start') [html, mount] = viewStart();
+  else if (p[0] === 'raporty') { tab = 'historia'; [html, mount] = viewRaporty(); }
+  else if (p[0] === 'mapa') [html, mount] = viewMapa();
   else if (p[0] === 'rynek') [html, mount] = viewRynek();
   else if (p[0] === 'kalkulator') { tab = 'rynek'; [html, mount] = viewKalkulator(); }
   else if (p[0] === 'teczka') { tab = 'historia'; [html, mount] = viewTeczka(p[1]); }
@@ -98,8 +110,8 @@ function render() {
   else if (p[0] === 'ust') [html, mount] = viewUst();
   else if (p[0] === 'wynik') { tab = 'wycena'; [html, mount] = viewWynik(p); }
   else if (p[0] === 'raport') { tab = 'wycena'; [html, mount] = viewRaport(p); }
-  else [html, mount] = viewWycena();
-  const v = $('#view'); v.innerHTML = html; v.dataset.view = ['wycena', 'mapa', 'rynek', 'oferty', 'dane', 'historia', 'teczka', 'kalkulator', 'ust', 'wynik', 'raport'].includes(p[0]) ? p[0] : 'wycena';
+  else { tab = 'start'; [html, mount] = viewStart(); }
+  const v = $('#view'); v.innerHTML = html; v.dataset.view = ['start', 'raporty', 'wycena', 'mapa', 'rynek', 'oferty', 'dane', 'historia', 'teczka', 'kalkulator', 'ust', 'wynik', 'raport'].includes(p[0]) ? p[0] : 'start';
   const topEl = v.querySelector(':scope > .top');   // reszta widoku w osobnym bloku: na szerokim ekranie układa się w kolumny
   if (topEl) { const body = document.createElement('div'); body.className = 'body'; while (topEl.nextSibling) body.appendChild(topEl.nextSibling); v.appendChild(body); }
   v.classList.remove('enter'); void v.offsetWidth; v.classList.add('enter');
@@ -108,7 +120,28 @@ function render() {
 const go = h => { location.hash = h; };
 let mapCtl = null;
 
-const head = (title, sub, back, line) => `<div class="top">${back ? `<button class="back" data-back aria-label="Wróć">${ICON.back}</button>` : '<img class="mark" src="icons/logo-am.png" alt="">'}<div><h1>${title}</h1>${sub ? `<small class="${line ? 'line' : ''}">${sub}</small>` : ''}</div></div>`;
+const head = (title, sub, back, line) => `<div class="top">${back ? `<button class="back" data-back aria-label="Wróć">${ICON.back}</button>` : `<button class="back burger" data-menu aria-label="Menu">${ICON.menu}</button>`}<div class="ttl"><h1>${title}</h1>${sub ? `<small class="${line ? 'line' : ''}">${sub}</small>` : ''}</div><img class="mark" src="icons/logo-am.png" alt="AM Nieruchomości"></div>`;
+
+/* ---------- START ---------- */
+const TILES = [['sale', 'Wycena<br>sprzedaży', 'start'], ['rent', 'Wycena<br>najmu', 'klucz'], ['#/rynek', 'Rynek<br>i trendy', 'slupki'], ['#/kalkulator', 'Kalkulator<br>inwestycyjny', 'kalk'], ['#/mapa', 'Mapa<br>transakcji', 'mapa'], ['#/oferty', 'Monitoring<br>ofert', 'lornetka'], ['tec', 'Teczki<br>i CRM', 'teczki'], ['#/raporty', 'Raporty<br>PDF', 'raport']];
+function viewStart() {
+  const n = remindN();
+  const html = `<div class="home-top"><img class="home-logo" src="icons/logo-am.png" alt="AM Nieruchomości"><h1 class="gold">OPERAT<br>SZACUNKOWY</h1><button class="bell" data-act="bell" aria-label="Zadania i przypomnienia${n ? ': ' + n : ''}">${ICON.dzwonek}${n ? `<i class="nb">${n}</i>` : ''}</button></div>${safeBanner()}
+  <div class="tiles">${TILES.map(([k, l, ic], i) => `<button type="button" class="tile t${i % 4}" data-tile="${k}">${ICON[ic]}<span>${l}</span></button>`).join('')}</div>
+  <div class="skyline" aria-hidden="true">${ICON.skyline}</div>`;
+  return [html, v => {
+    $$('[data-tile]', v).forEach(b => b.onclick = () => { const k = b.dataset.tile;
+      if (k === 'sale' || k === 'rent') { S.form.tryb = k === 'sale' ? 'sprzedaz' : 'najem'; go('#/wycena'); } else if (k === 'tec') { S.histTab = 'teczki'; go('#/historia'); } else go(k); });
+    $('[data-act="bell"]', v).onclick = () => { S.histTab = 'zadania'; go('#/historia'); };
+  }];
+}
+/* ---------- RAPORTY (lista gotowych wycen, z których powstaje raport PDF) ---------- */
+function viewRaporty() {
+  const cur = ['sprzedaz', 'najem'].map(k => S.last[k]).filter(e => e && e.res.ok && !e.id), ok = S.wyceny.filter(e => e.res.ok);
+  const row = (e, href) => { const s = e.subj, sale = s.tryb === 'sprzedaz', st = sale ? 1000 : 10; return `<a class="card" href="${href}" style="display:block;text-decoration:none;color:inherit"><div class="eyebrow">${sale ? 'Sprzedaż' : 'Najem'}${e.ts ? ' · ' + new Date(e.ts).toLocaleDateString('pl-PL') : ' · bieżąca wycena'}</div><h3>${fmt(roundTo(e.res.total.lo, st))} – ${fmt(roundTo(e.res.total.hi, st))} zł</h3><div class="muted small">${esc(subjLine(s))}</div></a>`; };
+  const html = head('Raporty PDF', 'Raport powstaje z gotowej wyceny', true) + (cur.length || ok.length ? cur.map(e => row(e, '#/raport/cur/' + e.subj.tryb)).join('') + ok.map(e => row(e, '#/raport/h/' + e.id)).join('') : '<div class="empty"><b>Brak wycen</b>Oszacuj wartość nieruchomości, a stąd przygotujesz dla niej raport PDF.</div><a class="btn" href="#/wycena" style="text-decoration:none">Nowa wycena</a>');
+  return [html, v => { $('[data-back]', v).onclick = () => go('#/start'); }];
+}
 
 /* ---------- WYCENA (formularz) ---------- */
 function stepHTML(id, val, label) { return `<div class="field"><span>${label}</span><div class="step" data-step="${id}"><button type="button" data-d="-1" aria-label="mniej">−</button><output>${val}</output><button type="button" data-d="1" aria-label="więcej">+</button></div></div>`; }
@@ -127,7 +160,7 @@ function viewWycena() {
   const stat = sale ? (S.pool.length ? `Baza RCN: ${fmt(S.pool.length)} transakcji${flat ? '' : `, w tym ${fmt(katN)} z kategorii „${KAT[kat].n}”`}` : '') : (S.offers.length ? `Baza ofert najmu: ${fmt(S.offers.length)}` : '');
   const chipsHTML = (name, opts, cur) => `<div class="chips" data-chips="${name}">${opts.map(([v, n]) => `<button type="button" class="chip ${cur === v ? 'on' : ''}" data-v="${v}">${n}</button>`).join('')}</div>`;
   const po = POD_OPT[kat];
-  const html = head('Wycena', 'Szacunek wartości rynkowej') + safeBanner() + `
+  const html = head(sale ? 'Wycena sprzedaży' : 'Wycena najmu') + safeBanner() + `
   <div class="seg" data-v="${sale ? 0 : 1}"><i></i><button data-t="sprzedaz" class="${sale ? 'on' : ''}">Sprzedaż</button><button data-t="najem" class="${sale ? '' : 'on'}">Najem</button></div>
   <div class="field" style="margin-top:14px"><span>Rodzaj nieruchomości</span><div class="chips" data-katsel>${KAT_ORDER.filter(k => k !== 'zabudowana').map(k => `<button type="button" class="chip ${kat === k ? 'on' : ''}" data-v="${k}">${KAT[k].n}</button>`).join('')}</div></div>
   ${ready ? `<div class="banner"><span>◈</span><span>${stat}. Wynik zawsze jako przedział z oceną pewności.</span></div>`
@@ -228,7 +261,7 @@ function viewWynik(p) {
   const e = getEntry(p);
   if (!e) return [head('Wynik', '', true) + '<div class="empty"><b>Brak wyniku</b>Wróć do formularza i oszacuj wartość.</div>', v => $('[data-back]', v).onclick = () => go('#/wycena')];
   const { subj: s, res: r } = e, sale = s.tryb === 'sprzedaz', step = sale ? 1000 : 10, saved = !!e.id;
-  let html = head(sale ? 'Wartość' : 'Najem', esc(subjLine(s)), true, true);
+  let html = head(sale ? 'Wycena sprzedaży' : 'Wycena najmu', r.ok ? '' : esc(subjLine(s)), true, true);
   if (!r.ok) {
     html += `<div class="card"><div class="eyebrow">Brak wyniku</div><h3>Za mało danych</h3><p class="muted">${esc(r.reason)}</p>
       <p class="small muted">Aplikacja nie podaje liczby, gdy nie ma na czym jej oprzeć. Zaimportuj więcej danych w zakładce <b>Dane</b> albo zmień kryteria.</p></div>
@@ -237,11 +270,15 @@ function viewWynik(p) {
   }
   const lo = roundTo(r.total.lo, step), hi = roundTo(r.total.hi, step), mid = roundTo(r.total.mid, step);
   const pm = r.comps.map(c => c.pm2), dMin = Math.min(...pm, r.pm2.lo), dMax = Math.max(...pm, r.pm2.hi), span = (dMax - dMin) || 1, X = v => ((v - dMin) / span * 100).toFixed(2);
-  html += `<div class="card hero"><div class="lbl">${esc(r.label)}</div>
-    <div class="big gold"><span data-cu="${lo}">${fmt(lo)}</span> – <span data-cu="${hi}">${fmt(hi)}</span> zł</div>
-    <div class="sub">${r.rangeKind}${sale ? '' : ' · miesięcznie'}</div>
-    <div class="sub" style="margin-top:6px">środek przedziału: <b class="gold" data-cu="${roundTo((r.total.lo + r.total.hi) / 2, step)}">${fmt(roundTo((r.total.lo + r.total.hi) / 2, step))}</b> zł</div>
-    <div class="range"><div class="t" style="left:${X(r.pm2.mid)}%">mediana ${fmt(r.pm2.mid)} zł/m²</div><div class="track"><div class="fill" style="left:${X(r.pm2.lo)}%;width:${Math.max(1, X(r.pm2.hi) - X(r.pm2.lo))}%"></div></div>
+  const srodek = roundTo((r.total.lo + r.total.hi) / 2, step), foto = e.teczka && (S.foto[e.teczka] || [])[0], podM2 = s.m2 > 0 ? srodek / s.m2 : null;
+  html += `${foto ? `<img class="res-foto" src="${foto}" alt="">` : ''}<div class="res-addr"><b>${esc([s.ulica, s.nr].filter(Boolean).join(' ') || s.dzielnica || 'Nieruchomość')}${s.ulica ? ', Lublin' : ''}</b><span>${esc(subjLine(s))}</span></div>
+  <div class="card hero"><div class="lbl">${esc(r.label)}</div>
+    <div class="big gold"><span data-cu="${srodek}">${fmt(srodek)}</span> zł</div>
+    <div class="sub">${podM2 ? fmt(podM2) + ' zł/m²' : ''}${sale ? '' : (podM2 ? ' · ' : '') + 'miesięcznie'}</div>
+    <div class="res-conf"><span>Pewność wyceny:</span><b>${LV[r.confidence.level]}</b></div><div class="res-bar" data-l="${r.confidence.score}"><i style="width:${r.confidence.score / 3 * 100}%"></i></div>
+    <div class="res-lbl">Przedział wartości:</div><div class="res-rng"><span data-cu="${lo}">${fmt(lo)}</span> – <span data-cu="${hi}">${fmt(hi)}</span> zł</div><div class="sub">${r.rangeKind}</div>
+    <button class="btn" type="button" data-act="szcz">Zobacz szczegóły</button></div>
+  <div class="card" id="szcz"><div class="eyebrow">Rozkład porównań</div><div class="range"><div class="t" style="left:${X(r.pm2.mid)}%">mediana ${fmt(r.pm2.mid)} zł/m²</div><div class="track"><div class="fill" style="left:${X(r.pm2.lo)}%;width:${Math.max(1, X(r.pm2.hi) - X(r.pm2.lo))}%"></div></div>
       ${r.comps.slice(0, 40).map(c => `<div class="dot" style="left:${X(c.pm2)}%"></div>`).join('')}<div class="mid" style="left:${X(r.pm2.mid)}%"></div>
       <div class="t b" style="left:0;transform:none">${fmt(dMin)}</div><div class="t b" style="left:100%;transform:translateX(-100%)">${fmt(dMax)} zł/m²</div></div></div>
   <div class="stats"><div class="stat"><b>${r.n}</b><span>porównań</span></div><div class="stat"><b>${fmt(mid)}</b><span>wartość centralna, zł</span></div><div class="stat"><b>${fmt(r.pm2.mid)}</b><span>zł za m²</span></div></div>
@@ -281,6 +318,7 @@ function viewWynik(p) {
   return [html, v => {
     $('[data-back]', v).onclick = () => (saved ? go('#/historia') : go('#/wycena'));
     $$('[data-cu]', v).forEach(el => countUp(el, +el.dataset.cu));
+    $('[data-act="szcz"]', v).onclick = () => $('#szcz', v).scrollIntoView({ behavior: 'smooth', block: 'start' });
     const rmEl = $('#resmap', v); if (rmEl) resMap(rmEl, r, v);
     okolMount(e, v);
     const more = $('[data-act="more"]', v); if (more) more.onclick = () => { $('#comps', v).innerHTML = r.comps.map((c, i) => compHTML(c, i, sale)).join(''); more.remove(); };
@@ -466,7 +504,7 @@ function viewOferty() {
   const f = S.of, st = statusFn();
   const chips = (key, opts) => `<div class="chips" data-of="${key}">${opts.map(([val, n]) => `<button type="button" class="chip ${String(f[key]) === String(val) ? 'on' : ''}" data-v="${val}">${n}</button>`).join('')}</div>`;
   const dz = [...new Set(S.offers.map(o => o.dzielnica).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pl'));
-  const html = head('Oferty', 'Ogłoszenia najmu w bazie') + safeBanner() + `
+  const html = head('Monitoring ofert', 'Ogłoszenia najmu w bazie') + safeBanner() + `
   <div class="card"><div id="of-filters">
     <div class="field"><span>Status</span>${chips('status', [['', 'Wszystkie'], ['zmiany', 'Zmiany cen'], ['nowe', 'Nowe ogłoszenia'], ['aktualne', 'Aktualne'], ['nieaktualne', 'Nieaktualne']])}</div>
     <div class="field"><span>Liczba pokoi</span>${chips('pokoje', [['', 'Wszystkie'], ['1', '1 pokój'], ['2', '2 pokoje'], ['3', '3 i więcej']])}</div>
@@ -734,7 +772,7 @@ function viewHistoria() {
         <div style="margin-top:8px">${t.status ? `<span class="badge g">${esc(tStatName(t.status))}</span>` : ''}<span class="badge">${w.length} ${w.length === 1 ? 'wycena' : 'wycen'}</span>${last ? `<span class="badge g">ostatnia: ${fmt(last.mid)} zł${w[w.length - 1].subj.tryb === 'najem' ? '/mies.' : ''}</span>` : ''}${fo ? `<span class="badge">${fo} zdjęć</span>` : ''}</div></a>`; });
     body = (items.length ? items.join('') : '<div class="empty"><b>Brak teczek</b>Teczka zbiera w jednym miejscu wyceny jednej nieruchomości, notatki i zdjęcia oraz pokazuje, jak zmieniała się jej wartość.</div>') + '<button class="btn" data-act="newt">Nowa teczka</button>';
   }
-  const html = head('Historia', tab === 'wyceny' ? 'Zapisane wyceny' : tab === 'teczki' ? 'Teczki nieruchomości' : 'Zadania i przypomnienia') + seg + body;
+  const html = head('Teczki i historia', tab === 'wyceny' ? 'Zapisane wyceny' : tab === 'teczki' ? 'Teczki nieruchomości' : 'Zadania i przypomnienia') + seg + body;
   return [html, v => {
     $$('[data-ht]', v).forEach(b => b.onclick = () => { S.histTab = b.dataset.ht; render(); });
     const c = $('[data-act="clr"]', v); if (c) c.onclick = () => { if (confirm('Usunąć całą historię wycen?')) { S.wyceny = []; save.wyceny(); render(); } };
@@ -895,7 +933,7 @@ async function resMap(el, r, v) {
   } catch (e) { /* zostaje schemat */ }
 }
 function viewMapa() {
-  const m = S.mapa, MODES = [['tx', 'Transakcje'], ['grid', 'Ceny okolic'], ['najem', 'Najem']];
+  const m = S.mapa, MODES = [['tx', 'Sprzedaż'], ['najem', 'Najem'], ['grid', 'Ceny okolic']];
   const chips = (key, opts) => `<div class="chips" data-mf="${key}">${opts.map(([val, n]) => `<button type="button" class="chip ${String(m[key]) === String(val) ? 'on' : ''}" data-v="${val}">${n}</button>`).join('')}</div>`;
   const metrazF = k => `<div class="field"><span>${M2S[k][0]}</span>${chips('metraz', M2S[k][1])}<p class="tiny muted" style="margin:6px 0 0">Przedział od wartości włącznie do kolejnej wyłącznie: np. „30–40” to od 30,0 do 39,9.</p></div>`;
   const filters = () => m.mode === 'najem'
@@ -903,13 +941,14 @@ function viewMapa() {
     : `<div class="field"><span>Rodzaj nieruchomości</span>${chips('kat', KAT_ORDER.filter(k => k !== 'zabudowana').map(k => [k, KAT[k].n]))}</div>
       ${['mieszkanie', 'dom', 'obiekt', 'lokal'].includes(m.kat) ? `<div class="field"><span>Rynek</span>${chips('rynek', [['', 'Wszystkie'], ['wtorny', 'Wtórny'], ['pierwotny', 'Pierwotny']])}</div>` : ''}
       <div class="field"><span>Transakcje z ostatnich</span>${chips('lata', [[1, '1 roku'], [3, '3 lat'], [5, '5 lat'], [8, '8 lat']])}</div>${metrazF(m.kat)}`;
-  const html = head('Mapa', 'Ceny i oferty w Lublinie') + safeBanner() + `
+  const html = head('Mapa transakcji') + safeBanner() + `
   <div class="seg" data-n="3" data-v="${MODES.findIndex(x => x[0] === m.mode)}"><i></i>${MODES.map(([k, n]) => `<button data-mode="${k}" class="${m.mode === k ? 'on' : ''}">${n}</button>`).join('')}</div>
-  <div class="card"><div id="mapfilters">${filters()}</div></div>
-  <div class="card mapcard"><div class="mapbox" id="mapbox"><div class="empty">Ładuję mapę…</div></div><div id="maplegend" style="margin-top:10px"></div><button class="tilesw" id="tilesw" type="button"></button></div>
+  <div class="card mapcard"><div class="mapwrap"><div class="mapbox" id="mapbox"><div class="empty">Ładuję mapę…</div></div><div class="mapfab"><button type="button" data-fab="olay" aria-label="Warstwy">${ICON.warstwy}</button><button type="button" data-fab="mapfilters" aria-label="Filtry">${ICON.ust}</button></div></div><div id="maplegend" style="margin-top:10px"></div><button class="tilesw" id="tilesw" type="button"></button></div>
   <div class="card"><div id="mapstat" class="small muted"></div></div>
+  <div class="card"><div class="eyebrow">Filtry</div><div id="mapfilters">${filters()}</div></div>
   <div class="card"><div class="eyebrow">Warstwy z OpenStreetMap</div><div class="chips" data-multi="1" id="olay">${Object.entries(OSM).map(([k, l]) => `<button type="button" class="chip" data-v="${k}">${l.n}</button>`).join('')}</div><div id="olst" class="tiny muted" style="margin-top:10px">Dotknij, aby pokazać na mapie. Dane z OpenStreetMap, odświeżane co tydzień na serwerze.</div></div>`;
   return [html, async v => {
+    $$('[data-fab]', v).forEach(b => b.onclick = () => document.getElementById(b.dataset.fab).scrollIntoView({ behavior: 'smooth', block: 'center' }));
     let ctl = null, subj = S.last.sprzedaz?.res?.ok && (S.last.sprzedaz.subj.kat || 'mieszkanie') === 'mieszkanie' ? S.last.sprzedaz.res.subLL : null;
     const stat = t => { $('#mapstat', v).innerHTML = t; };
     const draw = fit => {
@@ -974,17 +1013,21 @@ function viewMapa() {
 S.rynek = { kat: 'mieszkanie', rynek: '', metraz: '', ulica: '', dzielnica: '', promien: 1.5 };
 const plPct = (x, d = 1) => (x >= 0 ? '+' : '−') + Math.abs(x).toFixed(d).replace('.', ',') + '%';
 let rynekDz = null;
+const ZK = [['miasto', 'Miasto'], ['dzielnica', 'Dzielnica'], ['promien', 'Promień']];
 function viewRynek() {
-  const m = S.rynek, chips = (key, opts) => `<div class="chips" data-rf="${key}">${opts.map(([val, n]) => `<button type="button" class="chip ${String(m[key]) === String(val) ? 'on' : ''}" data-v="${val}">${n}</button>`).join('')}</div>`;
-  const html = head('Rynek', 'Jak zmieniają się ceny i ile daje najem') + safeBanner() + `
-  <div class="card"><div class="eyebrow">Trend ceny za m²</div>
+  const m = S.rynek, zk = m.ulica ? 'promien' : m.dzielnica ? 'dzielnica' : (m.zk || 'miasto'), chips = (key, opts) => `<div class="chips" data-rf="${key}">${opts.map(([val, n]) => `<button type="button" class="chip ${String(m[key]) === String(val) ? 'on' : ''}" data-v="${val}">${n}</button>`).join('')}</div>`;
+  const html = head('Rynek i trendy') + safeBanner() + `
+  <div class="seg" id="rzk" data-n="3" data-v="${ZK.findIndex(x => x[0] === zk)}"><i></i>${ZK.map(([k, n]) => `<button data-zk="${k}" class="${k === zk ? 'on' : ''}">${n}</button>`).join('')}</div>
+  <div class="card"><div class="eyebrow" id="rtt">Trend ceny za m²</div><div id="rtrend"></div></div>
+  <div class="okgrid two"><div class="okt"><span>Rentowność najmu</span><b id="kp-y">—</b></div><div class="okt"><span>Czas ekspozycji</span><b id="kp-e">—</b></div></div>
+  <button class="btn" type="button" data-act="pelna">Pełna analiza rynku</button><div class="gap"></div>
+  <div class="card"><div class="eyebrow">Filtry trendu</div>
     <div class="field"><span>Rodzaj nieruchomości</span>${chips('kat', KAT_ORDER.filter(k => ['mieszkanie', 'dom', 'lokal', 'garaz'].includes(k)).map(k => [k, KAT[k].n]))}</div>
     <div class="field" id="rf-rynek"></div><div class="field" id="rf-metraz"></div>
-    <label class="field"><span>Dzielnica (opcjonalnie)</span><select class="in" id="rf-dz"><option value="">Cały Lublin</option>${[...new Set(allOffers().map(o => o.dzielnica).filter(Boolean))].sort((x, y) => x.localeCompare(y, 'pl')).map(x => `<option value="${esc(x)}"${normDz(x) === normDz(m.dzielnica) ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select></label>
-    <label class="field"><span>Ulica (opcjonalnie: liczymy wokół niej)</span><input class="in" id="rf-ul" value="${esc(m.ulica)}" placeholder="całe miasto" autocomplete="off" autocapitalize="words"></label>
-    <div class="field" id="rf-r"></div>
-    <div id="rtrend" style="margin-top:6px"></div></div>
-  <div class="card"><div class="eyebrow">Rentowność najmu w dzielnicach</div><div id="ryield"></div></div>
+    <label class="field" id="rw-dz"><span>Dzielnica</span><select class="in" id="rf-dz"><option value="">Cały Lublin</option>${[...new Set(allOffers().map(o => o.dzielnica).filter(Boolean))].sort((x, y) => x.localeCompare(y, 'pl')).map(x => `<option value="${esc(x)}"${normDz(x) === normDz(m.dzielnica) ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select></label>
+    <label class="field" id="rw-ul"><span>Ulica (liczymy wokół niej)</span><input class="in" id="rf-ul" value="${esc(m.ulica)}" placeholder="całe miasto" autocomplete="off" autocapitalize="words"></label>
+    <div class="field" id="rf-r"></div></div>
+  <div class="card" id="rpelna"><div class="eyebrow">Rentowność najmu w dzielnicach</div><div id="ryield"></div></div>
   <div class="card"><div class="eyebrow">Czas ekspozycji ofert najmu</div><div id="rexp"></div></div>
   <a class="btn" href="#/kalkulator" style="display:block;text-align:center;text-decoration:none">Kalkulator inwestycyjny (zwrot netto)</a>`;
   return [html, v => {
@@ -1014,9 +1057,8 @@ function viewRynek() {
       const T = trendSeries(S.pool, { pred, kat: m.kat, rynek: ['mieszkanie', 'dom', 'lokal'].includes(m.kat) ? m.rynek : '', m2min: r0, m2max: r1, center: c, radiusKm: c ? +m.promien : null, years: 8 });
       if (!T.ok) { box.innerHTML = `<p class="small muted" style="margin:0">${esc(T.reason)}</p>`; return; }
       const last = T.points[T.points.length - 1], first = T.points[0];
-      box.innerHTML = `<div class="stats" style="margin:0 0 10px"><div class="stat"><b>${fmt(last.med)}</b><span>zł/m², ostatni okres</span></div>
+      box.innerHTML = `${lineChart(T.points, { label: 'Mediana ceny za m² w czasie' })}<div class="stats" style="margin:12px 0 10px"><div class="stat"><b>${fmt(last.med)}</b><span>zł/m², ostatni okres</span></div>
         <div class="stat"><b>${T.yoy ? plPct(T.yoy.pct) : '—'}</b><span>rok do roku</span></div><div class="stat"><b>${fmt(T.n)}</b><span>transakcji</span></div></div>
-        ${lineChart(T.points, { label: 'Mediana ceny za m² w czasie' })}
         <p class="tiny muted" style="margin:8px 0 0">Linia: mediana ceny transakcyjnej za m² (akty notarialne, RCN) w okresach ${T.step === 12 ? 'rocznych' : T.step === 6 ? 'półrocznych' : 'kwartalnych'}; pasmo: środkowe 50% transakcji. Pokazane tylko okresy z co najmniej 8 transakcjami. ${first.label} → ${last.label}: ${plPct((last.med / first.med - 1) * 100, 0)}.${T.yoy ? ` Rok do roku: mediana z ostatnich 12 miesięcy (${T.yoy.na} transakcji) wobec poprzednich 12 (${T.yoy.nb}).` : ' Rok do roku: za mało transakcji w którymś roku.'} Ceny zmieniają się też ze standardem i metrażem, więc to wskazówka o rynku, nie wycena.</p>`;
       bindCharts(box);
     };
@@ -1025,6 +1067,7 @@ function viewRynek() {
       if (!S.tx.length) { box.innerHTML = '<p class="small muted" style="margin:0">Brak danych RCN. Pobierz je w zakładce <b>Dane</b>.</p>'; return; }
       const Y = yieldByDistrict(allOffers(), S.tx);
       if (!Y.ok) { box.innerHTML = `<p class="small muted" style="margin:0">${esc(Y.reason)}</p>`; return; }
+      $('#kp-y', v).textContent = Y.city.y.toFixed(1).replace('.', ',') + '%';
       box.innerHTML = `<div class="stats" style="margin:0 0 10px"><div class="stat"><b>${Y.city.y.toFixed(1).replace('.', ',')}%</b><span>całe miasto, brutto rocznie</span></div><div class="stat"><b>${Y.rows[0].name}</b><span>najwyższa: ${Y.rows[0].y.toFixed(1).replace('.', ',')}%</span></div><div class="stat"><b>${Y.rows[Y.rows.length - 1].name}</b><span>najniższa: ${Y.rows[Y.rows.length - 1].y.toFixed(1).replace('.', ',')}%</span></div></div>
         ${barChart(Y.rows.map(r => ({ name: r.name, y: r.y, yLo: r.yLo, yHi: r.yHi, sub: `czynsz ${fmt(r.rent)} zł/m² · cena ${fmt(r.sale)} zł/m² · ${r.nr} ofert, ${r.ns} transakcji` })), { ref: Y.city.y, label: 'Rentowność brutto w dzielnicach' })}
         <p class="tiny muted" style="margin:8px 0 0">Roczny czynsz (mediana ofert, bez opłat administracyjnych) do mediany ceny transakcyjnej tego samego metrażu (${Y.range[0]}–${Y.range[1]} m², transakcje z ostatnich ${String(Y.windowYears).replace('.', ',')} roku/lat). Wąs: środkowe 50% czynszów. To rentowność brutto z cen ofertowych: bez podatku, kosztów, remontów i pustostanów; rzeczywisty zwrot jest niższy. Dzielnice transakcjom przypisano po najbliższej ulicy ze znaną dzielnicą (do 2,5 km); pokazane tylko dzielnice z min. 5 ofertami i 30 transakcjami.</p>`;
@@ -1032,13 +1075,17 @@ function viewRynek() {
     const drawExp = () => {
       const box = $('#rexp', v), X = exposure(S.offers, S.ust.zebrania || []);
       if (!X.ok) { box.innerHTML = `<p class="small muted" style="margin:0">${esc(X.reason)}</p><p class="tiny muted" style="margin:8px 0 0">Od tej wersji aplikacja zapamiętuje też zmiany cen ofert między zebraniami, więc po kilku tygodniach pokaże, ile ofert tanieje i o ile.</p>`; return; }
-      const d = X.days;
+      const d = X.days; if (d) $('#kp-e', v).textContent = Math.round(d.med) + ' dni';
       box.innerHTML = `<div class="stats" style="margin:0 0 10px"><div class="stat"><b>${d ? Math.round(d.med) + ' dni' : '—'}</b><span>typowy czas do zniknięcia oferty</span></div><div class="stat"><b>${X.nGone}</b><span>ofert, które zniknęły</span></div><div class="stat"><b>${X.nChanged ? Math.round(X.nCut / X.nChanged * 100) + '%' : '—'}</b><span>ofert ze zmianą ceny, które staniały</span></div></div>
         <p class="tiny muted" style="margin:0">${d ? `Połowa ofert znikała w ciągu ${Math.round(d.med)} dni (środkowe 50%: ${Math.round(d.p25)}–${Math.round(d.p75)} dni).` : 'Za mało zniknętych ofert (potrzeba co najmniej 10), by podać czas.'} Oferta „znikła”, gdy nie było jej w ostatnim pełnym zebraniu; dokładność to odstęp między zebraniami (${X.spanDays} dni, ${X.collections} zebrań). Zniknięcie oferty nie zawsze oznacza wynajem.${X.cutMed != null ? ` Mediana obniżki: ${(X.cutMed * 100).toFixed(1).replace('.', ',')}%.` : ''}</p>`;
     };
-    paintFilters(); drawTrend(); drawYield(); drawExp();
-    const dzI = $('#rf-dz', v); dzI.onchange = () => { m.dzielnica = dzI.value; drawTrend(); };
-    const ul = $('#rf-ul', v); suggest(ul, S.streets); ul.onchange = () => { m.ulica = ul.value.trim(); paintFilters(); drawTrend(); };
+    const paintZk = z => { m.zk = z; $('#rw-dz', v).classList.toggle('hide', z !== 'dzielnica'); $('#rw-ul', v).classList.toggle('hide', z !== 'promien'); $('#rtt', v).textContent = 'Trend ceny za m² – ' + (z === 'dzielnica' && m.dzielnica ? m.dzielnica : z === 'promien' && m.ulica ? 'okolice ul. ' + m.ulica : 'Lublin'); };
+    $$('[data-zk]', v).forEach(b => b.onclick = () => { const z = b.dataset.zk; $$('[data-zk]', v).forEach(x => x.classList.toggle('on', x === b)); $('#rzk', v).dataset.v = ZK.findIndex(x => x[0] === z);
+      if (z !== 'dzielnica') { m.dzielnica = ''; $('#rf-dz', v).value = ''; } if (z !== 'promien') { m.ulica = ''; $('#rf-ul', v).value = ''; } paintZk(z); paintFilters(); drawTrend(); if (z !== 'miasto') $(z === 'dzielnica' ? '#rw-dz' : '#rw-ul', v).scrollIntoView({ behavior: 'smooth', block: 'center' }); });
+    $('[data-act="pelna"]', v).onclick = () => $('#rpelna', v).scrollIntoView({ behavior: 'smooth', block: 'start' });
+    paintZk(zk); paintFilters(); drawTrend(); drawYield(); drawExp();
+    const dzI = $('#rf-dz', v); dzI.onchange = () => { m.dzielnica = dzI.value; paintZk('dzielnica'); drawTrend(); };
+    const ul = $('#rf-ul', v); suggest(ul, S.streets); ul.onchange = () => { m.ulica = ul.value.trim(); paintZk('promien'); paintFilters(); drawTrend(); };
   }];
 }
 
@@ -1049,8 +1096,9 @@ const zl = n => fmt(n) + ' zł', pct1 = x => (x < 0 ? '−' : '') + Math.abs(x).
 function viewKalkulator() {
   const I = S.invest, f = (k, l, ph = '', hint = '') => `<label class="field"><span>${l}</span><input class="in" data-iv="${k}" inputmode="decimal" value="${I[k] ?? ''}" placeholder="${ph}">${hint ? `<small class="tiny muted">${hint}</small>` : ''}</label>`;
   const ls1 = S.last.sprzedaz?.res?.ok ? S.last.sprzedaz : null, ln = S.last.najem?.res?.ok ? S.last.najem : null;
-  const html = head('Kalkulator', 'Zwrot z inwestycji w najem', true) + `
+  const html = head('Kalkulator inwestycyjny', 'Zwrot z inwestycji w najem', true) + `
   ${ls1 || ln ? `<div class="card"><div class="eyebrow">Z ostatnich wycen</div><div class="row">${ls1 ? `<button class="btn ghost" data-act="from-s">Cena: ${fmt(roundTo(ls1.res.total.mid, 1000))} zł</button>` : ''}${ln ? `<button class="btn ghost" data-act="from-n">Czynsz: ${fmt(roundTo(ln.res.total.mid, 10))} zł</button>` : ''}</div></div>` : ''}
+  <div id="ikpi"></div>
   <div class="card"><div class="eyebrow">Zakup</div>${f('cena', 'Cena zakupu (zł)', 'np. 500000')}
     <div class="field"><span>Rynek (od tego zależy PCC)</span><div class="chips" data-ic="rynek">${[['wtorny', 'Wtórny (PCC 2%)'], ['pierwotny', 'Pierwotny (bez PCC)']].map(([v, n]) => `<button type="button" class="chip ${I.rynek === v ? 'on' : ''}" data-v="${v}">${n}</button>`).join('')}</div></div>
     ${f('pcc', 'PCC (zł, opcj.)', 'liczone automatycznie', 'Zostaw puste: 2% ceny na rynku wtórnym, 0 na pierwotnym.')}${f('kosztyInne', 'Notariusz, wpisy, prowizja (zł)', '0', 'Wpisz własne kwoty: nie zakładam żadnych stawek.')}${f('remont', 'Remont i wyposażenie (zł)', '0')}</div>
@@ -1064,14 +1112,14 @@ function viewKalkulator() {
     const num = s => { const n = parseFloat(String(s).replace(/\s/g, '').replace(',', '.')); return Number.isFinite(n) ? n : ''; };
     const calc = () => {
       ls.set('am-invest', JSON.stringify(I)); $('#taxnote', v).textContent = TAX[I.podatek].n + '. Bez składki zdrowotnej, ulg i kwoty wolnej; to wskazówka, nie porada podatkowa.';
-      const r = investCalc(I), box = $('#ires', v);
-      if (!r.ok) { box.innerHTML = `<div class="card"><p class="small muted" style="margin:0">${r.reason}</p></div>`; return; }
+      const r = investCalc(I), box = $('#ires', v), top = $('#ikpi', v);
+      if (!r.ok) { top.innerHTML = `<div class="card"><p class="small muted" style="margin:0">${r.reason}</p></div>`; box.innerHTML = ''; return; }
       const sv = sensitivity(I);
-      box.innerHTML = `<div class="card hero"><div class="lbl">Zwrot netto po podatku</div><div class="big gold">${pct1(r.netPost)}</div><div class="sub">rocznie od całego poniesionego kosztu ${zl(r.koszt)}</div></div>
-      <div class="stats"><div class="stat"><b>${pct1(r.gross)}</b><span>brutto (czynsz / cena)</span></div><div class="stat"><b>${pct1(r.netPre)}</b><span>netto przed podatkiem</span></div><div class="stat"><b>${r.payback ? r.payback.toFixed(1).replace('.', ',') : '—'}</b><span>lat do zwrotu</span></div></div>
-      <div class="card"><div class="eyebrow">Rok w liczbach</div><div class="kv"><span>Przychód (czynsz za ${12 - (I.pustostan === '' ? 1 : I.pustostan)} mies.)</span><b>${zl(r.rev)}</b></div><div class="kv"><span>Koszty właściciela i zarządzanie</span><b>−${zl(r.opex)}</b></div><div class="kv"><span>Podatek</span><b>−${zl(r.tax)}</b></div><div class="kv"><span>Zysk po podatku</span><b>${zl(r.taxless)}</b></div>
+      const yrs = r.payback ? r.payback.toFixed(1).replace('.', ',') + ' lat' : '—', cfc = r.cf >= 0 ? 'var(--ok)' : 'var(--bad)';
+      top.innerHTML = `<div class="card kpi"><div class="eyebrow">Wyniki inwestycji</div><div class="kv"><span>Zwrot brutto</span><b>${pct1(r.gross)}</b></div><div class="kv"><span>Zwrot netto</span><b data-k="netPost">${pct1(r.netPost)}</b></div><div class="kv"><span>Netto przed podatkiem</span><b>${pct1(r.netPre)}</b></div><div class="kv"><span>Cash-on-cash</span><b>${r.coc != null ? pct1(r.coc) : '—'}</b></div><div class="kv"><span>Okres zwrotu</span><b>${yrs}</b></div><div class="kv"><span>Przepływ miesięczny</span><b style="color:${cfc}">${r.cf >= 0 ? '+' : '−'}${zl(Math.abs(r.cfMies))}</b></div><p class="tiny muted" style="margin:8px 0 0">Zwrot netto po podatku, rocznie od całego poniesionego kosztu ${zl(r.koszt)}.</p></div>`;
+      box.innerHTML = `<div class="card"><div class="eyebrow">Rok w liczbach</div><div class="kv"><span>Przychód (czynsz za ${12 - (I.pustostan === '' ? 1 : I.pustostan)} mies.)</span><b>${zl(r.rev)}</b></div><div class="kv"><span>Koszty właściciela i zarządzanie</span><b>−${zl(r.opex)}</b></div><div class="kv"><span>Podatek</span><b>−${zl(r.tax)}</b></div><div class="kv"><span>Zysk po podatku</span><b>${zl(r.taxless)}</b></div>
         ${r.loan ? `<div class="kv"><span>Rata kredytu (${zl(r.rata)} mies.)</span><b>−${zl(r.rata * 12)}</b></div><div class="kv"><span>Przepływ gotówki rocznie</span><b style="color:${r.cf >= 0 ? 'var(--ok)' : 'var(--bad)'}">${r.cf >= 0 ? '' : '−'}${zl(Math.abs(r.cf))}</b></div><div class="kv"><span>Przepływ miesięcznie</span><b style="color:${r.cf >= 0 ? 'var(--ok)' : 'var(--bad)'}">${r.cf >= 0 ? '' : '−'}${zl(Math.abs(r.cfMies))}</b></div><div class="kv"><span>Własny kapitał</span><b>${zl(r.equity)}</b></div><div class="kv"><span>Zwrot z kapitału własnego (gotówka)</span><b>${r.coc != null ? pct1(r.coc) : '—'}</b></div><p class="tiny muted" style="margin:8px 0 0">Odsetki w 1. roku ok. ${zl(r.interestYear1)}; w tym rachunku nie obniżają podatku (przy najmie prywatnym nie są kosztem). Zwrot z kapitału nie wlicza spłaty kapitału kredytu.</p>` : ''}</div>
-      <div class="card"><div class="eyebrow">A gdyby…</div>${barChart(sv.map(x => ({ name: x.name, y: x.y, sub: r.loan ? 'przepływ ' + zl(x.cf / 12) + ' mies.' : 'zysk po podatku ' + zl(x.cf) })), { ref: r.netPost, label: 'Zwrot netto w scenariuszach' }).replace(/miasto /g, 'bazowy ')}<p class="tiny muted" style="margin:8px 0 0">Zwrot netto po podatku w kilku scenariuszach. Czynsz ofertowy bywa wyższy od faktycznie uzyskiwanego, więc sprawdź też wariant −10%.</p></div>`;
+      <div class="card"><div class="eyebrow">Analiza wrażliwości</div>${barChart(sv.map(x => ({ name: x.name, y: x.y, sub: r.loan ? 'przepływ ' + zl(x.cf / 12) + ' mies.' : 'zysk po podatku ' + zl(x.cf) })), { ref: r.netPost, label: 'Zwrot netto w scenariuszach' }).replace(/miasto /g, 'bazowy ')}<p class="tiny muted" style="margin:8px 0 0">Zwrot netto po podatku w kilku scenariuszach. Czynsz ofertowy bywa wyższy od faktycznie uzyskiwanego, więc sprawdź też wariant −10%.</p></div>`;
     };
     calc();
     $$('[data-iv]', v).forEach(i => i.addEventListener('input', () => { I[i.dataset.iv] = num(i.value); calc(); }));

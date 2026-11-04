@@ -1,6 +1,6 @@
 # KONTYNUACJA — OPERAT SZACUNKOWY (AM Nieruchomości)
 
-Plik przekazania pracy między kontami/sesjami Claude. Stan na **2026-11-02, wersja aplikacji 1.21.3** (1.21.2: pole numeru budynku w jednej linii z ulicą; 1.21.3: naprawa pustego service workera).
+Plik przekazania pracy między kontami/sesjami Claude. Stan na **2026-11-04, wersja aplikacji 1.22.0** (nowa szata: ekran Start, kafelki, pasek Więcej; kolory, fonty i logo bez zmian).
 Ten plik zawiera całą wiedzę potrzebną do kontynuacji: nie wymaga dostępu do poprzednich rozmów ani do poprzedniego projektu Claude.
 
 > **UWAGA — repozytorium jest PUBLICZNE (GitHub Pages).** W tym pliku nie ma i nie wolno zapisywać haseł, kluczy, tokenów, kodu synchronizacji „AMSYNC1:…”, adresu IP serwera ani danych ofert/klientów. Nigdy nie wklejaj klucza synchronizacji do czatu ani na zrzut ekranu — właściciel wpisuje go sam.
@@ -51,7 +51,7 @@ PWA bez budowania i bez zależności (zwykłe pliki), ES-modules. Dane lokalnie:
 | Plik | Rola |
 |---|---|
 | `index.html`, `css/app.css`, `manifest.webmanifest`, `sw.template.js` → `sw.js` | powłoka PWA; **SW generowany** `python3 tools/mksw.py .` |
-| `js/app.js` | główny interfejs: zakładki Wycena, Mapa, Rynek, Oferty, Dane, Historia, Ustawienia; formularze, raport, teczki, CRM, kalkulator, okolica |
+| `js/app.js` | główny interfejs: ekran Start (8 kafelków), na telefonie pasek Start/Wycena/Mapa/Rynek/Więcej (reszta w menu), na komputerze boczne menu ze wszystkim; widoki Wycena, Mapa, Rynek, Oferty, Dane, Historia, Raporty, Ustawienia; formularze, raport, teczki, CRM, kalkulator, okolica |
 | `js/engine.js` | silnik wyceny: sprzedaż mieszkań (porównania RCN), sprzedaż pozostałych rodzajów (`estimateSaleKat`), najem (hybryda A+B, `estimateRentKat` dla innych rodzajów), pewność, przedziały |
 | `js/rcn.js` | wczytanie i filtrowanie danych RCN z serwera |
 | `js/geokod.js` | geokoder adresów (GUGiK UUG, PRG), dopasowanie nazw ulic, podpowiedzi, cache |
@@ -188,6 +188,8 @@ Ogłoszenie Otodom (dane strukturalne) zawiera: tytuł, rok budowy (`build_year`
 - 1.19.0 punkty OSM z pliku serwera (koniec 504). 1.20.0 sekcja „Najbliższe okolice” w raporcie sprzedaży; 1.20.1 w raporcie najmu (wtedy z RCN po ulicy — **odrzucone przez właściciela, usunięte w 1.21.0**).
 - 1.21.0 dokładny budynek z PRG, pole Nr budynku, karta w panelu i raporcie. 1.21.1 podpowiedzi przy literówce. 1.21.2 układ pól ulica/numer. 1.21.3 naprawa: `sw.template.js` i `sw.js` były puste od 1.20.0 (brak trybu offline/aktualizacji cache); przywrócone, dodany strażnik w `test/all.sh`.
 
+- 1.22.0 nowa szata wg projektu właściciela (układ jak w projekcie, kolory onyx/złoto, Marcellus + Archivo, logo AM bez zmian): ekran Start, nagłówek z menu, karta wyniku z dużą wartością, Rynek z zakresem Miasto/Dzielnica/Promień, wskaźniki kalkulatora nad formularzem, lista Raporty. Świadome odstępstwa: pewność jako poziom (niska/średnia/wysoka), nie procent (zasada 1); zdjęcie w wyniku tylko z teczki; analiza wrażliwości jako wykres, nie suwaki.
+
 ## 11. Lista pomysłów i stan (numeracja ustalona z właścicielem 30.10)
 
 Gdy właściciel zapyta „co jeszcze jest do zrobienia”, podać punkty z sekcji „Zablokowane / czeka”.
@@ -213,8 +215,13 @@ Gdy właściciel zapyta „co jeszcze jest do zrobienia”, podać punkty z sekc
 - Porównanie kompletności OSM z danymi urzędowymi; ewentualne dołożenie punktów z otwartych danych miasta.
 - Wybór miasta w aplikacji (punkt 14).
 
+### Ocena listy rozwoju właściciela (4.11.2026)
+Najpierw: analiza jednym kliknięciem z teczki; IRR/NPV/scenariusze w kalkulatorze; „dlaczego to porównanie” i jakość materiału; lokalizacja w promieniach z opisem z danych OSM; nowe typy raportów i numeracja; lejek CRM razem z ochroną danych klientów; mapa rentowności.
+Czeka na dane lub zgodę: rekomendacja ceny ofertowej i okazje rynkowe (oferty sprzedaży, punkt 15 i 20); inne miasta (punkt 14).
+Nie teraz: prognozy cen (najpierw walidacja, dane tylko z okresu wzrostu), wycena ze zdjęć (brak danych), cechy spoza RCN w doborze sprzedaży, księgi wieczyste, zespół i API.
+
 ### Do zrobienia przez właściciela
-- Zamknąć i otworzyć aplikację na wszystkich urządzeniach (jedna karta naraz), żeby pobrała 1.21.3 (przy problemach z odświeżeniem: zamknąć aplikację całkiem i otworzyć dwa razy).
+- Zamknąć i otworzyć aplikację na wszystkich urządzeniach (jedna karta naraz), żeby pobrała 1.22.0 (przy problemach z odświeżeniem: zamknąć aplikację całkiem i otworzyć dwa razy).
 - Sprawdzić na telefonie: najem → ulica „Granata”, nr „1” (karta „Najbliższe okolice”), to samo w sprzedaży; Mapa → warstwy OSM.
 - Ok. 7 listopada zrobić kolejne pełne zebranie ofert najmu.
 - Opcjonalnie: wgrać własne logo, dodać umowy domów/lokali/hal, uruchomić eksport RCN dla Chełma, Zamościa, Puław.

@@ -12,6 +12,7 @@ node test/rynek.test.mjs
 [ -f test/invest.test.mjs ] && node test/invest.test.mjs
 bash test/sync.sh
 node test/lock.cjs
+node test/start.cjs
 node test/geokod.test.mjs
 node test/rynek.cjs "$SP"
 node test/chips.cjs "$SP"

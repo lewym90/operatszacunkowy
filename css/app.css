@@ -300,3 +300,55 @@ select.in { background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://ww
 
 .okgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; } .okt { padding: 12px 14px; border: 1px solid var(--line2); border-radius: 14px; background: var(--g1); display: flex; flex-direction: column; gap: 4px; } .okt span { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--ash); } .okt b { font: 400 22px var(--display); color: var(--gold-l); }
 @media (min-width: 720px) { .okgrid { grid-template-columns: repeat(3, 1fr); } }
+
+/* ---------- SZATA 1.22: układ wg projektu (ekran Start, kafelki, pasek Więcej), kolory i fonty bez zmian ---------- */
+.hide { display: none !important; }
+#glow { opacity: .55; }
+.top { display: grid; grid-template-columns: 40px 1fr 40px; gap: 10px; margin-bottom: 16px; }
+.top .ttl { min-width: 0; text-align: center; } .top h1 { font-size: 22px; } .top small { letter-spacing: .08em; font-size: 10.5px; }
+.top .mark { width: 34px; height: 34px; justify-self: end; border-radius: 10px; }
+.top .back { width: 40px; height: 40px; border-radius: 12px; background: transparent; border-color: transparent; color: var(--bone); }
+.card { border-radius: 18px; padding: 16px; border-color: var(--line2); background: linear-gradient(180deg, rgba(30, 30, 35, .86), rgba(19, 19, 23, .92)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04), 0 12px 28px rgba(0, 0, 0, .3); }
+.seg { border-radius: 99px; padding: 3px; } .seg i { top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px); border-radius: 99px; }
+.seg[data-n="3"] i { width: calc((100% - 6px) / 3); } .seg button { padding: 9px 6px; font-size: 13.5px; }
+.btn { border-radius: 13px; padding: 14px; }
+/* start */
+.home-top { display: grid; grid-template-columns: 58px 1fr 40px; gap: 14px; align-items: center; margin-bottom: 20px; }
+.home-logo { width: 58px; height: 58px; border-radius: 15px; box-shadow: 0 0 0 1px var(--line), 0 10px 26px rgba(200, 164, 77, .16); }
+.home-top h1 { font-size: 23px; line-height: 1.12; letter-spacing: .05em; }
+.bell { position: relative; width: 40px; height: 40px; display: grid; place-items: center; color: var(--bone); }
+.bell svg, .tile svg, .menu-it svg { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; } .bell svg { width: 25px; height: 25px; }
+.nb, .bell .nb { font-style: normal; } .bell .nb { position: absolute; top: 0; right: 0; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px; background: var(--warn); color: #0B0B0D; font: 700 10.5px/17px var(--text); text-align: center; }
+.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
+.tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; min-height: 112px; padding: 14px 8px; border-radius: 16px; color: var(--bone); border: 1px solid rgba(200, 164, 77, .3); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .07), 0 10px 24px rgba(0, 0, 0, .35); transition: transform .2s var(--ease), border-color .2s; }
+.tile.t0 { background: linear-gradient(160deg, rgba(200, 164, 77, .26), rgba(35, 30, 20, .78)); } .tile.t1 { background: linear-gradient(160deg, rgba(232, 229, 222, .10), rgba(26, 26, 31, .9)); }
+.tile.t2 { background: linear-gradient(160deg, rgba(110, 87, 33, .4), rgba(22, 20, 16, .9)); } .tile.t3 { background: linear-gradient(160deg, rgba(230, 206, 148, .16), rgba(30, 27, 21, .9)); }
+.tile svg { width: 34px; height: 34px; color: var(--gold-l); } .tile span { font-size: 14.5px; font-weight: 600; line-height: 1.22; text-align: center; }
+.tile:active { transform: scale(.97); }
+#view[data-view="start"] { display: flex; flex-direction: column; padding-bottom: calc(var(--nav) + var(--sab) + 10px); }
+.skyline { margin: auto -18px 0; padding-top: 14px; flex: none; height: 100px; overflow: hidden; pointer-events: none; } .skyline svg { display: block; width: 100%; height: 100%; }
+/* pasek dolny */
+#tabs { background: var(--onyx); } #tabs a, #tabs .more { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-width: 0; color: var(--ash2); font-size: 11px; font-weight: 600; letter-spacing: .01em; text-transform: none; position: relative; transition: color .3s; }
+#tabs a.xtra { display: none; } #tabs .more svg { width: 24px; height: 24px; stroke: currentColor; fill: currentColor; stroke-width: 1; }
+#tabs .more.on { color: var(--gold-l); } #tabs a.on svg { filter: drop-shadow(0 0 7px rgba(200, 164, 77, .55)); } #tabs a.on::before { display: none; }
+#tabs .more .nb { position: absolute; top: 5px; left: calc(50% + 6px); min-width: 17px; height: 17px; padding: 0 5px; border-radius: 9px; background: var(--warn); color: #0B0B0D; font: 700 10.5px/17px var(--text); text-align: center; }
+.menu-list { display: grid; } .menu-it { position: relative; display: flex; align-items: center; gap: 14px; padding: 14px 4px; border-top: 1px solid var(--line2); color: var(--bone); text-decoration: none; font-weight: 500; } .menu-it:first-child { border-top: 0; } .menu-it svg { width: 24px; height: 24px; color: var(--gold-l); flex: none; }
+.menu-it .nb { margin-left: auto; min-width: 19px; height: 19px; padding: 0 5px; border-radius: 10px; background: var(--warn); color: #0B0B0D; font: 700 11px/19px var(--text); text-align: center; }
+/* wynik */
+.res-foto { display: block; width: 100%; height: 170px; object-fit: cover; border-radius: 16px; margin-bottom: 12px; }
+.res-addr { margin: 0 2px 12px; } .res-addr b { display: block; font: 400 19px var(--display); } .res-addr span { color: var(--ash); font-size: 13px; }
+.hero { padding: 20px 16px; } .hero .lbl { letter-spacing: .04em; text-transform: none; font-size: 14px; font-weight: 500; color: var(--bone); }
+.hero .big { font-size: clamp(32px, 10.5vw, 44px); margin: 8px 0 2px; }
+.res-conf { display: flex; justify-content: space-between; gap: 10px; margin-top: 18px; font-size: 14px; text-align: left; } .res-conf span { color: var(--bone); } .res-conf b { color: var(--gold-l); font-weight: 600; }
+.res-bar { height: 7px; margin-top: 8px; border-radius: 4px; background: var(--g3); overflow: hidden; } .res-bar i { display: block; height: 100%; border-radius: 4px; background: var(--ok); animation: grow 1s .2s var(--ease) both; transform-origin: left; } .res-bar[data-l="1"] i { background: var(--bad); } .res-bar[data-l="2"] i { background: var(--warn); }
+.res-lbl { margin-top: 16px; font-size: 13.5px; color: var(--ash); } .res-rng { font: 400 21px var(--display); margin: 3px 0 2px; white-space: nowrap; } .hero .btn { position: relative; margin-top: 16px; }
+#szcz { scroll-margin-top: 12px; } #rpelna { scroll-margin-top: 12px; } .card .range { margin-top: 10px; }
+/* mapa */
+.mapwrap { position: relative; } .mapfab { position: absolute; top: 10px; right: 10px; z-index: 500; display: grid; gap: 8px; }
+.mapfab button { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: rgba(11, 11, 13, .86); border: 1px solid var(--line); color: var(--gold-l); } .mapfab svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+/* rynek, kalkulator */
+.okgrid.two { grid-template-columns: 1fr 1fr; margin-bottom: 14px; } .okt { border-radius: 16px; background: linear-gradient(180deg, rgba(30, 30, 35, .86), rgba(19, 19, 23, .92)); }
+.okt span { text-transform: none; letter-spacing: 0; font-size: 12.5px; } .okt b { font-size: 26px; }
+.kpi .kv b { font-size: 15.5px; color: var(--gold-l); }
+@media (min-width: 720px) { .tiles { grid-template-columns: repeat(4, 1fr); gap: 14px; } .tile { min-height: 140px; } .okgrid.two { grid-template-columns: 1fr 1fr; } .top h1 { font-size: 28px; } .skyline { margin-left: 0; margin-right: 0; } }
+@media (min-width: 1024px) { #tabs a.xtra { display: flex; } #tabs .more, .top .burger { display: none; } .top { grid-template-columns: 40px 1fr 44px; } #tabs a, #tabs a.xtra { flex: none; flex-direction: row; font-size: 13px; } #view[data-view="start"] { max-width: 980px; padding-bottom: 0; } #tabs { background: linear-gradient(180deg, rgba(22, 22, 27, .94), rgba(11, 11, 13, .98)); } #tabs a, #tabs a.xtra { justify-content: flex-start; gap: 14px; padding: 13px 14px; } #tabs a:hover { background: var(--g2); } #tabs a.on { background: rgba(200, 164, 77, .1); } }

@@ -8,10 +8,10 @@ const SP = process.argv[2], OUT = SP + '/shots-kalk'; fs.mkdirSync(OUT, { recurs
   await p.goto('http://localhost:8765/index.html#/kalkulator'); await p.waitForTimeout(1500);
   const fill = (k, v) => p.fill(`[data-iv=${k}]`, String(v));
   await fill('cena', 500000); await fill('kosztyInne', 3000); await fill('remont', 20000); await fill('czynsz', 2800); await fill('pustostan', 1); await fill('oplaty', 300); await p.waitForTimeout(300);
-  const hero = await p.$eval('#ires .hero .big', e => e.innerText); ok(/4,6%/.test(hero), 'zwrot netto po podatku 4,6%: ' + hero);
-  const st = await p.$eval('#ires .stats', e => e.innerText.replace(/\n/g, ' ')); ok(/6,7%/.test(st) && /5,1%/.test(st), 'brutto 6,7% i netto przed podatkiem 5,1%: ' + st);
+  const hero = await p.$eval('#ikpi [data-k=netPost]', e => e.innerText); ok(/4,6%/.test(hero), 'zwrot netto po podatku 4,6%: ' + hero);
+  const st = await p.$eval('#ikpi .kpi', e => e.innerText.replace(/\n/g, ' ')); ok(/6,7%/.test(st) && /5,1%/.test(st), 'brutto 6,7% i netto przed podatkiem 5,1%: ' + st);
   await p.click('[data-ic=podatek] [data-v=liniowy]'); await p.waitForTimeout(200); ok(await p.$eval('[data-ic=podatek] [data-v=liniowy]', e => e.classList.contains('on')), 'chip podatku podświetlony');
-  const h2 = await p.$eval('#ires .hero .big', e => e.innerText); ok(h2 !== hero, 'zmiana podatku zmienia wynik: ' + h2);
+  const h2 = await p.$eval('#ikpi [data-k=netPost]', e => e.innerText); ok(h2 !== hero, 'zmiana podatku zmienia wynik: ' + h2);
   await fill('wklad', 30); await fill('oproc', 7); await fill('lata', 25); await p.waitForTimeout(300);
   ok(/Rata kredytu/.test(await p.$eval('#ires', e => e.innerText)), 'sekcja kredytu pojawia się');
   ok(await p.$eval('#tabs a.on', e => /Rynek/i.test(e.textContent)), 'zakładka Rynek podświetlona na kalkulatorze');
