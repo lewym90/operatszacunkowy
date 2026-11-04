@@ -59,3 +59,13 @@ export function diffWyceny(a, b) {
   if (!pow.length) pow.push(mb === ma ? 'Dane i zestaw porównań są takie same.' : 'Zapisane dane i zestaw porównań są takie same, zmieniły się ceny lub wagi porównań.');
   return { ma, mb, delta: mb - ma, pct: ma ? (mb / ma - 1) * 100 : 0, na: a.res.n, nb: b.res.n, conf: [a.res.confidence.level, b.res.confidence.level], lo: [a.res.total.lo, b.res.total.lo], hi: [a.res.total.hi, b.res.total.hi], nowe: nowe.length, ubyly, zmiany, powody: pow, dni: Math.round(((b.ts || 0) - (a.ts || 0)) / 864e5) };
 }
+
+/** Przedziały czynszów do wykresu „Porównanie rynkowe”: wszystkie porównania użyte w wycenie, ceny jak w ofertach. mark: wynik analizy (mieści się na osi). Równa granica trafia do wyższego przedziału. */
+export function rentBins(comps, mark, maxBins = 8) {
+  const v = comps.map(c => c.cena).filter(x => x > 0); if (!v.length) return null;
+  const lo = Math.min(...v, mark), hi = Math.max(...v, mark), bases = [10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 2500, 5000, 10000, 20000, 50000, 100000];
+  const fit = st => { const a = Math.floor(lo / st) * st, b = (Math.floor(hi / st) + 1) * st; return { a, b, n: Math.round((b - a) / st) }; };
+  const step = bases.find(st => fit(st).n <= maxBins) || 100000, { a, b, n } = fit(step);
+  const bins = Array.from({ length: n }, (_, i) => ({ a: a + i * step, b: a + (i + 1) * step, n: 0 })); for (const x of v) bins[Math.min(n - 1, Math.floor((x - a) / step))].n++;
+  return { bins, step, lo: a, hi: b, total: v.length };
+}

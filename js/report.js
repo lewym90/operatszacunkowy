@@ -1,5 +1,6 @@
 // Raport dla klienta: rysowany na kanwie (czcionki biura) i pakowany do PDF. Nigdzie nie występuje nazwa aplikacji.
 import { KAT, POD_TXT } from './rcn.js';
+import { rentBins } from './jakosc.js';
 const W = 1240, H = 1754, M = 84;
 const C = { onyx: '#0B0B0D', gold: '#C8A44D', goldD: '#8A6C2A', goldL: '#E6CE94', bone: '#E8E5DE', paper: '#FBFAF6', ink: '#16161A', ink2: '#55544F', line: '#E3DECF' };
 const money = n => Math.round(n).toLocaleString('pl-PL');
@@ -39,6 +40,18 @@ function barChartCv(ctx, rows, ref, x0, y0, w) {
   ctx.strokeStyle = C.goldD; ctx.lineWidth = 3; ctx.setLineDash([8, 6]); ctx.beginPath(); ctx.moveTo(X(ref), y0 - 28); ctx.lineTo(X(ref), y0 + rows.length * rowH - 20); ctx.stroke(); ctx.setLineDash([]);
   ctx.fillStyle = C.goldD; ctx.font = '400 20px Archivo'; ctx.fillText('miasto ' + plN(ref) + '%', X(ref) + 8, y0 - 34);
   return y0 + rows.length * rowH;
+}
+
+// Porównanie rynkowe: rozkład czynszów ofert użytych w wycenie, bez adresów i pojedynczych ogłoszeń. Linia: wynik analizy.
+function marketCv(ctx, D, mark, x0, y0, w, h) {
+  const top = 92, bot = 62, gap = 12, base = y0 + h - bot, ph = base - y0 - top, X = v => x0 + (v - D.lo) / (D.hi - D.lo) * w, max = Math.max(...D.bins.map(b => b.n));
+  ctx.textAlign = 'left'; ctx.fillStyle = C.line; ctx.fillRect(x0, base, w, 2);
+  D.bins.forEach(b => { if (!b.n) return; const bh = Math.max(14, b.n / max * (ph - 44)), bx = X(b.a) + gap / 2, bw = X(b.b) - X(b.a) - gap, g = ctx.createLinearGradient(0, base - bh, 0, base); g.addColorStop(0, '#E6CE94'); g.addColorStop(.45, C.gold); g.addColorStop(1, '#AD8B3A'); ctx.fillStyle = g; ctx.beginPath(); ctx.roundRect(bx, base - bh, bw, bh, [10, 10, 0, 0]); ctx.fill(); });
+  const mx = X(mark); ctx.strokeStyle = C.onyx; ctx.lineWidth = 3; ctx.setLineDash([9, 7]); ctx.beginPath(); ctx.moveTo(mx, y0 + 58); ctx.lineTo(mx, base); ctx.stroke(); ctx.setLineDash([]);
+  ctx.textAlign = 'center'; ctx.font = '700 28px Archivo'; ctx.lineJoin = 'round'; D.bins.forEach(b => { if (!b.n) return; const bh = Math.max(14, b.n / max * (ph - 44)), cx = (X(b.a) + X(b.b)) / 2, ty = base - bh - 14; ctx.strokeStyle = C.paper; ctx.lineWidth = 8; ctx.strokeText(String(b.n), cx, ty); ctx.fillStyle = C.ink; ctx.fillText(String(b.n), cx, ty); });
+  const lbl = `Wynik analizy: ${money(mark)} zł`; ctx.font = '700 25px Archivo'; const tw = ctx.measureText(lbl).width + 48, px = Math.max(x0, Math.min(x0 + w - tw, mx - tw / 2)); ctx.fillStyle = C.onyx; ctx.beginPath(); ctx.roundRect(px, y0, tw, 58, 29); ctx.fill(); ctx.fillStyle = C.goldL; ctx.fillText(lbl, px + tw / 2, y0 + 38);
+  ctx.font = '400 23px Archivo'; ctx.fillStyle = C.ink2; const ticks = [...D.bins.map(b => b.a), D.hi]; ticks.forEach((t, i) => { ctx.textAlign = i === 0 ? 'left' : i === ticks.length - 1 ? 'right' : 'center'; ctx.fillText(money(t), X(t), base + 34); });
+  ctx.textAlign = 'center'; ctx.font = '400 21px Archivo'; ctx.fillText('Czynsz miesięczny, zł', x0 + w / 2, base + 62); ctx.textAlign = 'left';
 }
 
 export async function buildReport(e, ust, opts = {}) {
@@ -169,6 +182,11 @@ export async function buildReport(e, ust, opts = {}) {
     ctx.textAlign = 'right'; [620, 705, 880, 1010, W - M].forEach((x, i) => ctx.fillText(vals[i], x, y)); ctx.textAlign = 'left'; y += 46;
   }
   y += 14;
+  }
+  if (variant !== 'short' && !sale) {
+    const mark = round((r.total.lo + r.total.hi) / 2, 10), D = r.comps.length >= 10 ? rentBins(r.comps, mark) : null;
+    if (D) { ensure(640); const own = r.comps.some(c => c.own); text('Porównanie rynkowe', 34, C.ink, 400, 'Marcellus'); y += 2; text(`Czynsze ${D.total} podobnych ${own ? 'ofert i umów' : 'ofert'} uwzględnionych w tej analizie.`, 25, C.ink2); y += 22;
+      marketCv(ctx, D, mark, M, y, W - 2 * M, 430); y += 478; text(fl ? 'Wynik analizy uwzględnia też cechy tego mieszkania, takie jak metraż, piętro, rok budowy czy wyposażenie, dlatego nie musi wypadać na środku wykresu.' : 'Wynik analizy uwzględnia też powierzchnię i rodzaj tej nieruchomości, dlatego nie musi wypadać na środku wykresu.', 24, C.ink2); y += 26; }
   }
   if (variant !== 'short' && opts.okolica && opts.okolica.length) {
     okolTab(); if (opts.okolicaOpis) { ensure(90); text(opts.okolicaOpis, 24, C.ink); y += 10; } okolSrc();

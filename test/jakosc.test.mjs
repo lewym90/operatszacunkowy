@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { neff, qualityOf, compWhy, diffWyceny } from '../js/jakosc.js';
+import { neff, qualityOf, compWhy, diffWyceny, rentBins } from '../js/jakosc.js';
 import { promienie, opisLokalizacji, plForm } from '../js/osm.js';
 import { clusterItems, districtCenters } from '../js/mapa.js';
 const near = (a, b, e = 0.01) => assert.ok(Math.abs(a - b) <= e, `${a} ≠ ${b}`);
@@ -34,4 +34,8 @@ const cen = new Map([['a', { lat: 1, lon: 1 }], ['b', { lat: 3, lon: 3 }]]); con
 assert.ok(compWhy({ kind: 'oferta', w: 1, m2: 50, pm2: 150, pm2raw: 100 }, { comps: [{ w: 1 }] }, { m2: 50 }).reasons.includes('korekta segmentu +50,0%'));
 { const x = E(100, 120, [1], { s: { attrs: { balkon: 1 }, dzielnica: 'A' } }), y = E(101, 121, [1], { s: { attrs: { balkon: 0 }, dzielnica: 'B' } }), dd = diffWyceny(x, y); assert.ok(dd.zmiany.includes('dzielnica') && dd.zmiany.includes('cechy mieszkania')); assert.ok(/zmieniono/i.test(dd.powody[0])); assert.ok(/ceny lub wagi/.test(diffWyceny(E(100, 120, [1]), E(101, 121, [1])).powody[0])); }
 assert.ok(!/NaN/.test(JSON.stringify(qualityOf({ ok: true, n: 3, dropped: 0, pm2: { lo: 1, mid: 2, hi: 3 }, comps: [{ id: 1, kind: 'transakcja' }, { id: 2, kind: 'transakcja' }] }))));
+{ const o = [2499, 1500, 1800, 1700, 1950, 2700, 3000, 2800, 2100, 1800, 2000, 3700, 2400, 2100, 1790, 2400, 2200, 3000, 1800, 2500, 2500, 1300, 1590, 2500], B = rentBins(o.map(cena => ({ cena })), 2500);
+  assert.deepEqual(B.bins.map(x => x.n), [1, 8, 7, 5, 2, 1]); assert.equal(B.step, 500); assert.equal(B.total, 24); assert.equal(B.bins.reduce((s, x) => s + x.n, 0), 24);
+  const C = rentBins([{ cena: 2000 }, { cena: 2100 }], 5000); assert.ok(C.hi > 5000 && C.lo <= 2000 && C.bins.length <= 8 && C.bins.reduce((s, x) => s + x.n, 0) === 2);
+  const E1 = rentBins([{ cena: 2000 }, { cena: 2000 }], 2000); assert.equal(E1.bins.reduce((s, x) => s + x.n, 0), 2); assert.ok(E1.hi > 2000); assert.equal(rentBins([], 1), null); }
 assert.equal(dc.size, 1); near(dc.get('X').lat, 2); console.log('jakosc.test: OK');

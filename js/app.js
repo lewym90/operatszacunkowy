@@ -13,7 +13,7 @@ import { geocode, neighbors, suggest as suggestAddr } from './geokod.js';
 import { exposure, trendSeries, yieldByDistrict, districtAssigner, lineChart, barChart, bindCharts } from './rynek.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer, districtCenters } from './mapa.js';
 
-const VERSION = '1.23.0';
+const VERSION = '1.23.1';
 const S = { wlasne: [], teczki: [], foto: {}, dokumenty: [],
   offers: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -433,7 +433,7 @@ function viewRaport(p) {
   const html = head('Raport', 'Dla klienta', true) + `<div class="chips" id="rvar" style="margin-bottom:12px">${VAR.map(([k, n]) => `<button type="button" class="chip ${k === variant ? 'on' : ''}" data-v="${k}">${n}</button>`).join('')}</div>
     <p class="tiny muted" id="rvh" style="margin:-4px 0 12px"></p><div id="rp"><div class="empty"><b>Przygotowuję raport…</b></div></div>
     <div class="row" style="position:sticky;bottom:calc(var(--nav) + var(--sab) + 12px)"><button class="btn" id="pdf" disabled>Udostępnij PDF</button></div>`;
-  const HINT = { short: 'Jedna strona: wynik, przedział i pewność oceny. Bez tabeli porównań.', full: 'Wynik, opis metody, przy sprzedaży tabela porównań i najbliższe okolice (odległości do przystanków, szkół itp., gdy serwer ma dane).', market: 'Jak pełny, a do tego wykres cen transakcyjnych w czasie i rentowność najmu w dzielnicach.', inwest: 'Zwrot, IRR, NPV, wynik po sprzedaży i scenariusze, z danych wpisanych w kalkulatorze.', lokal: 'Odległości od budynku i liczba punktów w promieniach od 300 m do 3 km.', rent: 'Wartość i czynsz tej nieruchomości oraz rentowność brutto na tle dzielnic.', rynek: 'Trend cen, rentowność dzielnic i czas ekspozycji ofert. Bez wyniku wyceny.' };
+  const HINT = { short: 'Jedna strona: wynik, przedział i pewność oceny. Bez tabeli porównań.', full: 'Wynik, opis metody, tabela porównań przy sprzedaży lub porównanie rynkowe przy najmie i najbliższe okolice (odległości do przystanków, szkół itp., gdy serwer ma dane).', market: 'Jak pełny, a do tego wykres cen transakcyjnych w czasie i rentowność najmu w dzielnicach.', inwest: 'Zwrot, IRR, NPV, wynik po sprzedaży i scenariusze, z danych wpisanych w kalkulatorze.', lokal: 'Odległości od budynku i liczba punktów w promieniach od 300 m do 3 km.', rent: 'Wartość i czynsz tej nieruchomości oraz rentowność brutto na tle dzielnic.', rynek: 'Trend cen, rentowność dzielnic i czas ekspozycji ofert. Bez wyniku wyceny.' };
   return [html, async v => {
     $('[data-back]', v).onclick = back; let pages = [], seq = 0, lastOpts = null, busy = false;
     const market = () => {
