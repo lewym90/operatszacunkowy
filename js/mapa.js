@@ -169,7 +169,7 @@ export async function createMap(el, opts = {}) {
     },
     cells(cells, color, popup) { for (const c of cells) L.rectangle(c.bounds, { weight: .6, color: 'rgba(11,11,13,.7)', fillColor: color(c.med), fillOpacity: .62 }).bindPopup(() => popup(c)).addTo(layer); },
     bubbles(items, color, popup) { for (const it of items) L.circleMarker([it.lat, it.lon], { radius: 24, weight: 1.5, color: 'rgba(11,11,13,.9)', fillColor: color(it.v), fillOpacity: .78 }).bindPopup(() => popup(it)).bindTooltip(it.txt, { permanent: true, direction: 'center', className: 'bubble-t' }).addTo(layer); },
-    subject(ll, label) { if (!ll) return; L.circleMarker(ll, { radius: 11, weight: 2.5, color: '#E6CE94', fillOpacity: 0 }).bindTooltip(label || 'Wyceniane mieszkanie').addTo(layer); L.circleMarker(ll, { radius: 3.5, weight: 0, fillColor: '#E6CE94', fillOpacity: 1 }).addTo(layer); },
+    subject(ll, label) { if (!ll) return; L.circleMarker(ll, { radius: 11, weight: 3, color: '#0B0B0D', fillOpacity: 0 }).bindTooltip(label || 'Wyceniane mieszkanie').addTo(layer); L.circleMarker(ll, { radius: 4, weight: 0, fillColor: '#0B0B0D', fillOpacity: 1 }).addTo(layer); },
     fit(pts, pad = 24) { if (pts && pts.length > 1) map.fitBounds(L.latLngBounds(pts), { padding: [pad, pad], maxZoom: 16 }); else if (pts && pts.length === 1) map.setView(pts[0], 15); },
     destroy() { map.remove(); },
   };

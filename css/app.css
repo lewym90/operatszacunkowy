@@ -161,8 +161,8 @@ ul.clean li:first-child { border-top: 0; } ul.clean li::before { content: ''; po
 .mapbox svg.map { width: 100%; height: 100%; aspect-ratio: auto; max-height: none; border: 0; border-radius: 0; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--ash); }
 .legend span { display: inline-flex; align-items: center; gap: 6px; } .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; }
-.leaflet-container { background: #0f0f12; font: inherit; }
-.leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.66) contrast(1.02) saturate(.3) sepia(.28); }
+.leaflet-container { background: #E8E5DE; font: inherit; }
+.dark-tiles .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.66) contrast(1.02) saturate(.3) sepia(.28); }
 .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: #1d1d23; color: var(--bone); border: 1px solid var(--line); box-shadow: 0 10px 30px rgba(0, 0, 0, .5); }
 .leaflet-popup-content { margin: 12px 14px; font: 13px/1.45 var(--text); } .leaflet-popup-content .tiny { color: var(--ash); }
 .leaflet-container a.leaflet-popup-close-button { color: var(--ash); }
@@ -258,8 +258,7 @@ ul.clean li:first-child { border-top: 0; } ul.clean li::before { content: ''; po
   #tabs { backdrop-filter: blur(22px) saturate(1.2); -webkit-backdrop-filter: blur(22px) saturate(1.2); }
   #sheet .scrim { backdrop-filter: blur(3px); }
 }
-/* Jasny podkład mapy (bez filtra ciemnego): przełącznik pod mapą */
-.light-tiles .leaflet-tile-pane { filter: none; }
+/* Mapa domyślnie jasna, ciemny podkład z przełącznika pod mapą */
 .tilesw { margin-top: 10px; background: none; border: 1px solid var(--line2); color: var(--ash); border-radius: 999px; padding: 6px 12px; font: 12px var(--text); cursor: pointer; }
 .am-dots { position: absolute; left: 0; top: 0; pointer-events: none; }
 
@@ -398,3 +397,7 @@ body { background: var(--onyx); } body::before { content: ''; position: fixed; i
 .hero { border-color: rgba(200, 164, 77, .34); }
 .stat, .okt { border-color: rgba(200, 164, 77, .16); }
 .seg button.on { text-shadow: none; }
+
+/* bez powiększania dwoma palcami i dwuklikiem (mapa ma własne przybliżanie) */
+html, body { touch-action: pan-x pan-y; } a, button, input, select, textarea, label, summary, .tile, .chip { touch-action: manipulation; }
+.leaflet-container, .leaflet-container * { touch-action: none; }

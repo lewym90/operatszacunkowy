@@ -13,7 +13,7 @@ import { geocode, neighbors, suggest as suggestAddr } from './geokod.js';
 import { exposure, trendSeries, yieldByDistrict, districtAssigner, lineChart, barChart, bindCharts } from './rynek.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer, districtCenters } from './mapa.js';
 
-const VERSION = '1.24.0';
+const VERSION = '1.24.1';
 const S = { wlasne: [], teczki: [], foto: {}, dokumenty: [],
   offers: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -1109,8 +1109,8 @@ function viewMapa() {
     const redrawFilters = () => { $('#mapfilters', v).innerHTML = filters(); bindFilters(); };
     const bindFilters = () => $$('[data-mf]', v).forEach(g => $$('button', g).forEach(b => b.onclick = () => { m[g.dataset.mf] = b.dataset.v; if (g.dataset.mf === 'kat') { m.metraz = ''; m.rynek = ''; redrawFilters(); draw(true); return; } $$('button', g).forEach(x => x.classList.toggle('on', x === b)); draw(false); }));
     $$('.seg button', v).forEach(b => b.onclick = () => { m.mode = b.dataset.mode; const sg = $('.seg', v); sg.dataset.v = MODES.findIndex(x => x[0] === m.mode); $$('button', sg).forEach(x => x.classList.toggle('on', x === b)); redrawFilters(); draw(true); });
-    const tilesBtn = $('#tilesw', v), applyTiles = () => { const light = ls.get('am-tiles') === 'light'; $('#mapbox', v).classList.toggle('light-tiles', light); tilesBtn.textContent = light ? 'Podkład mapy: jasny (zmień na ciemny)' : 'Podkład mapy: ciemny (zmień na jasny)'; };
-    tilesBtn.onclick = () => { ls.set('am-tiles', ls.get('am-tiles') === 'light' ? 'dark' : 'light'); applyTiles(); }; applyTiles();
+    const tilesBtn = $('#tilesw', v), applyTiles = () => { const light = ls.get('am-tiles2') !== 'dark'; $('#mapbox', v).classList.toggle('dark-tiles', !light); tilesBtn.textContent = light ? 'Podkład mapy: jasny (zmień na ciemny)' : 'Podkład mapy: ciemny (zmień na jasny)'; };
+    tilesBtn.onclick = () => { ls.set('am-tiles2', ls.get('am-tiles2') === 'dark' ? 'light' : 'dark'); applyTiles(); }; applyTiles();
     const olay = {};
     const olStatus = async () => {
       const on = Object.keys(olay).filter(k => olay[k]), box = $('#olst', v); if (!on.length) { box.textContent = 'Dotknij, aby pokazać na mapie. Dane z OpenStreetMap, odświeżane co tydzień na serwerze.'; return; }
@@ -1280,6 +1280,12 @@ async function acquireLock(steal = false) {
 function logErr(kind, msg) { try { const l = JSON.parse(ls.get('am-errlog') || '[]'); l.unshift({ t: Date.now(), k: kind, m: String(msg).slice(0, 300), v: VERSION }); ls.set('am-errlog', JSON.stringify(l.slice(0, 30))); } catch { } }
 addEventListener('error', e => logErr('błąd', (e.message || '') + (e.filename ? ' @' + String(e.filename).split('/').pop() + ':' + e.lineno : '')));
 addEventListener('unhandledrejection', e => logErr('obietnica', e.reason && (e.reason.message || e.reason)));
+
+/* ---------- bez powiększania strony ---------- */
+// iPhone potrafi zignorować ustawienie w nagłówku strony, więc gest dwóch palców blokujemy też tutaj. Mapa zachowuje własne przybliżanie.
+const naMapie = e => !!e.target.closest?.('.leaflet-container');
+for (const t of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(t, e => { if (!naMapie(e)) e.preventDefault(); }, { passive: false });
+document.addEventListener('touchmove', e => { if (e.touches.length > 1 && !naMapie(e)) e.preventDefault(); }, { passive: false });
 
 /* ---------- powrót do aplikacji ---------- */
 // iPhone zamyka aplikacje z ekranu początkowego w tle i uruchamia je od nowa. Zapisujemy, gdzie użytkownik był, i po ponownym starcie wracamy w to miejsce.
