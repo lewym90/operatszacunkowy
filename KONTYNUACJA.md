@@ -1,6 +1,6 @@
 # KONTYNUACJA — OPERAT SZACUNKOWY (AM Nieruchomości)
 
-Plik przekazania pracy między kontami/sesjami Claude. Stan na **2026-11-04, wersja aplikacji 1.25.1** (pełna analiza z teczki, IRR/NPV, jakość porównań, porównanie wycen, promienie, nowe raporty z numeracją, mapa rentowności).
+Plik przekazania pracy między kontami/sesjami Claude. Stan na **2026-11-04, wersja aplikacji 1.25.2** (pełna analiza z teczki, IRR/NPV, jakość porównań, porównanie wycen, promienie, nowe raporty z numeracją, mapa rentowności).
 Ten plik zawiera całą wiedzę potrzebną do kontynuacji: nie wymaga dostępu do poprzednich rozmów ani do poprzedniego projektu Claude.
 
 > **UWAGA — repozytorium jest PUBLICZNE (GitHub Pages).** W tym pliku nie ma i nie wolno zapisywać haseł, kluczy, tokenów, kodu synchronizacji „AMSYNC1:…”, adresu IP serwera ani danych ofert/klientów. Nigdy nie wklejaj klucza synchronizacji do czatu ani na zrzut ekranu — właściciel wpisuje go sam.
@@ -201,6 +201,20 @@ Ogłoszenie Otodom (dane strukturalne) zawiera: tytuł, rok budowy (`build_year`
 - Wynik testu trafności najmu z 5.11.2026 (366 ofert, ceny RCN i punkt ulicy dla 236): dziś średni błąd 17,0%, mediana 13,0%, przy chowaniu pojedynczych ofert 16,4%. Ceny RCN w okolicy −0,1 pkt, sąsiednie ulice −0,1, uczelnia −0,1, razem −0,3 (szkodzi), rok budowy z RCN 0,0 (21 ofert), oferty wiszące: za mało danych (3). **Żadnego pomysłu nie wdrażamy.** Ograniczenie: 130 ofert bez punktu ulicy nie dostało tych cech.
 - Drugi przebieg z 5.11.2026: na 236 ofertach z ulicą w RCN pomysły też bez zysku (rok budowy −0,2, szkodzi). Przedział trafia w 49% (cel 50%). Słabe miejsca: 4+ pokoje (19 ofert, 31,9%, w przedziale 32%), Rury (42 oferty, 26,2%, w przedziale 26%), 65–85 m² (20,8%), budynki 1990–2017 (21,1%), oferty bez ulicy (21,3%, mediana 13,2%). 1 pokój zawyżany o +9,6%. Pewność prawie nie rozróżnia ofert: średni błąd 15,8 / 16,6 / 20,5%, trafienie w przedział 48–50%.
 
+## 10a. PLAN: całe województwo lubelskie (zaakceptowany przez właściciela 5.11.2026)
+Cel: dokładnie te same dane co dla Lublina, bez kompromisów, dla 24 powiatów (20 ziemskich + Biała Podlaska, Chełm, Lublin, Zamość). Lublin działa bez zmian przez cały czas.
+1. Sonda: rekordy i jakość danych per powiat, potrzebne miejsce.
+2. Zabezpieczenie w aplikacji: oferty spoza Lublina nie wchodzą do wycen Lublina (wynik Lublina bez zmian co do złotówki).
+3. Serwer zbiera nocami partiami do osobnych plików na powiat: RCN lokale, RCN domy/obiekty/grunty, OSM 7 warstw. Potem odświeżanie: Lublin jak dziś, reszta raz w tygodniu.
+4. Weekend: Otodom, najem z całego województwa jednym przebiegiem jako jedno zebranie (to też kolejne zebranie Lublina). Regulamin Otodomu pozostaje sprawą otwartą (sekcja 8).
+5. Testy wycen per powiat i rodzaj: sprzedaż (tylko z transakcji wcześniejszych), najem (`tools/najem_test.mjs`).
+6. Korekty tylko po pozytywnym teście: dynamika cen w małych powiatach (próg 100 transakcji), miejscowości bez ulic.
+7. Aplikacja: wybór obszaru, dane dociągane wg obszaru, adresy, mapa, trendy i raporty bez „Lublina” na sztywno. Podgląd przed wdrożeniem.
+8. Włączanie powiat po powiecie, po teście.
+Partie zbierania: (1) świdnicki, lubelski, łęczyński, lubartowski; (2) puławski, kraśnicki, krasnostawski, opolski, rycki; (3) Chełm + chełmski, Zamość + zamojski, Biała Podlaska + bialski; (4) łukowski, radzyński, parczewski, włodawski; (5) biłgorajski, janowski, hrubieszowski, tomaszowski.
+Dzielnice poza Lublinem pochodzą tylko z ofert Otodom; RCN ich nie ma.
+- 1.25.2 Oferty spoza Lublina (`miasto` niepuste i różne od Lublin) trafiają do `S.poza`: zapis, synchronizacja, import i kopie obejmują je, ale wyceny, rynek, mapa i listy widzą tylko `S.offers`. Do usunięcia, gdy aplikacja obsłuży obszary (plan 10a, punkt 7).
+
 ## 11. Lista pomysłów i stan (numeracja ustalona z właścicielem 30.10)
 
 Gdy właściciel zapyta „co jeszcze jest do zrobienia”, podać punkty z sekcji „Zablokowane / czeka”.
@@ -234,7 +248,7 @@ Nie teraz: prognozy cen (najpierw walidacja, dane tylko z okresu wzrostu), wycen
 ### Do zrobienia przez właściciela
 - Na serwerze: `curl -fsSL https://lewym90.github.io/operatszacunkowy/server/update_sync.sh | bash` (teczki i historia dokumentów zaczną się synchronizować).
 - Do decyzji: `DEFAULT_URL` w `js/sync.js` zawiera adres IP serwera w publicznym repo (stare, wbrew zasadzie z początku pliku).
-- Zamknąć i otworzyć aplikację na wszystkich urządzeniach (jedna karta naraz), żeby pobrała 1.25.1 (przy problemach z odświeżeniem: zamknąć aplikację całkiem i otworzyć dwa razy).
+- Zamknąć i otworzyć aplikację na wszystkich urządzeniach (jedna karta naraz), żeby pobrała 1.25.2 (przy problemach z odświeżeniem: zamknąć aplikację całkiem i otworzyć dwa razy).
 - Sprawdzić na telefonie: najem → ulica „Granata”, nr „1” (karta „Najbliższe okolice”), to samo w sprzedaży; Mapa → warstwy OSM.
 - Ok. 7 listopada zrobić kolejne pełne zebranie ofert najmu.
 - Opcjonalnie: wgrać własne logo, dodać umowy domów/lokali/hal, uruchomić eksport RCN dla Chełma, Zamościa, Puław.

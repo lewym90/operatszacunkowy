@@ -14,15 +14,19 @@ import { geocode, neighbors, suggest as suggestAddr } from './geokod.js';
 import { exposure, trendSeries, yieldByDistrict, districtAssigner, lineChart, barChart, bindCharts } from './rynek.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer, districtCenters } from './mapa.js';
 
-const VERSION = '1.25.1';
+const VERSION = '1.25.2';
 const S = { wlasne: [], teczki: [], foto: {}, dokumenty: [],
-  offers: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
+  offers: [], poza: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
   form: { tryb: 'sprzedaz', kat: 'mieszkanie', pod: '', dzm2: '', ulica: '', nr: '', dzielnica: '', m2: '', pokoje: 2, pietro: null, rok: '', rynek: '', standard: '', meble: '', zapamietaj: true, ud: [] },
 };
 // Własne umowy najmu biura -> ta sama postać co oferty, z jawnymi cechami (nie ze słów w tytule) i dużą wagą
 const ownToOffer = w => ({ id: 'w' + w.id, own: true, ...(w.kat && w.kat !== 'mieszkanie' ? { kat: w.kat } : {}), ulica: w.ulica, dzielnica: w.dzielnica, miasto: 'Lublin', m2: w.m2, pokoje: w.pokoje, pietro: w.pietro, cena: w.cena, czynsz: w.czynsz || null, meble: w.meble,
   tags: { nowe: w.rok && w.rok >= 2018 ? 1 : 0, wysoki: w.standard === 'wysoki' ? 1 : 0 }, tytul: 'własna umowa', wlaczone: true, flagi: [] });
+// Oferty spoza Lublina czekają w S.poza: są zapisywane i synchronizowane, ale nie wchodzą do wycen, rynku, mapy ani list, dopóki aplikacja nie obsłuży innych obszarów.
+const lubOK = o => { const m = (o.miasto || '').trim().toLowerCase(); return !m || m === 'lublin'; };
+const podziel = all => { S.offers = all.filter(lubOK); S.poza = all.filter(o => !lubOK(o)); };
+const wszystkie = () => S.offers.concat(S.poza);
 const allOffers = () => S.offers.concat((S.wlasne || []).map(ownToOffer));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const now = () => new Date().getFullYear();
@@ -41,7 +45,7 @@ const safeBanner = () => S.safe ? '<div class="banner warn"><span>!</span><span>
 async function safeOff() { S.safe = false; armBoot(); S.rcn = await store.get('rcn', null); S.rcnInne = await store.get('rcnInne', null); setTx(); render(); checkRcn(); }
 document.addEventListener('click', e => { if (e.target.closest('[data-act="safeoff"]')) safeOff(); });
 async function load() {
-  S.wlasne = await store.get('wlasne', []); S.offers = await store.get('offers', []); S.budynki = await store.get('budynki', {}); S.wyceny = await store.get('wyceny', []); S.teczki = await store.get('teczki', []); S.dokumenty = await store.get('dokumenty', []); S.foto = await store.get('foto', {});
+  S.wlasne = await store.get('wlasne', []); podziel(await store.get('offers', [])); S.budynki = await store.get('budynki', {}); S.wyceny = await store.get('wyceny', []); S.teczki = await store.get('teczki', []); S.dokumenty = await store.get('dokumenty', []); S.foto = await store.get('foto', {});
   { const m = {}; let ch = false; for (const [k, v] of Object.entries(S.budynki)) { const nk = migrateAddrKey(k); if (nk !== k) ch = true; m[nk] = v; } if (ch) { S.budynki = m; store.set('budynki', m); } }
   S.ust = { ...S.ust, ...(await store.get('ust', {})) }; S.rcn = S.safe ? null : await store.get('rcn', null); S.rcnInne = S.safe ? null : await store.get('rcnInne', null); setTx();
 }
@@ -55,7 +59,7 @@ function setTx() {
 }
 const DEF_UST = JSON.stringify(S.ust);
 const raw = {
-  offers: () => store.set('offers', S.offers), wlasne: () => store.set('wlasne', S.wlasne), budynki: () => store.set('budynki', S.budynki), wyceny: () => store.set('wyceny', S.wyceny), teczki: () => store.set('teczki', S.teczki), dokumenty: () => store.set('dokumenty', S.dokumenty), ust: () => store.set('ust', S.ust),
+  offers: () => store.set('offers', wszystkie()), wlasne: () => store.set('wlasne', S.wlasne), budynki: () => store.set('budynki', S.budynki), wyceny: () => store.set('wyceny', S.wyceny), teczki: () => store.set('teczki', S.teczki), dokumenty: () => store.set('dokumenty', S.dokumenty), ust: () => store.set('ust', S.ust),
 };
 // każdy zapis lokalny uruchamia (z opóźnieniem) synchronizację z serwerem, jeśli urządzenie jest połączone
 const save = Object.fromEntries(Object.entries(raw).map(([k, f]) => [k, () => { const r = f(); sync.schedule(); return r; }]));
@@ -63,7 +67,7 @@ const save = Object.fromEntries(Object.entries(raw).map(([k, f]) => [k, () => { 
 /* ---------- synchronizacja z serwerem ---------- */
 const byId = (list, id = x => x.id) => new Map(list.map(x => [id(x), x]));
 const adapters = {
-  offers: { read: () => S.offers.map(o => [o.id, o]), apply: (u, d) => { const m = byId(S.offers); u.forEach(([id, x]) => m.set(id, x)); d.forEach(id => m.delete(id)); S.offers = [...m.values()]; raw.offers(); } },
+  offers: { read: () => wszystkie().map(o => [o.id, o]), apply: (u, d) => { const m = byId(wszystkie()); u.forEach(([id, x]) => m.set(id, x)); d.forEach(id => m.delete(id)); podziel([...m.values()]); raw.offers(); } },
   wlasne: { read: () => S.wlasne.map(w => [w.id, w]), apply: (u, d) => { const m = byId(S.wlasne); u.forEach(([id, x]) => m.set(id, x)); d.forEach(id => m.delete(id)); S.wlasne = [...m.values()]; raw.wlasne(); } },
   wyceny: { read: () => S.wyceny.filter(e => e.id).map(e => [e.id, e]), apply: (u, d) => { const m = byId(S.wyceny); u.forEach(([id, x]) => m.set(id, x)); d.forEach(id => m.delete(id)); S.wyceny = [...m.values()].sort((a, b) => (b.ts || 0) - (a.ts || 0)); raw.wyceny(); } },
   dokumenty: { read: () => S.dokumenty.map(d => [d.id, d]), apply: (u, d) => { const m = byId(S.dokumenty); u.forEach(([id, x]) => m.set(id, x)); d.forEach(id => m.delete(id)); S.dokumenty = [...m.values()].sort((a, b) => (b.ts || 0) - (a.ts || 0)); raw.dokumenty(); } },
@@ -525,6 +529,7 @@ function statusFn() {
 }
 const parkNote = p => !p ? '' : p.stan === 'wliczony' ? 'parking w czynszu' : p.stan === 'dodatkowo' ? 'parking osobno' + (p.kwota > 0 ? ' +' + fmt(p.kwota) + ' zł' : '') : '';
 function applyCollection(found, opt = {}) {
+  S.offers = wszystkie(); S.poza = [];
   const t = Date.now(), z = (S.ust.zebrania || []).slice(); let c = z[z.length - 1];
   if (!c || t - c.ts > 12 * 3600000) { c = { id: (c ? c.id : 0) + 1, ts: t, pelne: false, n: 0 }; z.push(c); } else { c = { ...c, ts: t }; z[z.length - 1] = c; }
   if (opt.pelne) c.pelne = true;
@@ -553,7 +558,7 @@ function applyCollection(found, opt = {}) {
   }
   for (const o of S.offers) if (o.parking && o.parking.stan !== 'nieznany') { o.attrs = o.attrs || {}; o.attrs.garaz = o.parking.stan === 'wliczony' ? 1 : 0; }
   c.n = S.offers.filter(o => o.ost === c.id).length;
-  S.ust.zebrania = z; save.ust(); save.offers();
+  podziel(S.offers); S.ust.zebrania = z; save.ust(); save.offers();
   return { added, updated, zebranie: c };
 }
 function zebrania() {
@@ -611,7 +616,7 @@ function viewDane() {
   const n = S.offers.length, fl = S.offers.filter(o => o.flagi && o.flagi.length).length, off = S.offers.filter(o => o.wlaczone === false).length;
   const meta = S.rcn?.meta;
   const html = head('Dane', 'Źródła i import') + safeBanner() + `
-  <div class="card"><div class="eyebrow">Oferty najmu</div><div class="kv"><span>W bazie</span><b>${fmt(n)}</b></div><div class="kv"><span>Podejrzane (pominięte)</span><b>${fl}</b></div><div class="kv"><span>Wyłączone ręcznie</span><b>${off}</b></div>
+  <div class="card"><div class="eyebrow">Oferty najmu</div><div class="kv"><span>W bazie</span><b>${fmt(n)}</b></div>${S.poza.length ? `<div class="kv"><span>Spoza Lublina (czekają, poza wycenami)</span><b>${fmt(S.poza.length)}</b></div>` : ''}<div class="kv"><span>Podejrzane (pominięte)</span><b>${fl}</b></div><div class="kv"><span>Wyłączone ręcznie</span><b>${off}</b></div>
     <div class="gap"></div><button class="btn" data-act="pdf">Wgraj PDF z ofertami</button><div class="gap"></div><button class="btn ghost" data-act="paste">Wklej tekst ofert</button>
     <input type="file" id="fpdf" accept="application/pdf" multiple hidden>
     <p class="tiny muted" style="margin:10px 0 0">W Safari: lista ofert → Udostępnij → Drukuj → pinch na podglądzie → Zapisz do Plików. Plik wgrywasz tutaj. Odczyt dzieje się na tym urządzeniu, bez internetu i bez AI.</p></div>
@@ -637,10 +642,10 @@ function viewDane() {
     $('[data-act="rcnurl"]', v).onclick = async () => { const u = $('#rurl', v).value.trim(); if (!u) return toast('Wpisz adres pliku'); S.ust.rcnUrl = u; save.ust(); toast('Pobieram…'); try { const r = await fetch(u, { cache: 'no-store' }); if (!r.ok) throw new Error('HTTP ' + r.status); await setRcn(await r.json(), true); try { const r2 = await fetch(innePath(u), { cache: 'no-store' }); if (r2.ok) await setRcnInne(await r2.json(), true); } catch {} toast(`Wczytano ${fmt(S.tx.length)} lokali${S.inne.length ? ' i ' + fmt(S.inne.length) + ' domów, obiektów i gruntów' : ''}`); render(); } catch (e) { toast('Nie udało się: ' + e.message); } };
     const rc = $('[data-act="rcncheck"]', v); if (rc) rc.onclick = () => checkRcn(true);
     const fr = $('#frcn', v); $('[data-act="rcnfile"]', v).onclick = () => fr.click(); fr.onchange = async () => { try { await setRcn(JSON.parse(await fr.files[0].text())); } catch (e) { toast('Błędny plik: ' + e.message); } };
-    $('[data-act="exp"]', v).onclick = async () => { const blob = new Blob([JSON.stringify({ v: 1, offers: S.offers, wlasne: S.wlasne, budynki: S.budynki, wyceny: S.wyceny, teczki: S.teczki, dokumenty: S.dokumenty, ust: S.ust })], { type: 'application/json' }); await saveFile(blob, 'kopia-wycena-' + new Date().toISOString().slice(0, 10) + '.json'); };
+    $('[data-act="exp"]', v).onclick = async () => { const blob = new Blob([JSON.stringify({ v: 1, offers: wszystkie(), wlasne: S.wlasne, budynki: S.budynki, wyceny: S.wyceny, teczki: S.teczki, dokumenty: S.dokumenty, ust: S.ust })], { type: 'application/json' }); await saveFile(blob, 'kopia-wycena-' + new Date().toISOString().slice(0, 10) + '.json'); };
     const fb = $('#fbak', v); $('[data-act="imp"]', v).onclick = () => fb.click();
-    fb.onchange = async () => { try { const d = JSON.parse(await fb.files[0].text()); if (!Array.isArray(d.offers)) throw new Error('to nie jest kopia'); S.offers = d.offers; sync.allowMassDelete(); S.wlasne = d.wlasne || []; save.wlasne(); S.budynki = d.budynki || {}; S.wyceny = d.wyceny || []; if (d.teczki) { S.teczki = d.teczki; save.teczki(); } S.ust = { ...S.ust, ...(d.ust || {}) }; save.offers(); save.budynki(); save.wyceny(); save.ust(); toast('Przywrócono'); render(); } catch (e) { toast('Błąd: ' + e.message); } };
-    $('[data-act="clear"]', v).onclick = () => { if (confirm(syncOn ? 'Usunąć wszystkie oferty z bazy? Zniknie też z serwera i z pozostałych urządzeń.' : 'Usunąć wszystkie oferty z bazy?')) { S.offers = []; sync.allowMassDelete(); save.offers(); render(); } };
+    fb.onchange = async () => { try { const d = JSON.parse(await fb.files[0].text()); if (!Array.isArray(d.offers)) throw new Error('to nie jest kopia'); podziel(d.offers); sync.allowMassDelete(); S.wlasne = d.wlasne || []; save.wlasne(); S.budynki = d.budynki || {}; S.wyceny = d.wyceny || []; if (d.teczki) { S.teczki = d.teczki; save.teczki(); } S.ust = { ...S.ust, ...(d.ust || {}) }; save.offers(); save.budynki(); save.wyceny(); save.ust(); toast('Przywrócono'); render(); } catch (e) { toast('Błąd: ' + e.message); } };
+    $('[data-act="clear"]', v).onclick = () => { if (confirm(syncOn ? 'Usunąć wszystkie oferty z bazy? Zniknie też z serwera i z pozostałych urządzeń.' : 'Usunąć wszystkie oferty z bazy?')) { S.offers = []; S.poza = []; sync.allowMassDelete(); save.offers(); render(); } };
   }];
 }
 async function setRcn(pack, quiet) {
@@ -678,7 +683,7 @@ async function checkRcn(force) {
   finally { rcnBusy = false; }
 }
 function offerSummary(found) {
-  const have = new Set(S.offers.map(offerKey)); const seen = new Set(); let neu = [], dup = 0;
+  const have = new Set(wszystkie().map(offerKey)); const seen = new Set(); let neu = [], dup = 0;
   for (const r of found) { const k = offerKey(r); if (have.has(k) || seen.has(k)) { dup++; continue; } seen.add(k); neu.push(r); }
   return { neu, dup, flagged: neu.filter(r => r.flagi.length).length };
 }
@@ -1382,6 +1387,6 @@ async function boot() {
     navigator.serviceWorker.addEventListener('controllerchange', () => { if (had && !done) { done = true; location.reload(); } });   // nowa wersja przejęła kontrolę: odśwież raz
     navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => { });
   }
-  window.__am = { S, save, render, go, sync, checkRcn, got, getMap: () => mapCtl, importOffers: (found, opt) => applyCollection(found, opt), statusFn };
+  window.__am = { S, save, render, go, sync, adapters, checkRcn, got, getMap: () => mapCtl, importOffers: (found, opt) => applyCollection(found, opt), statusFn };
 }
 boot();
