@@ -14,5 +14,6 @@ ok(!/POMAGA/.test(lin(b, 'Ceny sprzedaży z RCN')), 'brak zależności: bez obie
 ok(!/POMAGA/.test(lin(b, 'Odległość do uczelni')), 'losowa cecha nie przechodzi: ' + lin(b, 'Odległość do uczelni'));
 ok(/za mało danych/.test(lin(a, 'Rok budowy')) && /za mało danych/.test(lin(a, 'Pominięcie')), 'mało danych: uczciwy komunikat');
 ok(/uzupełniono \d+ ofert\)/.test(lin(c, 'Rok budowy')) && /takich ofert 48\)/.test(lin(c, 'Pominięcie')), 'rok i oferty wiszące liczą się, gdy są dane: ' + lin(c, 'Rok budowy') + ' | ' + lin(c, 'Pominięcie'));
+ok(/TYLKO OFERTY Z ULICĄ/.test(a) && /GDZIE APLIKACJA MYLI/.test(a) && /wszystkie oferty\s+240/.test(a) && /pewność /.test(a), 'sekcje: ulice i miejsca pomyłek');
 ok(!/Testowa/.test(a + b + c), 'wynik bez nazw ulic'); ok(!a.includes('NaN') && !b.includes('NaN'), 'bez NaN');
 fs.rmSync(T, { recursive: true, force: true }); if (process.argv[2] === '-v') console.log(a, b); if (zle) process.exit(1); console.log('najem_test: OK');
