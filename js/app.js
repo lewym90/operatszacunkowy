@@ -129,16 +129,32 @@ let mapCtl = null;
 const head = (title, sub, back, line) => `<div class="top">${back ? `<button class="back" data-back aria-label="Wróć">${ICON.back}</button>` : `<button class="back burger" data-menu aria-label="Menu">${ICON.menu}</button>`}<div class="ttl"><h1>${title}</h1>${sub ? `<small class="${line ? 'line' : ''}">${sub}</small>` : ''}</div><img class="mark" src="icons/logo-am.png" alt="AM Nieruchomości"></div>`;
 
 /* ---------- START ---------- */
-const TILES = [['sale', 'Wycena<br>sprzedaży', 'start'], ['rent', 'Wycena<br>najmu', 'klucz'], ['#/rynek', 'Rynek<br>i trendy', 'slupki'], ['#/kalkulator', 'Kalkulator<br>inwestycyjny', 'kalk'], ['#/mapa', 'Mapa<br>transakcji', 'mapa'], ['#/oferty', 'Monitoring<br>ofert', 'lornetka'], ['tec', 'Teczki<br>i CRM', 'teczki'], ['#/raporty', 'Raporty<br>PDF', 'raport']];
+const TILES = [['sale', 'Wycena sprzedaży', 'sprzedaz'], ['rent', 'Wycena najmu', 'najem'], ['#/rynek', 'Rynek i trendy', 'rynek'], ['#/kalkulator', 'Kalkulator inwestycyjny', 'kalkulator'], ['#/mapa', 'Mapa transakcji', 'mapa'], ['#/oferty', 'Monitoring ofert', 'oferty'], ['tec', 'Teczki i CRM', 'teczki'], ['#/raporty', 'Raporty PDF', 'raporty']];
+const odm = (n, a, b, c) => `${fmt(n)} ${n === 1 ? a : n % 10 >= 2 && n % 10 <= 4 && !(n % 100 >= 12 && n % 100 <= 14) ? b : c}`;
+// Krótkie informacje na kafelkach: wyłącznie z danych w aplikacji, przy braku danych opis funkcji
+function tileInfo(k) {
+  if (k === 'sale') return S.pool.length ? odm(S.pool.length, 'transakcja', 'transakcje', 'transakcji') : 'Ceny z aktów notarialnych';
+  if (k === 'rent') { const n = allOffers().length; return n ? odm(n, 'oferta', 'oferty', 'ofert') : 'Oferty i własne umowy'; }
+  if (k === '#/rynek') return 'Trendy i rentowność';
+  if (k === '#/kalkulator') { const r = investCalc(S.invest); return r.ok ? 'Zwrot netto ' + pct1(r.netPost) : 'Zwrot, IRR, NPV'; }
+  if (k === '#/mapa') return 'Lublin i okolice';
+  if (k === '#/oferty') { if (!S.offers.length) return 'Zmiany cen i nowe ogłoszenia'; const st = statusFn(), n = S.offers.filter(o => st(o) === 'nowe').length; return n ? odm(n, 'nowa', 'nowe', 'nowych') : 'Bez nowych ogłoszeń'; }
+  if (k === 'tec') return S.teczki.length ? odm(S.teczki.length, 'teczka', 'teczki', 'teczek') : 'Nieruchomości i zadania';
+  return S.dokumenty.length ? odm(S.dokumenty.length, 'dokument', 'dokumenty', 'dokumentów') : 'Siedem rodzajów raportu';
+}
+let startMemo = null;
 function viewStart() {
   const n = remindN();
-  const html = `<div class="home-top"><img class="home-logo" src="icons/logo-am.png" alt="AM Nieruchomości"><h1 class="gold">OPERAT<br>SZACUNKOWY</h1><button class="bell" data-act="bell" aria-label="Zadania i przypomnienia${n ? ': ' + n : ''}">${ICON.dzwonek}${n ? `<i class="nb">${n}</i>` : ''}</button></div>${safeBanner()}
-  <div class="tiles">${TILES.map(([k, l, ic], i) => `<button type="button" class="tile t${i % 4}" data-tile="${k}">${ICON[ic]}<span>${l}</span></button>`).join('')}</div>
-  <div class="skyline" aria-hidden="true">${ICON.skyline}</div>`;
+  const html = `<div class="home-hero"><img class="hh-img" src="img/start.webp" alt=""><div class="hh-top"><img class="home-logo" src="icons/logo-am.png" alt="AM Nieruchomości"><h1 class="gold">OPERAT<br>SZACUNKOWY</h1><button class="bell" data-act="bell" aria-label="Zadania i przypomnienia${n ? ': ' + n : ''}">${ICON.dzwonek}${n ? `<i class="nb">${n}</i>` : ''}</button></div>
+    <div class="hh-stats"><div class="hs"><b id="hs-m">—</b><span>mediana zł/m², mieszkania</span></div><div class="hs"><b id="hs-y">—</b><span>zmiana rok do roku</span></div></div></div>${safeBanner()}
+  <div class="tiles">${TILES.map(([k, l, im]) => `<button type="button" class="tile" data-tile="${k}" style="background-image:url(img/t-${im}.webp)"><span class="tl"><b>${l}</b><small>${esc(tileInfo(k))}</small></span></button>`).join('')}</div>
+  <div class="skyline" aria-hidden="true"><img src="img/panorama.webp" alt=""></div>`;
   return [html, v => {
     $$('[data-tile]', v).forEach(b => b.onclick = () => { const k = b.dataset.tile;
       if (k === 'sale' || k === 'rent') { S.form.tryb = k === 'sale' ? 'sprzedaz' : 'najem'; go('#/wycena'); } else if (k === 'tec') { S.histTab = 'teczki'; go('#/historia'); } else go(k); });
     $('[data-act="bell"]', v).onclick = () => { S.histTab = 'zadania'; go('#/historia'); };
+    const paint = m => { if (!m) return; const a = $('#hs-m', v), b = $('#hs-y', v); if (a) a.textContent = fmt(m.med); if (b && m.yoy != null) b.textContent = plPct(m.yoy); const r = $('[data-tile="#/rynek"] small', v); if (r && m.yoy != null) r.textContent = plPct(m.yoy) + ' rok do roku'; };
+    if (startMemo && startMemo.n === S.pool.length) paint(startMemo); else if (S.pool.length) setTimeout(() => { if (!v.isConnected || v.dataset.view !== 'start') return; try { const T = trendSeries(S.pool, { kat: 'mieszkanie', m2min: 15, m2max: 200, years: 3 }); if (T.ok) { startMemo = { n: S.pool.length, med: T.points[T.points.length - 1].med, yoy: T.yoy ? T.yoy.pct : null }; paint(startMemo); } } catch { } }, 60);
   }];
 }
 /* ---------- RAPORTY (lista gotowych wycen, z których powstaje raport PDF) ---------- */

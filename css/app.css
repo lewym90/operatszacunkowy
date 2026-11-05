@@ -368,3 +368,23 @@ select.in { background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://ww
 
 /* powrót do aplikacji po zamknięciu przez system: bez ekranu powitalnego */
 .resume #splash { display: none; }
+
+/* ---------- SZATA ZE ZDJĘCIAMI ---------- */
+#glow { display: none; }
+body::before { content: ''; position: fixed; inset: 0; z-index: 0; pointer-events: none; background: var(--onyx) url(../img/tlo.webp) top center / 100% auto no-repeat; }
+.home-hero { position: relative; margin: calc(-1 * (var(--sat) + 22px)) -18px 14px; aspect-ratio: 3 / 2.3; min-height: 300px; overflow: hidden; }
+.hh-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 60% 40%; animation: heroIn 1.4s var(--ease) both; }
+@keyframes heroIn { from { opacity: 0; transform: scale(1.05); } to { opacity: 1; transform: none; } }
+.home-hero::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(11, 11, 13, .9) 0, rgba(11, 11, 13, .62) 22%, rgba(11, 11, 13, .1) 42%, rgba(11, 11, 13, .1) 58%, var(--onyx) 100%); }
+.hh-top { position: absolute; z-index: 2; left: 16px; right: 12px; top: calc(var(--sat) + 12px); display: grid; grid-template-columns: 50px 1fr 40px; gap: 12px; align-items: center; }
+.hh-top .home-logo { width: 50px; height: 50px; border-radius: 13px; } .hh-top h1 { font-size: 20px; line-height: 1.12; letter-spacing: .06em; }
+.hh-stats { position: absolute; z-index: 2; left: 16px; right: 16px; bottom: 6px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.hs { padding: 10px 14px; border-radius: 15px; background: rgba(11, 11, 13, .68); border: 1px solid rgba(200, 164, 77, .3); }
+.hs b { display: block; font: 400 25px/1.15 var(--display); color: var(--gold-l); } .hs span { font-size: 11.5px; color: var(--ash); }
+.tile { position: relative; display: block; min-height: 124px; padding: 0; overflow: hidden; border-radius: 17px; border: 1px solid rgba(200, 164, 77, .26); background-color: var(--g1); background-size: cover; background-position: center 30%; box-shadow: 0 12px 26px rgba(0, 0, 0, .42); text-align: left; }
+.tile::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(11, 11, 13, 0) 24%, rgba(11, 11, 13, .9) 76%); }
+.tl { position: absolute; z-index: 1; left: 12px; right: 10px; bottom: 9px; display: block; } .tile span.tl { font-size: inherit; text-align: left; }
+.tl b { display: block; font: 400 16.5px/1.15 var(--display); color: var(--bone); } .tl small { display: block; margin-top: 3px; font-size: 11.5px; color: var(--gold-l); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.skyline { height: auto; margin: auto -18px 0; padding-top: 10px; } .skyline img { display: block; width: 100%; height: 92px; object-fit: cover; object-position: center 40%; opacity: .9; }
+@media (min-width: 720px) { .home-hero { margin: 0 0 16px; border-radius: 22px; aspect-ratio: 3 / 1.15; } .tile { min-height: 170px; } .hh-top { top: 18px; } }
+@media (min-width: 1024px) { .skyline { margin-left: 0; margin-right: 0; } }

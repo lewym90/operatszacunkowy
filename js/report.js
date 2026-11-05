@@ -57,20 +57,23 @@ function marketCv(ctx, D, mark, x0, y0, w, h) {
 export async function buildReport(e, ust, opts = {}) {
   const variant = opts.variant || 'full';
   await Promise.all([document.fonts.load('40px Marcellus'), document.fonts.load('400 20px Archivo'), document.fonts.load('700 20px Archivo')]);
-  const custom = !!ust.logo, logo = await loadImg(ust.logo || 'icons/logo-am.png');
+  const custom = !!ust.logo, logo = await loadImg(ust.logo || 'icons/logo-am.png'), cover = await loadImg('img/okladka.jpg'), paper = await loadImg('img/papier.jpg');
   const { subj: s, res: r } = e, sale = s.tryb === 'sprzedaz', step = sale ? 1000 : 10;
-  const pages = []; let cv, ctx, y;
+  const pages = []; let cv, ctx, y, docTitle = '', docSub = '';
   const newPage = first => {
     cv = document.createElement('canvas'); cv.width = W; cv.height = H; ctx = cv.getContext('2d'); pages.push(cv);
-    ctx.fillStyle = C.paper; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = C.paper; ctx.fillRect(0, 0, W, H); if (paper) ctx.drawImage(paper, 0, 0, W, H);
     if (first) {
-      ctx.fillStyle = C.onyx; ctx.fillRect(0, 0, W, 236);
-      const g = ctx.createLinearGradient(0, 0, W, 0); g.addColorStop(0, 'rgba(200,164,77,0)'); g.addColorStop(.5, 'rgba(200,164,77,.9)'); g.addColorStop(1, 'rgba(200,164,77,0)'); ctx.fillStyle = g; ctx.fillRect(0, 236, W, 3);
-      if (logo) { if (custom) { ctx.fillStyle = '#FFFFFF'; ctx.beginPath(); ctx.roundRect(M, 40, 156, 156, 18); ctx.fill(); const k = Math.min(132 / logo.width, 132 / logo.height); ctx.drawImage(logo, M + 78 - logo.width * k / 2, 118 - logo.height * k / 2, logo.width * k, logo.height * k); } else ctx.drawImage(logo, M, 40, 156, 156); }
+      const BH = 344; ctx.fillStyle = C.onyx; ctx.fillRect(0, 0, W, BH);
+      if (cover) { const sh = cover.width * BH / W; ctx.drawImage(cover, 0, cover.height - sh, cover.width, sh, 0, 0, W, BH); }
+      const sh1 = ctx.createLinearGradient(0, 0, W * .8, 0); sh1.addColorStop(0, 'rgba(11,11,13,.86)'); sh1.addColorStop(.7, 'rgba(11,11,13,.55)'); sh1.addColorStop(1, 'rgba(11,11,13,.05)'); ctx.fillStyle = sh1; ctx.fillRect(0, 0, W, BH);
+      const g = ctx.createLinearGradient(0, 0, W, 0); g.addColorStop(0, 'rgba(200,164,77,.2)'); g.addColorStop(.5, 'rgba(230,206,148,1)'); g.addColorStop(1, 'rgba(200,164,77,.2)'); ctx.fillStyle = g; ctx.fillRect(0, BH, W, 4);
+      if (logo) { if (custom) { ctx.fillStyle = '#FFFFFF'; ctx.beginPath(); ctx.roundRect(M, 40, 156, 156, 18); ctx.fill(); const k = Math.min(132 / logo.width, 132 / logo.height); ctx.drawImage(logo, M + 78 - logo.width * k / 2, 118 - logo.height * k / 2, logo.width * k, logo.height * k); } else { ctx.save(); ctx.beginPath(); ctx.roundRect(M, 40, 156, 156, 26); ctx.clip(); ctx.drawImage(logo, M, 40, 156, 156); ctx.restore(); } }
       ctx.fillStyle = C.goldL; ctx.font = '400 54px Marcellus'; ctx.fillText(ust.biuro || 'Biuro nieruchomości', M + 196, 112);
       ctx.fillStyle = C.bone; ctx.font = '400 26px Archivo'; ctx.fillText(ust.haslo || '', M + 196, 158);
       ctx.textAlign = 'right'; ctx.fillStyle = C.ash || '#9A978F'; ctx.font = '400 24px Archivo'; const dat = t => new Date(t).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' }); ctx.fillText(dat(opts.docNo ? Date.now() : e.ts), W - M, 112); if (opts.docNo) { ctx.font = '400 22px Archivo'; ctx.fillText('Dokument ' + opts.docNo, W - M, 150); ctx.fillText('Wycena' + (opts.docWid ? ' nr ' + opts.docWid.slice(-6).toUpperCase() : '') + ' z ' + dat(e.ts), W - M, 182); } ctx.textAlign = 'left';
-      y = 330;
+      ctx.textAlign = 'left'; ctx.fillStyle = '#FFFFFF'; ctx.font = '400 46px Marcellus'; ctx.fillText(docTitle, M, 272); ctx.fillStyle = C.goldL; ctx.font = '400 24px Archivo'; ctx.fillText(docSub, M, 314);
+      y = 412;
     } else { ctx.fillStyle = C.gold; ctx.fillRect(0, 0, W, 10); y = 110; }
   };
   const text = (t, size, color, weight = 400, font = 'Archivo', lh = 1.4, maxW = W - 2 * M) => {
@@ -96,7 +99,7 @@ export async function buildReport(e, ust, opts = {}) {
     if (y + dh > H - 140) { footer(pages.length); newPage(false); }
     ctx.font = '400 22px Archivo'; ctx.fillStyle = '#F2EEE2'; ctx.beginPath(); ctx.roundRect(M, y, W - 2 * M, dh, 18); ctx.fill(); ctx.fillStyle = C.ink2; dl.forEach((l, i) => ctx.fillText(l, M + 24, y + 38 + i * 31));
     footer(pages.length);
-    pages.forEach((p, i) => { const c2 = p.getContext('2d'); c2.fillStyle = C.paper; c2.fillRect(W - M - 260, H - 100, 260, 40); c2.fillStyle = C.ink2; c2.font = '400 22px Archivo'; c2.textAlign = 'right'; c2.fillText(`Strona ${i + 1}/${pages.length}`, W - M, H - 70); c2.textAlign = 'left'; });
+    pages.forEach((p, i) => { const c2 = p.getContext('2d'); c2.fillStyle = C.paper; c2.fillRect(W - M - 260, H - 100, 260, 40); if (paper) c2.drawImage(paper, (W - M - 260) * paper.width / W, (H - 100) * paper.height / H, 260 * paper.width / W, 40 * paper.height / H, W - M - 260, H - 100, 260, 40); c2.fillStyle = C.ink2; c2.font = '400 22px Archivo'; c2.textAlign = 'right'; c2.fillText(`Strona ${i + 1}/${pages.length}`, W - M, H - 70); c2.textAlign = 'left'; });
     return pages;
   };
   const trendCh = mk => { ensure(620); text('Ceny transakcyjne w czasie', 34, C.ink, 400, 'Marcellus'); y += 6; text(mk.trendLabel || '', 23, C.ink2); y += 8; lineChartCv(ctx, mk.trend.points, M, y, W - 2 * M, 380); y += 410;
@@ -108,10 +111,9 @@ export async function buildReport(e, ust, opts = {}) {
   const okolSrc = () => { text((opts.okolicaNote ? opts.okolicaNote + ' ' : '') + 'Odległość w linii prostej od budynku do najbliższego punktu danego rodzaju. Dane punktów: OpenStreetMap (© współtwórcy OpenStreetMap).', 21, C.ink2, 400, 'Archivo', 1.38); y += 22; };
   const D1 = 'Niniejsze zestawienie ma charakter wyłącznie orientacyjny i informacyjny. ';
   const SPEC = { inwest: 'Analiza inwestycyjna', lokal: 'Analiza lokalizacji', rent: 'Rentowność najmu', rynek: 'Raport rynku lokalnego' };
+  docTitle = SPEC[variant] || (sale ? 'Orientacyjna analiza wartości nieruchomości' : 'Orientacyjna analiza czynszu najmu'); docSub = variant === 'rynek' ? 'Lublin i okolice' : [adres, adres ? 'Lublin' : '', String(s.m2).replace('.', ',') + ' m²'].filter(Boolean).join(' · ');
   newPage(true);
   if (SPEC[variant]) {
-    text(SPEC[variant], 50, C.ink, 400, 'Marcellus', 1.25); y += 6;
-    text(variant === 'rynek' ? 'Lublin i okolice' : [adres, adres ? 'Lublin' : '', String(s.m2).replace('.', ',') + ' m²'].filter(Boolean).join(', ').replace(/Lublin, /, 'Lublin · '), 28, C.ink2); y += 22;
     if (variant === 'inwest') { const { inp: I, h, scen } = opts.invest;
       text('Założenia', 34, C.ink, 400, 'Marcellus'); y += 6;
       kvRows([['Cena zakupu', zl(+I.cena)], ['Czynsz miesięczny', zl(+I.czynsz)], ['Całkowity koszt zakupu', zl(h.koszt)], ['Własny kapitał na start', zl(h.equity)], ...(h.loan ? [['Kredyt', `${zl(h.loan)}, rata ${zl(h.rata)}`]] : []), ['Okres inwestycji', h.N + ' lat'], ['Zmiana wartości rocznie', plN(+I.wzrost || 0) + '%']]); y += 24;
@@ -134,7 +136,6 @@ export async function buildReport(e, ust, opts = {}) {
     if (opts.market?.exp) { const X = opts.market.exp; ensure(160); text('Czas ekspozycji ofert najmu', 34, C.ink, 400, 'Marcellus'); y += 6; text(`Połowa ofert znikała w ciągu ${Math.round(X.days.med)} dni (środkowe 50%: ${Math.round(X.days.p25)}–${Math.round(X.days.p75)} dni), na podstawie ${X.nGone} ofert. Zniknięcie oferty nie zawsze oznacza wynajem.`, 24, C.ink2); y += 22; }
     return finish(D1 + 'Ceny transakcyjne pochodzą z Rejestru Cen Nieruchomości, czynsze z cen ofertowych. Ceny zmieniają się też ze standardem i metrażem, więc to wskazówka o rynku, nie wycena.');
   }
-  text(sale ? 'Orientacyjna analiza wartości nieruchomości' : 'Orientacyjna analiza czynszu najmu', 50, C.ink, 400, 'Marcellus', 1.25); y += 10;
   // dane nieruchomości
   const lok = sale ? [s.ulica, s.nr].filter(Boolean).join(' ') : [s.dzielnica, s.ulica].filter(Boolean).join(', ');
   const kat = s.kat || 'mieszkanie', fl = kat === 'mieszkanie', stdTxt = ({ remont: 'do remontu', dobry: 'dobry', wysoki: 'wysoki' })[s.standard] || 'nie podano';
@@ -149,14 +150,14 @@ export async function buildReport(e, ust, opts = {}) {
     ...(sale ? (['mieszkanie', 'dom', 'obiekt', 'lokal'].includes(kat) ? [['Rynek', ({ wtorny: 'wtórny', pierwotny: 'pierwotny' })[s.rynek] || 'dowolny']] : [])
       : [['Wyposażenie (wg zgłoszenia)', ({ tak: 'umeblowane', nie: 'bez mebli' })[s.meble] || 'nie podano'], ...(s.parking ? [['Parking / garaż', ({ brak: 'brak', wliczony: 'w cenie czynszu', osobno: 'płatny osobno' })[s.parking]]] : []), ...(s.attrs && Object.values(s.attrs).some(Boolean) ? [['Udogodnienia', Object.entries(s.attrs).filter(e => e[1]).map(e => ({ klima: 'klimatyzacja', winda: 'winda', balkon: 'balkon', taras: 'taras', ogrod: 'ogród', garaz: 'garaż' })[e[0]]).join(', ')]] : [])])];
   const cw = (W - 2 * M) / 2;
-  rows.forEach((rw, i) => { const x = M + (i % 2) * cw, yy = y + Math.floor(i / 2) * 78; ctx.font = '400 21px Archivo'; ctx.fillStyle = C.ink2; ctx.fillText(rw[0].toUpperCase(), x, yy); ctx.font = '700 30px Archivo'; ctx.fillStyle = C.ink; ctx.fillText(rw[1], x, yy + 38); });
-  y += Math.ceil(rows.length / 2) * 78 + 24;
+  rows.forEach((rw, i) => { const x = M + (i % 2) * cw, yy = y + Math.floor(i / 2) * 70; ctx.font = '400 21px Archivo'; ctx.fillStyle = C.ink2; ctx.fillText(rw[0].toUpperCase(), x, yy); ctx.font = '700 30px Archivo'; ctx.fillStyle = C.ink; ctx.fillText(rw[1], x, yy + 38); });
+  y += Math.ceil(rows.length / 2) * 70 + 16;
   // wynik
-  const bx = M, bw = W - 2 * M, bh = 300; ctx.fillStyle = '#FFFFFF'; ctx.strokeStyle = C.gold; ctx.lineWidth = 3; ctx.beginPath(); ctx.roundRect(bx, y, bw, bh, 26); ctx.fill(); ctx.stroke();
-  ctx.fillStyle = C.goldD; ctx.font = '700 22px Archivo'; ctx.textAlign = 'center'; ctx.fillText((sale ? 'SZACUNKOWA WARTOŚĆ RYNKOWA' : 'SZACUNKOWY CZYNSZ NAJMU, MIESIĘCZNIE').toUpperCase(), W / 2, y + 56);
-  ctx.fillStyle = C.ink; ctx.font = '400 84px Marcellus'; ctx.fillText(`${money(round(r.total.lo, step))} – ${money(round(r.total.hi, step))} zł`, W / 2, y + 160);
-  ctx.fillStyle = C.ink2; ctx.font = '400 26px Archivo'; ctx.fillText(`środek przedziału: ${money(round((r.total.lo + r.total.hi) / 2, step))} zł  ·  mediana: ${money(round(r.total.mid, step))} zł  ·  ${money(r.pm2.mid)} zł za m²`, W / 2, y + 210);
-  ctx.fillText(`pewność oceny: ${LV[r.confidence.level]}  ·  liczba porównań: ${r.n}`, W / 2, y + 250); ctx.textAlign = 'left'; y += bh + 44;
+  const bx = M, bw = W - 2 * M, bh = 280; ctx.fillStyle = C.onyx; ctx.strokeStyle = C.gold; ctx.lineWidth = 3; ctx.beginPath(); ctx.roundRect(bx, y, bw, bh, 26); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = C.gold; ctx.font = '700 22px Archivo'; ctx.textAlign = 'center'; ctx.fillText((sale ? 'SZACUNKOWA WARTOŚĆ RYNKOWA' : 'SZACUNKOWY CZYNSZ NAJMU, MIESIĘCZNIE').toUpperCase(), W / 2, y + 56);
+  ctx.fillStyle = C.goldL; ctx.font = '400 84px Marcellus'; ctx.fillText(`${money(round(r.total.lo, step))} – ${money(round(r.total.hi, step))} zł`, W / 2, y + 148);
+  ctx.fillStyle = '#C9C5BA'; ctx.font = '400 26px Archivo'; ctx.fillText(`środek przedziału: ${money(round((r.total.lo + r.total.hi) / 2, step))} zł  ·  mediana: ${money(round(r.total.mid, step))} zł  ·  ${money(r.pm2.mid)} zł za m²`, W / 2, y + 196);
+  ctx.fillText(`pewność oceny: ${LV[r.confidence.level]}  ·  liczba porównań: ${r.n}`, W / 2, y + 234); ctx.textAlign = 'left'; y += bh + 40;
   text('Jak to policzono', 34, C.ink, 400, 'Marcellus'); y += 4;
   text(sale ? `Metoda porównawcza. Podstawą są ceny z aktów notarialnych zapisane w Rejestrze Cen Nieruchomości (RCN) dla ${fl ? 'lokali o zbliżonej powierzchni, liczbie pokoi, piętrze i położeniu' : ({ dom: 'domów o zbliżonej powierzchni, wielkości działki i położeniu', dzialka: 'działek o zbliżonej powierzchni, przeznaczeniu i położeniu', lokal: 'lokali użytkowych o zbliżonej powierzchni, funkcji i położeniu', obiekt: 'obiektów o zbliżonej powierzchni, rodzaju i położeniu', garaz: 'garaży o zbliżonej powierzchni i położeniu' })[kat]}. Podany przedział to ${r.rangeKind}. Starsze transakcje mają mniejszą wagę.`
     : `Metoda porównawcza. Podstawą są ceny ofertowe lokali na wynajem z ogłoszeń o zbliżonej powierzchni, liczbie pokoi, piętrze i dzielnicy. Podany przedział to ${r.rangeKind}. Ceny ofertowe mogą być wyższe od faktycznie uzgodnionych czynszów.`, 25, C.ink2); y += 8;
