@@ -215,6 +215,8 @@ Partie zbierania: (1) świdnicki, lubelski, łęczyński, lubartowski; (2) puła
 Dzielnice poza Lublinem pochodzą tylko z ofert Otodom; RCN ich nie ma.
 - 1.25.2 Oferty spoza Lublina (`miasto` niepuste i różne od Lublin) trafiają do `S.poza`: zapis, synchronizacja, import i kopie obejmują je, ale wyceny, rynek, mapa i listy widzą tylko `S.offers`. Do usunięcia, gdy aplikacja obsłuży obszary (plan 10a, punkt 7).
 
+Sonda RCN 5.11.2026 (`tools/rcn_sonda.py`, usługa osiągalna też z sesji Claude): pole `TERYT` przy każdym rekordzie; 24 powiaty mają dane; razem 116 103 lokale, 314 829 budynków, 825 014 działek (w tym Lublin 62 784 / 149 739 / 196 529). Punkt na mapie 96–100%. **Adres (`LOK_ADRES`) jest tylko w Lublinie, Chełmie, kraśnickim, chełmskim (ok. 80%) i włodawskim (ok. 80%); w pozostałych pusty.** Rozwiązanie do sprawdzenia: PRG `https://opendata.geoportal.gov.pl/prg/adresy/06_Punkty_Adresowe.zip` (51 MB), najbliższy adres po punkcie. Liczba izb: Chełm tylko 32%, janowski 57%. Pułapki zbieracza: strony z filtrem TERYT bywają niepełne albo puste (nie wolno kończyć na krótkiej stronie), w odpowiedzi bywa uszkodzony XML (biłgorajski), tomaszowski dał pustą próbkę mimo 1862 lokali.
+
 ## 11. Lista pomysłów i stan (numeracja ustalona z właścicielem 30.10)
 
 Gdy właściciel zapyta „co jeszcze jest do zrobienia”, podać punkty z sekcji „Zablokowane / czeka”.

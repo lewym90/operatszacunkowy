@@ -23,7 +23,10 @@ local = lambda t: t.split('}')[-1]
 def probka(t, n, ile):
     w = []
     for st in [int(ile * i / 8) for i in range(8)]:   # z filtrem strona bywa niepełna lub pusta, więc próbkujemy w kilku miejscach
-        root = ET.fromstring(get('lokale', t, count=n, startIndex=st)); time.sleep(.3)
+        raw = get('lokale', t, count=n, startIndex=st); time.sleep(.3)
+        raw = re.sub(rb'[\x00-\x08\x0b\x0c\x0e-\x1f]', b' ', raw).decode('utf-8', 'replace').encode()
+        try: root = ET.fromstring(raw)
+        except ET.ParseError as e: print(f"  (kod {t}, od {st}: uszkodzony XML: {e})", file=sys.stderr); continue
         for m in root:
             for f in m:
                 if local(f.tag) != 'lokale': continue
@@ -33,7 +36,9 @@ def probka(t, n, ile):
 n = int(sys.argv[1]) if len(sys.argv) > 1 else 500; pct = lambda a, b: f"{round(100 * a / b)}%" if b else "-"
 print(f"{'POWIAT':16}{'KOD':5}{'LOKALE':>8}{'BUDYNKI':>9}{'DZIAŁKI':>9}  | próbka do {n} lokali: {'MIESZK':>6}{'PUNKT':>6}{'ULICA':>6}{'NR':>5}{'DATA':>6}{'IZBY':>6}{'POW':>6}  MIEJSC")
 S = [0, 0, 0]
+TYLKO = sys.argv[2].split(',') if len(sys.argv) > 2 else None
 for t, nazwa in POW.items():
+    if TYLKO and t not in TYLKO: continue
     c = [hits(l, t) for l in ('lokale', 'budynki', 'dzialki')]; S = [a + b for a, b in zip(S, c)]; p = probka(t, n, c[0]) if c[0] else []; time.sleep(1); L = len(p)
     adr = [dict(x.split(':', 1) for x in (r.get('LOK_ADRES') or '').split(';') if ':' in x) for r in p]; ile = lambda f: sum(1 for r in p if f(r))
     print(f"{nazwa:16}{t:5}{c[0]:>8}{c[1]:>9}{c[2]:>9}  | {'':22}{pct(ile(lambda r: r.get('LOK_FUNKCJA') == 'mieszkalna'), L):>6}{pct(ile(lambda r: r['_geo']), L):>6}{pct(sum(1 for a in adr if a.get('UL')), L):>6}{pct(sum(1 for a in adr if a.get('NR_PORZ')), L):>5}{pct(ile(lambda r: re.match(r'\d{4}-\d\d-\d\d', r['_data'])), L):>6}{pct(ile(lambda r: r.get('LOK_LICZBA_IZB')), L):>6}{pct(ile(lambda r: r.get('LOK_POW_UZYT')), L):>6}  {len({a.get('MSC') for a in adr if a.get('MSC')})}", flush=True)
