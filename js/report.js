@@ -190,6 +190,10 @@ export async function buildReport(e, ust, opts = {}) {
     if (D) { ensure(640); const own = r.comps.some(c => c.own); hd('Porównanie rynkowe'); y += 2; text(`Czynsze ${D.total} podobnych ${own ? 'ofert i umów' : 'ofert'} uwzględnionych w tej analizie.`, 25, C.ink2); y += 22;
       marketCv(ctx, D, mark, M, y, W - 2 * M, 430); y += 478; text(fl ? 'Wynik analizy uwzględnia też cechy tego mieszkania, takie jak metraż, piętro, rok budowy czy wyposażenie, dlatego nie musi wypadać na środku wykresu.' : 'Wynik analizy uwzględnia też powierzchnię i rodzaj tej nieruchomości, dlatego nie musi wypadać na środku wykresu.', 24, C.ink2); y += 26; }
   }
+  if (variant !== 'short' && opts.ogled) { const o = opts.ogled, bl = (t, a) => { if (!a.length) return; ensure(60 + a.length * 34); ctx.font = '700 22px Archivo'; ctx.fillStyle = C.goldD; ctx.fillText(t.toUpperCase(), M, y); y += 34; a.forEach(x => text('•  ' + x, 24, C.ink, 400, 'Archivo', 1.34)); y += 12; };
+    ensure(440); hd('Standard nieruchomości'); y += 8; const bh2 = o.wstep.length ? 196 : 164; ctx.fillStyle = C.onyx; ctx.strokeStyle = C.gold; ctx.lineWidth = 3; ctx.beginPath(); ctx.roundRect(M, y - 26, W - 2 * M, bh2, 22); ctx.fill(); ctx.stroke(); ctx.textAlign = 'center'; ctx.fillStyle = C.gold; ctx.font = '700 20px Archivo'; ctx.fillText(o.fl ? 'STANDARD MIESZKANIA' : 'STANDARD NIERUCHOMOŚCI', W / 2, y + 12); ctx.fillStyle = C.goldL; ctx.font = '400 62px Marcellus'; ctx.fillText(o.kat[0].toUpperCase() + o.kat.slice(1), W / 2, y + 76);
+    if (o.wstep.length) { ctx.fillStyle = '#E8A64C'; ctx.font = '400 22px Archivo'; ctx.fillText('wstępnie, nie sprawdzono: ' + o.wstep.join(', '), W / 2, y + 112); } ctx.fillStyle = '#C9C5BA'; ctx.font = '400 22px Archivo'; ctx.fillText(o.opis, W / 2, y + (o.wstep.length ? 146 : 114)); ctx.textAlign = 'left'; y += bh2 + 14;
+    bl('Atuty', o.atuty); bl('Do poprawy', o.popraw); bl('Nie sprawdzono', o.nie.length ? [o.nie.join(', ')] : []); ensure(90); text(o.nota, 21, C.ink2, 400, 'Archivo', 1.38); y += 22; }
   if (variant !== 'short' && opts.okolica && opts.okolica.length) {
     okolTab(); if (opts.okolicaOpis) { ensure(90); text(opts.okolicaOpis, 24, C.ink); y += 10; } okolSrc();
   }
@@ -212,7 +216,7 @@ export async function buildReport(e, ust, opts = {}) {
   }
   // zastrzeżenie
   // zastrzeżenie
-  const disc = `Niniejsze zestawienie ma charakter wyłącznie orientacyjny i informacyjny. Sporządzono je metodą porównawczą na podstawie ${sale ? 'cen transakcyjnych z Rejestru Cen Nieruchomości' : 'cen ofertowych z ogłoszeń'}, bez oględzin nieruchomości oraz bez badania jej stanu prawnego i technicznego. Nie jest wyceną sporządzoną przez rzeczoznawcę majątkowego i nie może jej zastępować. Rzeczywista cena lub czynsz zależą od stanu nieruchomości, negocjacji i sytuacji rynkowej.`;
+  const disc = `Niniejsze zestawienie ma charakter wyłącznie orientacyjny i informacyjny. Sporządzono je metodą porównawczą na podstawie ${sale ? 'cen transakcyjnych z Rejestru Cen Nieruchomości' : 'cen ofertowych z ogłoszeń'}, ${opts.ogled ? 'po oględzinach wizualnych doradcy,' : 'bez oględzin nieruchomości oraz'} bez badania jej stanu prawnego i technicznego. Nie jest wyceną sporządzoną przez rzeczoznawcę majątkowego i nie może jej zastępować. Rzeczywista cena lub czynsz zależą od stanu nieruchomości, negocjacji i sytuacji rynkowej.`;
   return finish(disc);
 }
 

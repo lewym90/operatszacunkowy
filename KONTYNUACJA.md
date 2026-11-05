@@ -1,6 +1,6 @@
 # KONTYNUACJA — OPERAT SZACUNKOWY (AM Nieruchomości)
 
-Plik przekazania pracy między kontami/sesjami Claude. Stan na **2026-11-04, wersja aplikacji 1.24.2** (pełna analiza z teczki, IRR/NPV, jakość porównań, porównanie wycen, promienie, nowe raporty z numeracją, mapa rentowności).
+Plik przekazania pracy między kontami/sesjami Claude. Stan na **2026-11-04, wersja aplikacji 1.25.0** (pełna analiza z teczki, IRR/NPV, jakość porównań, porównanie wycen, promienie, nowe raporty z numeracją, mapa rentowności).
 Ten plik zawiera całą wiedzę potrzebną do kontynuacji: nie wymaga dostępu do poprzednich rozmów ani do poprzedniego projektu Claude.
 
 > **UWAGA — repozytorium jest PUBLICZNE (GitHub Pages).** W tym pliku nie ma i nie wolno zapisywać haseł, kluczy, tokenów, kodu synchronizacji „AMSYNC1:…”, adresu IP serwera ani danych ofert/klientów. Nigdy nie wklejaj klucza synchronizacji do czatu ani na zrzut ekranu — właściciel wpisuje go sam.
@@ -195,6 +195,7 @@ Ogłoszenie Otodom (dane strukturalne) zawiera: tytuł, rok budowy (`build_year`
 - 1.23.5 powrót po zamknięciu przez iOS: `am-sesja` (widok, przewinięcie, formularz, filtry, 12 h), `S.last` w bazie, bez ekranu powitalnego; surowe wiersze RCN nie zostają w pamięci (`S.rcn` = tylko meta, nRows; dane w IndexedDB).
 - 1.24.0 szata ze zdjęciami właściciela (`img/`: start, tlo, panorama, t-* kafelki, k-* rodzaje nieruchomości, okladka, papier; 1 MB, WebP i JPG): Start z danymi na żywo, kafelki z informacją, wykresy ze złotym gradientem, mapa w skali złota, łuk pewności, raport z okładką i papierem. Zdjęcia to ozdoba, nie obraz wycenianej nieruchomości; wykresy i mapy zawsze z danych.
 - 1.24.1 zablokowane powiększanie strony (meta viewport, `touch-action`, `gesturestart`, `touchmove`; mapa przybliża się dalej); mapy domyślnie jasne (klucz `am-tiles2`, ciemny podkład klasą `dark-tiles`); kolory punktów bez zmian, zaakceptowane przez właściciela na jasnej mapie; pierścień wycenianej nieruchomości czarny.
+- 1.25.0 Karta oględzin (`js/ogledziny.js`, widok `#/ogledziny`, zapis w `t.ogledziny`): kategorie i elementy wg instrukcji NBP (BaRN), reguły przypisania nasze i podpisane w raporcie. Karta nie zmienia wyceny; pole standardu w formularzu zmienia się tylko przyciskiem „Użyj standardu w wycenie”. Sekcja „Standard nieruchomości” w raporcie pełnym i z wykresami.
 
 ## 11. Lista pomysłów i stan (numeracja ustalona z właścicielem 30.10)
 
@@ -229,7 +230,7 @@ Nie teraz: prognozy cen (najpierw walidacja, dane tylko z okresu wzrostu), wycen
 ### Do zrobienia przez właściciela
 - Na serwerze: `curl -fsSL https://lewym90.github.io/operatszacunkowy/server/update_sync.sh | bash` (teczki i historia dokumentów zaczną się synchronizować).
 - Do decyzji: `DEFAULT_URL` w `js/sync.js` zawiera adres IP serwera w publicznym repo (stare, wbrew zasadzie z początku pliku).
-- Zamknąć i otworzyć aplikację na wszystkich urządzeniach (jedna karta naraz), żeby pobrała 1.24.2 (przy problemach z odświeżeniem: zamknąć aplikację całkiem i otworzyć dwa razy).
+- Zamknąć i otworzyć aplikację na wszystkich urządzeniach (jedna karta naraz), żeby pobrała 1.25.0 (przy problemach z odświeżeniem: zamknąć aplikację całkiem i otworzyć dwa razy).
 - Sprawdzić na telefonie: najem → ulica „Granata”, nr „1” (karta „Najbliższe okolice”), to samo w sprzedaży; Mapa → warstwy OSM.
 - Ok. 7 listopada zrobić kolejne pełne zebranie ofert najmu.
 - Opcjonalnie: wgrać własne logo, dodać umowy domów/lokali/hal, uruchomić eksport RCN dla Chełma, Zamościa, Puław.

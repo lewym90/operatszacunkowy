@@ -8,12 +8,13 @@ import { buildReport, makePdf } from './report.js';
 import { createSync, DEFAULT_URL, encodeCode, decodeCode } from './sync.js';
 import { investCalc, sensitivity, TAX, holdCalc, scenarios, whatIf } from './invest.js';
 import { qualityOf, compWhy, diffWyceny } from './jakosc.js';
+import { sekcje, ocen, ODP, OPIS, NOTA } from './ogledziny.js';
 import { LAYERS as OSM, loadPois, loadAll, nearest, osmUrl, okolica, promienie, opisLokalizacji, PROMIENIE, promLbl } from './osm.js';
 import { geocode, neighbors, suggest as suggestAddr } from './geokod.js';
 import { exposure, trendSeries, yieldByDistrict, districtAssigner, lineChart, barChart, bindCharts } from './rynek.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer, districtCenters } from './mapa.js';
 
-const VERSION = '1.24.2';
+const VERSION = '1.25.0';
 const S = { wlasne: [], teczki: [], foto: {}, dokumenty: [],
   offers: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -87,7 +88,7 @@ function paintSync(st) {
 // Na telefonie dolny pasek: Start, Wycena, Mapa, Rynek, Więcej (reszta w menu). Na komputerze boczne menu pokazuje wszystko.
 const TABS = [['start', 'Start'], ['wycena', 'Wycena'], ['mapa', 'Mapa'], ['rynek', 'Rynek'], ['oferty', 'Oferty'], ['historia', 'Teczki'], ['dane', 'Dane'], ['ust', 'Ustawienia']];
 const MAIN = ['start', 'wycena', 'mapa', 'rynek'];
-const MENU = [['oferty', 'Monitoring ofert', 'oferty'], ['historia', 'Teczki i historia', 'teczki'], ['raporty', 'Raporty PDF', 'raport'], ['kalkulator', 'Kalkulator inwestycyjny', 'kalk'], ['dane', 'Dane i import', 'dane'], ['ust', 'Ustawienia', 'ust']];
+const MENU = [['ogledziny', 'Karta oględzin', 'wycena'], ['oferty', 'Monitoring ofert', 'oferty'], ['historia', 'Teczki i historia', 'teczki'], ['raporty', 'Raporty PDF', 'raport'], ['kalkulator', 'Kalkulator inwestycyjny', 'kalk'], ['dane', 'Dane i import', 'dane'], ['ust', 'Ustawienia', 'ust']];
 function menuSheet() {
   const n = remindN();
   openSheet(`<div class="eyebrow">Więcej</div><div class="menu-list">${MENU.map(([k, l, ic]) => `<a href="#/${k}" class="menu-it">${ICON[ic]}<span>${l}</span>${k === 'historia' && n ? `<i class="nb">${n}</i>` : ''}</a>`).join('')}</div>`, p => $$('a', p).forEach(a => a.addEventListener('click', closeSheet)));
@@ -108,6 +109,7 @@ function render() {
   else if (p[0] === 'rynek') [html, mount] = viewRynek();
   else if (p[0] === 'kalkulator') { tab = 'rynek'; [html, mount] = viewKalkulator(); }
   else if (p[0] === 'teczka') { tab = 'historia'; [html, mount] = viewTeczka(p[1]); }
+  else if (p[0] === 'ogledziny') { tab = 'historia'; [html, mount] = viewOgledziny(p); }
   else if (p[0] === 'analiza') { tab = 'historia'; [html, mount] = viewAnaliza(p[1]); }
   else if (p[0] === 'wycena') [html, mount] = viewWycena();
   else if (p[0] === 'oferty') [html, mount] = viewOferty();
@@ -117,7 +119,7 @@ function render() {
   else if (p[0] === 'wynik') { tab = 'wycena'; [html, mount] = viewWynik(p); }
   else if (p[0] === 'raport') { tab = 'wycena'; [html, mount] = viewRaport(p); }
   else { tab = 'start'; [html, mount] = viewStart(); }
-  const v = $('#view'); v.innerHTML = html; v.dataset.view = ['start', 'raporty', 'analiza', 'wycena', 'mapa', 'rynek', 'oferty', 'dane', 'historia', 'teczka', 'kalkulator', 'ust', 'wynik', 'raport'].includes(p[0]) ? p[0] : 'start';
+  const v = $('#view'); v.innerHTML = html; v.dataset.view = ['start', 'raporty', 'analiza', 'ogledziny', 'wycena', 'mapa', 'rynek', 'oferty', 'dane', 'historia', 'teczka', 'kalkulator', 'ust', 'wynik', 'raport'].includes(p[0]) ? p[0] : 'start';
   const topEl = v.querySelector(':scope > .top');   // reszta widoku w osobnym bloku: na szerokim ekranie układa się w kolumny
   if (topEl) { const body = document.createElement('div'); body.className = 'body'; while (topEl.nextSibling) body.appendChild(topEl.nextSibling); v.appendChild(body); }
   v.classList.remove('enter'); void v.offsetWidth; v.classList.add('enter');
@@ -147,7 +149,7 @@ function viewStart() {
   const n = remindN();
   const html = `<div class="home-hero"><img class="hh-img" src="img/start.webp" alt=""><div class="hh-top"><img class="home-logo" src="icons/logo-am.png" alt="AM Nieruchomości"><h1 class="gold">OPERAT<br>SZACUNKOWY</h1><button class="bell" data-act="bell" aria-label="Zadania i przypomnienia${n ? ': ' + n : ''}">${ICON.dzwonek}${n ? `<i class="nb">${n}</i>` : ''}</button></div>
     <div class="hh-stats"><div class="hs"><b id="hs-m">—</b><span>mediana zł/m², mieszkania</span></div><div class="hs"><b id="hs-y">—</b><span>zmiana rok do roku</span></div></div></div>${safeBanner()}
-  <div class="tiles">${TILES.map(([k, l, im]) => `<button type="button" class="tile" data-tile="${k}" style="background-image:url(img/t-${im}.webp)"><span class="tl"><b>${l}</b><small>${esc(tileInfo(k))}</small></span></button>`).join('')}</div>
+  <div class="tiles"><button type="button" class="tile wide" data-tile="#/ogledziny" style="background-image:url(img/t-ogledziny.webp)"><span class="tl"><b>Karta oględzin</b><small>Ocena standardu, 25 punktów</small></span></button>${TILES.map(([k, l, im]) => `<button type="button" class="tile" data-tile="${k}" style="background-image:url(img/t-${im}.webp)"><span class="tl"><b>${l}</b><small>${esc(tileInfo(k))}</small></span></button>`).join('')}</div>
   <div class="skyline" aria-hidden="true"><img src="img/panorama.webp" alt=""></div>`;
   return [html, v => {
     $$('[data-tile]', v).forEach(b => b.onclick = () => { const k = b.dataset.tile;
@@ -345,7 +347,7 @@ function viewWynik(p) {
   const withLL = r.comps.filter(c => c.lat != null);
   if (sale && r.subLL && withLL.length >= 3) html += `<div class="card"><div class="eyebrow">Położenie porównań</div><div class="mapbox sm" id="resmap">${mapSVG(r)}</div><div id="reslegend"></div><p class="tiny muted" style="margin:8px 0 0">Złoty pierścień: lokal wyceniany (${esc(r.llKind || '')}). Większy punkt = większa waga porównania; kolor = cena za m². Dotknij punktu, aby zobaczyć transakcję.</p></div>`;
   html += `<div class="card"><div class="eyebrow">Porównania (${r.comps.length})</div><div id="comps">${r.comps.slice(0, 10).map((c, i) => compHTML(c, i, sale, e)).join('')}</div>${r.comps.length > 10 ? '<button class="btn ghost" data-act="more" style="margin-top:10px">Pokaż wszystkie</button>' : ''}</div>
-  <div id="okol"></div>
+  ${ogledKarta(e)}<div id="okol"></div>
   <div class="row">${saved ? '' : '<button class="btn ghost" data-act="save">Zapisz do historii</button>'}<button class="btn" data-act="report">Raport dla klienta</button></div>
   <div class="gap"></div><button class="btn ghost" data-act="calc">Kalkulator inwestycyjny</button>
   ${saved ? `<div class="gap"></div><button class="btn ghost" data-act="tec">${e.teczka && S.teczki.some(t => t.id === e.teczka) ? 'Teczka: ' + esc(tName(S.teczki.find(t => t.id === e.teczka))) : 'Dodaj do teczki nieruchomości'}</button>` : ''}
@@ -476,6 +478,7 @@ function viewRaport(p) {
       let okol = null, okSrc = '', okMiss = false, prom = null, okOpis = ''; if (variant !== 'short' && variant !== 'rynek' && variant !== 'inwest' && variant !== 'rent') { try { const g = await ensureGeo(e); if (g.ok) { const lay = (await loadAll({ url: osmUrl(S.ust.rcnUrl) })).layers; okol = okolica(g.ll, lay); prom = promienie(g.ll, lay); okOpis = opisLokalizacji(prom); okSrc = g.source === 'prg' ? `Położenie budynku: ${g.street} ${g.number}, ${g.city || 'Lublin'} (Państwowy Rejestr Granic, GUGiK).` : 'Położenie budynku wskazano ręcznie na mapie.'; } else okMiss = true; } catch { okMiss = true; } }
       const extra = { variant, market: ['market', 'rent', 'rynek'].includes(variant) ? market() : null, okolica: okol, okolicaNote: okSrc, promienie: prom, okolicaOpis: okOpis, radii: PROMIENIE.map(promLbl) };
       if (variant === 'rynek' && extra.market) { const X = exposure(S.offers, S.ust.zebrania || []); if (X.ok && X.days) extra.market.exp = X; }
+      if (variant === 'full' || variant === 'market') { const og = e.teczka ? ogledLast(S.teczki.find(t => t.id === e.teczka)) : null; if (og && og.w.kat) extra.ogled = { ...og.w, fl: (e.subj.kat || 'mieszkanie') === 'mieszkanie', nota: NOTA }; }
       let brak = '';
       if (variant === 'lokal' && !(okol && okol.length)) brak = okMiss ? 'Brak położenia budynku w rejestrze adresów. Ustal je w wyniku wyceny, w karcie Najbliższe okolice.' : 'Brak danych punktów okolicy z serwera.';
       if (variant === 'rynek' && !extra.market.trend && !extra.market.yield) brak = 'Za mało danych RCN do raportu rynku.';
@@ -860,7 +863,7 @@ function viewTeczka(id) {
   const field = (k, l, ph = '', mode = 'text') => `<label class="field"><span>${l}</span><input class="in" data-tk="${k}" inputmode="${mode}" value="${esc(t[k] ?? '')}" placeholder="${ph}"></label>`;
   const wl = ws.slice().reverse().map(e => { const m = midRange(e); return `<a class="off" href="#/wynik/h/${e.id}" style="text-decoration:none;color:inherit"><div><b>${e.subj.tryb === 'sprzedaz' ? 'Sprzedaż' : 'Najem'}</b></div><div class="p">${m ? fmt(m.mid) + ' zł' : 'brak wyniku'}</div><div class="m">${new Date(e.ts).toLocaleDateString('pl-PL')}${m ? ` · ${fmt(m.lo)}–${fmt(m.hi)} zł` : ''}${e.real ? ` · rzeczywista ${fmt(e.real)} zł` : ''}</div></a>`; }).join('');
   const html = head(esc(tName(t)), 'Teczka nieruchomości', true) + `
-  <button class="btn" data-act="pelna" type="button">Pełna analiza nieruchomości</button>${t.analiza ? `<div class="gap"></div><a class="btn ghost" href="#/analiza/${t.id}" style="text-decoration:none">Ostatnia analiza: ${new Date(t.analiza.ts).toLocaleDateString('pl-PL')}</a>` : ''}<div class="gap"></div>
+  <button class="btn" data-act="pelna" type="button">Pełna analiza nieruchomości</button>${t.analiza ? `<div class="gap"></div><a class="btn ghost" href="#/analiza/${t.id}" style="text-decoration:none">Ostatnia analiza: ${new Date(t.analiza.ts).toLocaleDateString('pl-PL')}</a>` : ''}<div class="gap"></div>${kartaOK(t) ? `<a class="btn ghost" href="#/ogledziny/${t.id}" style="text-decoration:none">Karta oględzin</a><div class="gap"></div>${ogledLista(t)}` : ''}
   <div class="card"><div class="eyebrow">Dane nieruchomości</div>${field('nazwa', 'Nazwa teczki (opcj.)', 'np. Granata 12/4')}${field('klient', 'Klient (opcj.)', 'imię lub nazwa')}
     <div class="grid2">${field('ulica', 'Ulica')}${field('nr', 'Numer')}</div>${field('dzielnica', 'Dzielnica')}
     <div class="grid2">${field('m2', 'Powierzchnia (m²)', '', 'decimal')}${field('pokoje', 'Pokoje', '', 'numeric')}</div><div class="grid2">${field('pietro', 'Piętro', '', 'numeric')}${field('rok', 'Rok budowy', '', 'numeric')}</div></div>
@@ -916,6 +919,61 @@ function viewTeczka(id) {
     $('[data-act="delt"]', v).onclick = async () => { if (!confirm('Usunąć teczkę? Wyceny zostaną w historii, zdjęcia zostaną skasowane.')) return; S.wyceny.forEach(e => { if (e.teczka === id) delete e.teczka; }); save.wyceny(); S.teczki = S.teczki.filter(x => x.id !== id); save.teczki(); delete S.foto[id]; await store.set('foto', S.foto); go('#/historia'); };
   }];
 }
+/* ---------- KARTA OGLĘDZIN ---------- */
+const kartaOK = t => ['mieszkanie', 'dom'].includes(t.kat || 'mieszkanie');
+const ogledLast = t => (t?.ogledziny || []).filter(o => o.done && o.w).pop() || null;
+const dataPl = ts => new Date(ts).toLocaleDateString('pl-PL');
+const ogledLista = t => { const l = (t.ogledziny || []).filter(o => o.done && o.w).reverse(); return l.length ? `<div class="card"><div class="eyebrow">Oględziny (${l.length})</div>${l.map(o => `<a class="off" href="#/ogledziny/${t.id}/w/${o.id}" style="text-decoration:none;color:inherit"><div><b>${o.w.kat ? o.w.kat[0].toUpperCase() + o.w.kat.slice(1) : 'Za mało danych'}</b></div><div class="p" style="font-size:13px">${dataPl(o.ts)}</div><div class="m">sprawdzono ${o.w.spr} z ${o.w.ile} elementów${o.w.wstep.length ? ' · wstępnie' : ''}</div></a>`).join('')}</div>` : ''; };
+function ogledKarta(e) {
+  const t = e.teczka && S.teczki.find(x => x.id === e.teczka); if (!t || !kartaOK(t)) return '';
+  const o = ogledLast(t);
+  return `<div class="card"><div class="eyebrow">Standard nieruchomości</div>${o ? `<h3>${o.w.kat ? o.w.kat[0].toUpperCase() + o.w.kat.slice(1) : 'Za mało danych'}</h3><p class="small muted" style="margin:4px 0 10px">Oględziny z ${dataPl(o.ts)}${o.w.wstep.length ? ', wstępnie' : ''}. Nie zmienia wyniku wyceny.</p><a class="btn ghost" href="#/ogledziny/${t.id}/w/${o.id}" style="text-decoration:none">Zobacz oględziny</a>` : `<p class="small muted" style="margin:0 0 10px">Brak oględzin tej nieruchomości.</p><a class="btn ghost" href="#/ogledziny/${t.id}" style="text-decoration:none">Wykonaj oględziny</a>`}</div>`;
+}
+function wynikOgl(w, zap) {
+  const nazwa = w.kat ? w.kat[0].toUpperCase() + w.kat.slice(1) : 'Za mało danych', tick = (l, c, z) => l.map(x => `<div class="tick ${c}"><i>${z}</i><span>${esc(x)}</span></div>`).join('');
+  return `<div class="card hero"><div class="lbl">Standard nieruchomości</div><div class="big gold">${nazwa}</div>${w.kat && w.wstep.length ? `<div class="sub" style="color:var(--warn)">wstępnie, nie sprawdzono: ${esc(w.wstep.join(', '))}</div>` : ''}<div class="sub">${esc(w.opis)}</div></div>
+  <div class="card"><div class="eyebrow">Dlaczego</div><p class="small muted" style="margin:0">${esc(w.why)}</p>${w.atuty.length ? `<div class="gap"></div>${tick(w.atuty, '', '✓')}` : ''}</div>
+  ${w.popraw.length ? `<div class="card"><div class="eyebrow">Do poprawy</div>${tick(w.popraw, 'm', '!')}</div>` : ''}${w.nie.length ? `<div class="card"><div class="eyebrow">Nie sprawdzono</div><p class="small muted" style="margin:0">${esc(w.nie.join(', '))}</p></div>` : ''}
+  <p class="tiny muted">${NOTA}</p>`;
+}
+function viewOgledziny(p) {
+  const id = p[1], t = id && S.teczki.find(x => x.id === id);
+  if (!id) { const l = S.teczki.filter(kartaOK);
+    const html = head('Karta oględzin', 'Wybierz nieruchomość', true) + `<img class="res-foto sm kbanner" src="img/t-ogledziny.webp" alt="">${l.map(x => `<a class="card alink" href="#/ogledziny/${x.id}"><div class="eyebrow">${KAT[x.kat || 'mieszkanie'].n}</div><h3>${esc(tName(x))}</h3>${ogledLast(x) ? `<div class="small muted">Ostatnie oględziny: ${dataPl(ogledLast(x).ts)}</div>` : ''}</a>`).join('') || '<div class="empty"><b>Brak teczek</b>Karta oględzin zapisuje się w teczce nieruchomości.</div>'}<button class="btn" data-act="nowa" type="button">Nowa teczka</button>`;
+    return [html, v => { $('[data-back]', v).onclick = () => go('#/start'); $('[data-act="nowa"]', v).onclick = () => { const n = newTeczka(null); go('#/teczka/' + n.id); }; }]; }
+  if (!t || !kartaOK(t)) return [head('Karta oględzin', '', true) + '<div class="empty"><b>Niedostępna</b>Karta dotyczy mieszkań i domów.</div>', v => $('[data-back]', v).onclick = () => go('#/ogledziny')];
+  const lst = (t.ogledziny ||= []), kat = t.kat || 'mieszkanie';
+  if (p[2] === 'w') {
+    const o = lst.find(x => x.id === p[3]); if (!o) return [head('Wynik oględzin', '', true) + '<div class="empty"><b>Nie znaleziono</b></div>', v => $('[data-back]', v).onclick = () => go('#/teczka/' + id)];
+    const w = o.done && o.w ? o.w : ocen(o, kat), STD = { niski: 'remont', 'przeciętny': 'dobry', wysoki: 'wysoki' }[w.kat];
+    const html = head('Wynik oględzin', esc(tName(t)) + ' · ' + dataPl(o.ts), true, true) + wynikOgl(w) + `${o.done ? '' : '<button class="btn" data-act="zap" type="button">Zapisz w teczce i raporcie</button><div class="gap"></div>'}${STD ? '<button class="btn ghost" data-act="uzyj" type="button">Użyj standardu w wycenie</button><div class="gap"></div>' : ''}<button class="btn ghost" data-act="pop" type="button">Popraw odpowiedzi</button><div class="gap"></div><button class="btn danger" data-act="del" type="button">Usuń oględziny</button>`;
+    return [html, v => {
+      $('[data-back]', v).onclick = () => go(o.done ? '#/teczka/' + id : '#/ogledziny/' + id);
+      const z = $('[data-act="zap"]', v); if (z) z.onclick = () => { o.done = true; o.w = ocen(o, kat); o.ts = Date.now(); t.ts = Date.now(); save.teczki(); toast('Zapisano w teczce'); go('#/teczka/' + id); };
+      const u = $('[data-act="uzyj"]', v); if (u) u.onclick = () => { Object.assign(S.form, { tryb: S.form.tryb, kat, ulica: t.ulica || '', nr: t.nr || '', dzielnica: t.dzielnica || '', m2: t.m2 ? String(t.m2) : '', pokoje: t.pokoje === '' || t.pokoje == null ? S.form.pokoje : t.pokoje, pietro: t.pietro === '' ? null : t.pietro, rok: t.rok ? String(t.rok) : '', standard: STD }); S.teczkaNext = id; toast('Standard wpisany do formularza'); go('#/wycena'); };
+      $('[data-act="pop"]', v).onclick = () => { o.done = false; delete o.w; t.ts = Date.now(); save.teczki(); go('#/ogledziny/' + id); };
+      $('[data-act="del"]', v).onclick = () => { if (!confirm('Usunąć te oględziny?')) return; t.ogledziny = lst.filter(x => x !== o); t.ts = Date.now(); save.teczki(); go('#/teczka/' + id); };
+    }];
+  }
+  let o = lst.find(x => !x.done); const nowy = !o; if (nowy) { o = { id: uid(), ts: Date.now(), ans: {}, mat: {}, dev: false }; lst.push(o); t.ts = Date.now(); save.teczki(); }
+  const S2 = sekcje(kat), all = S2.flatMap(([, l]) => l), btns = (e) => `<div class="kg n${ODP[e.typ].length}">${ODP[e.typ].map(([k, l]) => `<button type="button" class="chip k2 ${o.ans[e.id] === k ? 'on' : ''}" data-o="${k}">${l}</button>`).join('')}</div>`;
+  const elHTML = e => `<div class="ke" data-el="${e.id}"><b>${e.n}</b>${btns(e)}${e.mat ? `<div class="chips kmat">${e.mat.map(m => `<button type="button" class="chip ${(o.mat || {})[e.id] === m ? 'on' : ''}" data-m="${m}">${m}</button>`).join('')}</div>` : ''}${e.nd ? `<div class="chips kmat"><button type="button" class="chip ${o.ans[e.id] === 'nd' ? 'on' : ''}" data-o="nd">Nie dotyczy</button></div>` : ''}</div>`;
+  const html = head('Karta oględzin', esc(tName(t)), true, true) + `<img class="res-foto sm kbanner" src="img/t-ogledziny.webp" alt=""><div class="small muted" id="kpro"></div><div class="pg"><i id="kbar"></i></div>
+  <div class="card"><label class="check" style="margin:0"><input type="checkbox" id="kdev" ${o.dev ? 'checked' : ''}> Stan deweloperski: bez wykończenia i wyposażenia</label></div>
+  <div id="kel">${S2.map(([n, l]) => `<div class="card"><div class="eyebrow">${n}</div>${l.map(elHTML).join('')}</div>`).join('')}</div>
+  <button class="btn" data-act="wyn" type="button">Pokaż wynik</button>`;
+  return [html, v => {
+    const pro = () => { const u = all.filter(e => o.ans[e.id] !== 'nd'), c = u.filter(e => o.ans[e.id] && o.ans[e.id] !== 'ns').length; $('#kpro', v).textContent = `Sprawdzono ${c} z ${u.length} elementów`; $('#kbar', v).style.width = (u.length ? c / u.length * 100 : 0) + '%'; $('#kel', v).style.display = o.dev ? 'none' : ''; };
+    const touch = () => { t.ts = Date.now(); save.teczki(); pro(); }; pro();
+    $('[data-back]', v).onclick = () => go('#/teczka/' + id);
+    $('#kdev', v).onchange = e => { o.dev = e.target.checked; touch(); };
+    $$('.ke', v).forEach(el => { const k = el.dataset.el;
+      $$('[data-o]', el).forEach(b => b.onclick = () => { o.ans[k] = o.ans[k] === b.dataset.o ? undefined : b.dataset.o; if (o.ans[k] === undefined) delete o.ans[k]; $$('[data-o]', el).forEach(x => x.classList.toggle('on', o.ans[k] === x.dataset.o)); touch(); });
+      $$('[data-m]', el).forEach(b => b.onclick = () => { (o.mat ||= {})[k] = o.mat[k] === b.dataset.m ? undefined : b.dataset.m; if (o.mat[k] === undefined) delete o.mat[k]; $$('[data-m]', el).forEach(x => x.classList.toggle('on', o.mat[k] === x.dataset.m)); touch(); }); });
+    $('[data-act="wyn"]', v).onclick = () => { t.ts = Date.now(); save.teczki(); go(`#/ogledziny/${id}/w/${o.id}`); };
+  }];
+}
+
 /* ---------- PEŁNA ANALIZA: jedno kliknięcie w teczce, te same dane, bez ponownego wpisywania ---------- */
 async function fullAnalysis(t) {
   const kat = t.kat || 'mieszkanie', flat = kat === 'mieszkanie';

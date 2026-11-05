@@ -401,3 +401,11 @@ body { background: var(--onyx); } body::before { content: ''; position: fixed; i
 /* bez powiększania dwoma palcami i dwuklikiem (mapa ma własne przybliżanie) */
 html, body { touch-action: pan-x pan-y; } a, button, input, select, textarea, label, summary, .tile, .chip { touch-action: manipulation; }
 .leaflet-container, .leaflet-container * { touch-action: none; }
+
+/* karta oględzin */
+.tile.wide { grid-column: 1 / -1; min-height: 128px; background-position: right 42%; }
+.kbanner { object-position: right center; margin-bottom: 12px; } .pg { height: 6px; border-radius: 3px; background: var(--g3); overflow: hidden; margin: 8px 0 14px; } .pg i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #8A6C2A, #E6CE94); transition: width .3s var(--ease); }
+.ke { padding: 11px 0; border-top: 1px solid var(--line2); } .ke:first-of-type { border-top: 0; } .ke > b { font-weight: 600; font-size: 14.5px; }
+.kg { display: grid; gap: 6px; margin-top: 8px; } .kg.n4 { grid-template-columns: repeat(4, 1fr); } .kg.n3 { grid-template-columns: repeat(3, 1fr); }
+.chip.k2 { padding: 7px 2px; border-radius: 13px; font-size: 12px; line-height: 1.2; text-align: center; min-height: 46px; } .kmat { gap: 6px; margin-top: 8px; } .kmat .chip { padding: 6px 10px; font-size: 12.5px; }
+.tick { display: flex; gap: 9px; padding: 6px 0; font-size: 13.5px; color: var(--bone); } .tick i { font-style: normal; color: var(--gold-l); } .tick.m i { color: var(--warn); }
