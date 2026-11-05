@@ -197,6 +197,7 @@ Ogłoszenie Otodom (dane strukturalne) zawiera: tytuł, rok budowy (`build_year`
 - 1.24.1 zablokowane powiększanie strony (meta viewport, `touch-action`, `gesturestart`, `touchmove`; mapa przybliża się dalej); mapy domyślnie jasne (klucz `am-tiles2`, ciemny podkład klasą `dark-tiles`); kolory punktów bez zmian, zaakceptowane przez właściciela na jasnej mapie; pierścień wycenianej nieruchomości czarny.
 - 1.25.0 Karta oględzin (`js/ogledziny.js`, widok `#/ogledziny`, zapis w `t.ogledziny`): kategorie i elementy wg instrukcji NBP (BaRN), reguły przypisania nasze i podpisane w raporcie. Karta nie zmienia wyceny; pole standardu w formularzu zmienia się tylko przyciskiem „Użyj standardu w wycenie”. Sekcja „Standard nieruchomości” w raporcie pełnym i z wykresami.
 - 1.25.1 ZASADA WŁAŚCICIELA: w aplikacji, raportach i kodzie nie używamy słów z rdzenia „dorad” (doradca, doradztwo, doradzać). Mówimy „pośrednik”. Pilnuje tego test w `test/all.sh`. Powód: właściciel chce korzystać ze zwolnienia z VAT, a doradztwo je wyklucza (art. 113 ust. 13 ustawy o VAT).
+- Test trafności najmu: `tools/najem_test.mjs`, na serwerze `server/najem_test.sh` (tylko czyta, wynik w `/root/najem_test_wynik.txt`, same zbiorcze liczby). Prawdziwy silnik, 10 części z chowaniem całych ulic, poprawka uczona wewnętrznie na części uczącej, margines z losowania ulic. Próg: POMAGA dopiero od 0,5 pkt i z marginesem powyżej zera. Sprawdzian samego testu: `test/najem_test.cjs`.
 
 ## 11. Lista pomysłów i stan (numeracja ustalona z właścicielem 30.10)
 

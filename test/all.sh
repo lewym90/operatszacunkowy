@@ -28,4 +28,5 @@ node test/kalkulator.cjs "$SP"
 node test/osm.cjs
 python3 test/osm_analiza_test.py
 python3 test/osm_silnik_test.py
+node test/najem_test.cjs
 echo "WSZYSTKIE TESTY OK"
