@@ -4,7 +4,7 @@ import { normStreet } from './engine.js';
 import { esc, fmt } from './ui.js';
 import { KAT, POD_TXT, pm2Of } from './rcn.js';
 
-export const PALETTE = ['#4C8DC2', '#5EB1A5', '#A5CF7E', '#E9CB57', '#E2795C'];   // tanio → drogo (przejście chłodne → ciepłe, czytelne na ciemnym tle)
+export const PALETTE = ['#7A5F26', '#A6863B', '#C8A44D', '#E0C27A', '#F6EAC6'];   // tanio → drogo: jedna skala złota, od brązu do jasnego szampana
 export const LUBLIN = [51.2465, 22.5684];
 
 let lp = null;

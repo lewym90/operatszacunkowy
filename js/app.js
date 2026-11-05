@@ -13,7 +13,7 @@ import { geocode, neighbors, suggest as suggestAddr } from './geokod.js';
 import { exposure, trendSeries, yieldByDistrict, districtAssigner, lineChart, barChart, bindCharts } from './rynek.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer, districtCenters } from './mapa.js';
 
-const VERSION = '1.23.5';
+const VERSION = '1.24.0';
 const S = { wlasne: [], teczki: [], foto: {}, dokumenty: [],
   offers: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -185,7 +185,7 @@ function viewWycena() {
   const po = POD_OPT[kat];
   const html = head(sale ? 'Wycena sprzedaży' : 'Wycena najmu') + safeBanner() + `
   <div class="seg" data-v="${sale ? 0 : 1}"><i></i><button data-t="sprzedaz" class="${sale ? 'on' : ''}">Sprzedaż</button><button data-t="najem" class="${sale ? '' : 'on'}">Najem</button></div>
-  <div class="field" style="margin-top:14px"><span>Rodzaj nieruchomości</span><div class="chips" data-katsel>${KAT_ORDER.filter(k => k !== 'zabudowana').map(k => `<button type="button" class="chip ${kat === k ? 'on' : ''}" data-v="${k}">${KAT[k].n}</button>`).join('')}</div></div>
+  ${katImg(kat) ? `<img class="res-foto sm" src="${katImg(kat)}" alt="">` : ''}<div class="field" style="margin-top:14px"><span>Rodzaj nieruchomości</span><div class="chips" data-katsel>${KAT_ORDER.filter(k => k !== 'zabudowana').map(k => `<button type="button" class="chip ${kat === k ? 'on' : ''}" data-v="${k}">${KAT[k].n}</button>`).join('')}</div></div>
   ${ready ? `<div class="banner"><span>◈</span><span>${stat}. Wynik zawsze jako przedział z oceną pewności.</span></div>`
       : `<div class="banner warn"><span>!</span><span>${sale ? 'Brak danych o transakcjach (RCN).' : 'Brak ofert najmu.'} Najpierw zaimportuj dane w zakładce <b>Dane</b>.</span></div>`}
   <form class="card" id="f" autocomplete="off" novalidate>
@@ -284,6 +284,12 @@ function getEntry(p) {
   if (p[1] === 'h') return S.wyceny.find(w => w.id === p[2]) || null;
   return S.last[p[1]] || null;
 }
+const KIMG = ['mieszkanie', 'dom', 'dzialka', 'lokal', 'obiekt', 'garaz'], katImg = k => KIMG.includes(k || 'mieszkanie') ? `img/k-${k || 'mieszkanie'}.webp` : '';
+// Pewność jako łuk z trzech części: poziom z silnika wyceny, bez procentów, których silnik nie liczy
+function confGauge(c) {
+  const R = 74, cx = 90, cy = 88, pt = a => `${(cx + R * Math.cos(a)).toFixed(1)} ${(cy - R * Math.sin(a)).toFixed(1)}`, seg = i => { const a0 = Math.PI - i * Math.PI / 3 - .05, a1 = Math.PI - (i + 1) * Math.PI / 3 + .05; return `M${pt(a0)} A${R} ${R} 0 0 1 ${pt(a1)}`; };
+  return `<div class="gauge2" role="img" aria-label="Pewność wyceny: ${LV[c.level]}"><svg viewBox="0 0 180 100"><defs><linearGradient id="gg" x1="0" x2="1"><stop offset="0" stop-color="#8A6C2A"/><stop offset="1" stop-color="#F3E3B3"/></linearGradient></defs>${[0, 1, 2].map(i => `<path d="${seg(i)}" fill="none" stroke="${i < c.score ? 'url(#gg)' : '#232329'}" stroke-width="11" stroke-linecap="round"/>`).join('')}</svg><div class="g2t"><b>${LV[c.level]}</b><span>pewność wyceny</span></div></div>`;
+}
 function viewWynik(p) {
   const e = getEntry(p);
   if (!e) return [head('Wynik', '', true) + '<div class="empty"><b>Brak wyniku</b>Wróć do formularza i oszacuj wartość.</div>', v => $('[data-back]', v).onclick = () => go('#/wycena')];
@@ -297,12 +303,12 @@ function viewWynik(p) {
   }
   const lo = roundTo(r.total.lo, step), hi = roundTo(r.total.hi, step), mid = roundTo(r.total.mid, step);
   const pm = r.comps.map(c => c.pm2), dMin = Math.min(...pm, r.pm2.lo), dMax = Math.max(...pm, r.pm2.hi), span = (dMax - dMin) || 1, X = v => ((v - dMin) / span * 100).toFixed(2);
-  const srodek = roundTo((r.total.lo + r.total.hi) / 2, step), foto = e.teczka && (S.foto[e.teczka] || [])[0], podM2 = s.m2 > 0 ? srodek / s.m2 : null;
+  const srodek = roundTo((r.total.lo + r.total.hi) / 2, step), foto = (e.teczka && (S.foto[e.teczka] || [])[0]) || katImg(s.kat), podM2 = s.m2 > 0 ? srodek / s.m2 : null;
   html += `${foto ? `<img class="res-foto" src="${foto}" alt="">` : ''}<div class="res-addr"><b>${esc([s.ulica, s.nr].filter(Boolean).join(' ') || s.dzielnica || 'Nieruchomość')}${s.ulica ? ', Lublin' : ''}</b><span>${esc(subjLine(s))}</span></div>
   <div class="card hero"><div class="lbl">${esc(r.label)}</div>
     <div class="big gold"><span data-cu="${srodek}">${fmt(srodek)}</span> zł</div>
     <div class="sub">${podM2 ? fmt(podM2) + ' zł/m²' : ''}${sale ? '' : (podM2 ? ' · ' : '') + 'miesięcznie'}</div>
-    <div class="res-conf"><span>Pewność wyceny:</span><b>${LV[r.confidence.level]}</b></div><div class="res-bar" data-l="${r.confidence.score}"><i style="width:${r.confidence.score / 3 * 100}%"></i></div>
+    ${confGauge(r.confidence)}
     <div class="res-lbl">Przedział wartości:</div><div class="res-rng"><span data-cu="${lo}">${fmt(lo)}</span> – <span data-cu="${hi}">${fmt(hi)}</span> zł</div><div class="sub">${r.rangeKind}</div>
     <button class="btn" type="button" data-act="szcz">Zobacz szczegóły</button></div>
   <div class="card" id="szcz"><div class="eyebrow">Rozkład porównań</div><div class="range"><div class="t" style="left:${X(r.pm2.mid)}%">mediana ${fmt(r.pm2.mid)} zł/m²</div><div class="track"><div class="fill" style="left:${X(r.pm2.lo)}%;width:${Math.max(1, X(r.pm2.hi) - X(r.pm2.lo))}%"></div></div>
@@ -944,7 +950,7 @@ function viewAnaliza(id) {
   if (!A) return [head('Analiza', '', true) + '<div class="empty"><b>Brak analizy</b>Uruchom pełną analizę w teczce nieruchomości.</div>', v => $('[data-back]', v).onclick = backT];
   const es = S.wyceny.find(w => w.id === A.saleId), en = S.wyceny.find(w => w.id === A.rentId), p1 = x => x == null ? '—' : pct1(x);
   const html = head('Pełna analiza', esc(tName(t)) + ' · ' + new Date(A.ts).toLocaleDateString('pl-PL'), true, true) + `
-  ${es ? `<a class="card hero alink" href="#/wynik/h/${es.id}"><div class="lbl">Szacunkowa wartość</div><div class="big gold">${fmt(midRange(es).mid)} zł</div><div class="sub">${fmt(midRange(es).lo)} – ${fmt(midRange(es).hi)} zł · pewność ${LV[es.res.confidence.level].toLowerCase()}</div></a>` : ''}
+  ${katImg(t.kat) ? `<img class="res-foto" src="${katImg(t.kat)}" alt="">` : ''}${es ? `<a class="card hero alink" href="#/wynik/h/${es.id}"><div class="lbl">Szacunkowa wartość</div><div class="big gold">${fmt(midRange(es).mid)} zł</div><div class="sub">${fmt(midRange(es).lo)} – ${fmt(midRange(es).hi)} zł · pewność ${LV[es.res.confidence.level].toLowerCase()}</div></a>` : ''}
   ${en ? `<a class="card alink" href="#/wynik/h/${en.id}"><div class="eyebrow">Szacunkowy czynsz miesięcznie</div><h3>${fmt(midRange(en).mid)} zł</h3><div class="muted small">${fmt(midRange(en).lo)} – ${fmt(midRange(en).hi)} zł · pewność ${LV[en.res.confidence.level].toLowerCase()}</div></a>` : ''}
   ${A.inw ? `<div class="card"><div class="eyebrow">Inwestycja przy cenie ${fmt(A.inw.cena)} zł i czynszu ${fmt(A.inw.czynsz)} zł</div><div class="kv"><span>Zwrot brutto</span><b>${p1(A.inw.gross)}</b></div><div class="kv"><span>Zwrot netto po podatku</span><b>${p1(A.inw.netPost)}</b></div><div class="kv"><span>IRR, ${A.inw.N} lat</span><b>${p1(A.inw.irr)}</b></div><div class="kv"><span>ROI, ${A.inw.N} lat</span><b>${p1(A.inw.roi)}</b></div><div class="kv"><span>Przepływ miesięczny</span><b>${A.inw.cfMies >= 0 ? '+' : '−'}${zl(Math.abs(A.inw.cfMies))}</b></div><p class="tiny muted" style="margin:8px 0 0">Założenia podatku, kosztów, kredytu i wzrostu wartości z kalkulatora. Bez wpisanego wzrostu wartość końcowa równa się cenie zakupu.</p><div class="gap"></div><button class="btn ghost" data-act="dokalk" type="button">Otwórz w kalkulatorze</button></div>` : ''}
   ${A.opis ? `<div class="card"><div class="eyebrow">Lokalizacja</div>${A.geo ? `<p class="small" style="margin:0 0 6px"><b>${esc(A.geo.street)} ${esc(A.geo.number)}, ${esc(A.geo.city)}</b></p>` : ''}<p class="small muted" style="margin:0 0 10px">${esc(A.opis)}</p>${okTiles(A.okol || [])}</div>` : ''}
