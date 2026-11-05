@@ -1,6 +1,6 @@
 # KONTYNUACJA — OPERAT SZACUNKOWY (AM Nieruchomości)
 
-Plik przekazania pracy między kontami/sesjami Claude. Stan na **2026-11-04, wersja aplikacji 1.25.0** (pełna analiza z teczki, IRR/NPV, jakość porównań, porównanie wycen, promienie, nowe raporty z numeracją, mapa rentowności).
+Plik przekazania pracy między kontami/sesjami Claude. Stan na **2026-11-04, wersja aplikacji 1.25.1** (pełna analiza z teczki, IRR/NPV, jakość porównań, porównanie wycen, promienie, nowe raporty z numeracją, mapa rentowności).
 Ten plik zawiera całą wiedzę potrzebną do kontynuacji: nie wymaga dostępu do poprzednich rozmów ani do poprzedniego projektu Claude.
 
 > **UWAGA — repozytorium jest PUBLICZNE (GitHub Pages).** W tym pliku nie ma i nie wolno zapisywać haseł, kluczy, tokenów, kodu synchronizacji „AMSYNC1:…”, adresu IP serwera ani danych ofert/klientów. Nigdy nie wklejaj klucza synchronizacji do czatu ani na zrzut ekranu — właściciel wpisuje go sam.
@@ -36,7 +36,7 @@ Właściciel wkleja do nowej sesji (z podpiętym GitHubem i repo `lewym90/operat
 2. **Zmian metody wyceny nie wdrażamy bez walidacji na prawdziwych danych** (walidacja wsteczna/krzyżowa, liczby w dokumencie).
 3. **Raport dla klienta**: daje WYLICZONĄ kwotę, bez ostrzeżeń i gwiazdek; techniczne notatki są filtrowane z raportu.
 4. **Nie zawężamy się do mieszkań**: wszystkie rodzaje nieruchomości (domy, grunty, lokale, hale, garaże) w wycenie, na mapach i w danych. Najem innych rodzajów tylko z ofert/własnych umów (RCN nie ma czynszów).
-5. **Narzędzie ma być profesjonalne i nie może ośmieszyć doradcy przed klientem.** Odległości do ważnych punktów (przystanki, szkoły…) liczymy WYŁĄCZNIE od dokładnego budynku znalezionego w urzędowym rejestrze adresów — **nigdy od środka ulicy, nigdy ze współrzędnych transakcji RCN**. Brak adresu w rejestrze = brak odległości (komunikat), bez zgadywania. Nie podstawiamy „podobnej” ulicy sami (błąd Rokickiego→Ruckiego) — tylko podpowiedź do potwierdzenia.
+5. **Narzędzie ma być profesjonalne i nie może ośmieszyć pośrednika przed klientem.** Odległości do ważnych punktów (przystanki, szkoły…) liczymy WYŁĄCZNIE od dokładnego budynku znalezionego w urzędowym rejestrze adresów — **nigdy od środka ulicy, nigdy ze współrzędnych transakcji RCN**. Brak adresu w rejestrze = brak odległości (komunikat), bez zgadywania. Nie podstawiamy „podobnej” ulicy sami (błąd Rokickiego→Ruckiego) — tylko podpowiedź do potwierdzenia.
 6. **Import danych w aplikacji, nie przez czat.** Przechowywane tylko pola techniczne ofert (cena, czynsz, metraż, pokoje, piętro, ulica, dzielnica, rok, znaczniki cech, link); bez opisów, zdjęć i danych osobowych.
 7. Linki do ogłoszeń widoczne wszędzie, gdzie pokazują się oferty z bazy (poza raportem klienta: brak konkretnych ofert/linków z portali).
 8. **Najpierw odpowiedź**, gdy właściciel pyta tylko o odpowiedź. Odpowiedzi po polsku, zwięźle, bez przechwałek; błędy przyznawać wprost i naprawiać.
@@ -129,7 +129,7 @@ Cena za m² powierzchni właściwej rodzajowi; wagi: położenie (do 12 km), pow
 - Najem (mieszkania): pole „Nr budynku” w jednej linii z „Ulica”; sprzedaż: pole „Nr” obok ulicy.
 - Panel wyceny (najem i sprzedaż): karta „Najbliższe okolice” — oficjalny adres („Ks. Wincentego Granata 1, Lublin (20-489)”), źródło, kafelki odległości w metrach; „Zmień adres lub wskaż na mapie”.
 - Nie znaleziono: komunikat, pola ulicy/numeru, „Szukaj budynku”, podpowiedzi, „Pokaż najbliższe numery w rejestrze”, „Wskaż budynek na mapie” (punkt ręczny, źródło `reczne`, wymaga potwierdzenia).
-- Raport klienta (pełny i rynkowy, nie krótki): sekcja „Najbliższe okolice”, 2 kolumny, odległości zaokrąglone do 10 m („ok. 190 m”), podpis ze źródłem położenia („Państwowy Rejestr Granic, GUGiK” lub „wskazano ręcznie”) i danych punktów („© współtwórcy OpenStreetMap”). Bez adresu w rejestrze raport nie zawiera odległości (w aplikacji podpowiedź dla doradcy).
+- Raport klienta (pełny i rynkowy, nie krótki): sekcja „Najbliższe okolice”, 2 kolumny, odległości zaokrąglone do 10 m („ok. 190 m”), podpis ze źródłem położenia („Państwowy Rejestr Granic, GUGiK” lub „wskazano ręcznie”) i danych punktów („© współtwórcy OpenStreetMap”). Bez adresu w rejestrze raport nie zawiera odległości (w aplikacji podpowiedź dla pośrednika).
 
 ## 6. Serwer właściciela (VPS „lewym90”) — bez sekretów
 
@@ -196,6 +196,7 @@ Ogłoszenie Otodom (dane strukturalne) zawiera: tytuł, rok budowy (`build_year`
 - 1.24.0 szata ze zdjęciami właściciela (`img/`: start, tlo, panorama, t-* kafelki, k-* rodzaje nieruchomości, okladka, papier; 1 MB, WebP i JPG): Start z danymi na żywo, kafelki z informacją, wykresy ze złotym gradientem, mapa w skali złota, łuk pewności, raport z okładką i papierem. Zdjęcia to ozdoba, nie obraz wycenianej nieruchomości; wykresy i mapy zawsze z danych.
 - 1.24.1 zablokowane powiększanie strony (meta viewport, `touch-action`, `gesturestart`, `touchmove`; mapa przybliża się dalej); mapy domyślnie jasne (klucz `am-tiles2`, ciemny podkład klasą `dark-tiles`); kolory punktów bez zmian, zaakceptowane przez właściciela na jasnej mapie; pierścień wycenianej nieruchomości czarny.
 - 1.25.0 Karta oględzin (`js/ogledziny.js`, widok `#/ogledziny`, zapis w `t.ogledziny`): kategorie i elementy wg instrukcji NBP (BaRN), reguły przypisania nasze i podpisane w raporcie. Karta nie zmienia wyceny; pole standardu w formularzu zmienia się tylko przyciskiem „Użyj standardu w wycenie”. Sekcja „Standard nieruchomości” w raporcie pełnym i z wykresami.
+- 1.25.1 ZASADA WŁAŚCICIELA: w aplikacji, raportach i kodzie nie używamy słów z rdzenia „dorad” (doradca, doradztwo, doradzać). Mówimy „pośrednik”. Pilnuje tego test w `test/all.sh`. Powód: właściciel chce korzystać ze zwolnienia z VAT, a doradztwo je wyklucza (art. 113 ust. 13 ustawy o VAT).
 
 ## 11. Lista pomysłów i stan (numeracja ustalona z właścicielem 30.10)
 
@@ -230,7 +231,7 @@ Nie teraz: prognozy cen (najpierw walidacja, dane tylko z okresu wzrostu), wycen
 ### Do zrobienia przez właściciela
 - Na serwerze: `curl -fsSL https://lewym90.github.io/operatszacunkowy/server/update_sync.sh | bash` (teczki i historia dokumentów zaczną się synchronizować).
 - Do decyzji: `DEFAULT_URL` w `js/sync.js` zawiera adres IP serwera w publicznym repo (stare, wbrew zasadzie z początku pliku).
-- Zamknąć i otworzyć aplikację na wszystkich urządzeniach (jedna karta naraz), żeby pobrała 1.25.0 (przy problemach z odświeżeniem: zamknąć aplikację całkiem i otworzyć dwa razy).
+- Zamknąć i otworzyć aplikację na wszystkich urządzeniach (jedna karta naraz), żeby pobrała 1.25.1 (przy problemach z odświeżeniem: zamknąć aplikację całkiem i otworzyć dwa razy).
 - Sprawdzić na telefonie: najem → ulica „Granata”, nr „1” (karta „Najbliższe okolice”), to samo w sprzedaży; Mapa → warstwy OSM.
 - Ok. 7 listopada zrobić kolejne pełne zebranie ofert najmu.
 - Opcjonalnie: wgrać własne logo, dodać umowy domów/lokali/hal, uruchomić eksport RCN dla Chełma, Zamościa, Puław.

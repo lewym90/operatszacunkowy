@@ -14,7 +14,7 @@ import { geocode, neighbors, suggest as suggestAddr } from './geokod.js';
 import { exposure, trendSeries, yieldByDistrict, districtAssigner, lineChart, barChart, bindCharts } from './rynek.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer, districtCenters } from './mapa.js';
 
-const VERSION = '1.25.0';
+const VERSION = '1.25.1';
 const S = { wlasne: [], teczki: [], foto: {}, dokumenty: [],
   offers: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },

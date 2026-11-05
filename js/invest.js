@@ -1,5 +1,5 @@
 // Kalkulator inwestycyjny najmu: zwrot brutto i netto, podatek, kredyt, przepływ gotówki i wrażliwość na czynsz i cenę.
-// Podatek jest orientacyjny (stawki ustawowe; bez składki zdrowotnej, ulg i kwoty wolnej): do decyzji potrzebny jest doradca podatkowy.
+// Podatek jest orientacyjny (stawki ustawowe; bez składki zdrowotnej, ulg i kwoty wolnej): przed decyzją trzeba sprawdzić podatek u księgowego.
 export const PCC = 0.02;                                       // podatek od czynności cywilnoprawnych przy zakupie na rynku wtórnym
 export const TAX = {
   ryczalt: { n: 'Ryczałt 8,5% (12,5% powyżej 100 tys. zł przychodu)', f: (rev) => 0.085 * Math.min(rev, 1e5) + 0.125 * Math.max(0, rev - 1e5) },

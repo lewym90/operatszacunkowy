@@ -1,5 +1,5 @@
 // Karta oględzin: opis standardu na podstawie oględzin. Kategorie i lista elementów według instrukcji badania rynku wtórnego NBP (BaRN), reguły przypisania są ustaleniem AM Nieruchomości.
-// Moduł niczego nie zmienia w wycenie: daje wyłącznie opis, który doradca może sam przenieść do formularza.
+// Moduł niczego nie zmienia w wycenie: daje wyłącznie opis, który pośrednik może sam przenieść do formularza.
 export const ODP = {
   stan: [['d', 'Dobry<br>stan'], ['n', 'Drobne<br>naprawy'], ['w', 'Do<br>wymiany'], ['ns', 'Nie<br>sprawdzono']],
   wil: [['b', 'Brak<br>śladów'], ['m', 'Miejscowe<br>ślady'], ['r', 'Rozległe<br>ślady'], ['ns', 'Nie<br>sprawdzono']],
@@ -48,4 +48,4 @@ export function ocen(o, kat = 'mieszkanie') {
   if (a('klasa') !== 't') bo.push('nie potwierdzono materiałów dobrej klasy'); if (lok.some(e => a(e.id) === 'ns')) bo.push('niesprawdzona kuchnia lub łazienka');
   return { ...base, kat: 'przeciętny', opis: OPIS['przeciętny'], why: `Żaden element podstawowy nie wymaga wymiany.${bo.length ? ` Standard wysoki wyklucza: ${bo.join(', ')}.` : ''}` };
 }
-export const NOTA = 'Ocena z oględzin wykonanych przez doradcę, według kategorii standardu z badania rynku NBP; przypisanie kategorii według karty AM Nieruchomości. Ocena wizualna, nie jest ekspertyzą techniczną.';
+export const NOTA = 'Ocena z oględzin wykonanych przez pośrednika, według kategorii standardu z badania rynku NBP; przypisanie kategorii według karty AM Nieruchomości. Ocena wizualna, nie jest ekspertyzą techniczną.';

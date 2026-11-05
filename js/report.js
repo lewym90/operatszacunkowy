@@ -216,7 +216,7 @@ export async function buildReport(e, ust, opts = {}) {
   }
   // zastrzeżenie
   // zastrzeżenie
-  const disc = `Niniejsze zestawienie ma charakter wyłącznie orientacyjny i informacyjny. Sporządzono je metodą porównawczą na podstawie ${sale ? 'cen transakcyjnych z Rejestru Cen Nieruchomości' : 'cen ofertowych z ogłoszeń'}, ${opts.ogled ? 'po oględzinach wizualnych doradcy,' : 'bez oględzin nieruchomości oraz'} bez badania jej stanu prawnego i technicznego. Nie jest wyceną sporządzoną przez rzeczoznawcę majątkowego i nie może jej zastępować. Rzeczywista cena lub czynsz zależą od stanu nieruchomości, negocjacji i sytuacji rynkowej.`;
+  const disc = `Niniejsze zestawienie ma charakter wyłącznie orientacyjny i informacyjny. Sporządzono je metodą porównawczą na podstawie ${sale ? 'cen transakcyjnych z Rejestru Cen Nieruchomości' : 'cen ofertowych z ogłoszeń'}, ${opts.ogled ? 'po oględzinach wizualnych pośrednika,' : 'bez oględzin nieruchomości oraz'} bez badania jej stanu prawnego i technicznego. Nie jest wyceną sporządzoną przez rzeczoznawcę majątkowego i nie może jej zastępować. Rzeczywista cena lub czynsz zależą od stanu nieruchomości, negocjacji i sytuacji rynkowej.`;
   return finish(disc);
 }
 
