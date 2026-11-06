@@ -18,6 +18,7 @@ node test/rynek.test.mjs
 bash test/sync.sh
 node test/lock.cjs
 node test/poza.cjs
+python3 test/rcn_paczka_test.py
 node test/start.cjs
 node test/geokod.test.mjs
 node test/rynek.cjs "$SP"
