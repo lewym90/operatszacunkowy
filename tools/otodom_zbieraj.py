@@ -170,12 +170,13 @@ def main():
             time.sleep(8); rr, t = lista(pg, '', sc, typ, kat)
             # sprzedaż: portal liczy osobno mieszkania w inwestycjach, które lista pokazuje jednym kafelkiem, więc tam wystarczą wszystkie strony
             if rr is None or t is None or (typ == 'najem' and brak(lista.widziane, t)): raise SystemExit(f'Lista {sc} niepełna ({len(rr or [])} z {t}). Przerywam, nic nie zapisano.')
+            wid = lista.widziane
             if sc == 'sprzedaz/mieszkanie':
                 time.sleep(8); wt, t2 = lista(pg, '&market=SECONDARY', sc, typ, kat)
                 if wt is None or brak(lista.widziane, t2): raise SystemExit(f'Lista rynku wtórnego niepełna ({len(wt or [])} z {t2}). Przerywam, nic nie zapisano.')
                 log(f'    w tym rynek wtórny: {len(wt)} (portal {t2})'); wt = {x['portalId'] for x in wt}
                 for x in rr: x['rynek'] = 'wtorny' if x['portalId'] in wt else 'pierwotny'
-            inne += rr; log(f'    {sc}: {len(rr)} (portal {t}, pozycji na liście {lista.widziane})')
+            inne += rr; log(f'    {sc}: {len(rr)} (portal {t}, pozycji na liście {wid})')
         for r in wsz + inne + [x for v in filtry.values() for x in v]:      # numer ogłoszenia jak w bazie
             pid = zn['m'].get(r['portalId'])
             if pid: r['portalId'] = pid
