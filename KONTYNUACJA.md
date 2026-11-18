@@ -41,7 +41,7 @@ Właściciel wkleja do nowej sesji (z podpiętym GitHubem i repo `lewym90/operat
 7. Linki do ogłoszeń widoczne wszędzie, gdzie pokazują się oferty z bazy (poza raportem klienta: brak konkretnych ofert/linków z portali).
 8. **Najpierw odpowiedź**, gdy właściciel pyta tylko o odpowiedź. Odpowiedzi po polsku, zwięźle, bez przechwałek; błędy przyznawać wprost i naprawiać.
 9. **Klucz synchronizacji**: nigdy w czacie, na zrzutach, w plikach repo.
-10. **Zbieranie ofert** (Otodom): tylko własny użytek, spokojne tempo, tylko pola techniczne, pod nadzorem właściciela (regulamin zabrania agregowania bez zgody — sekcja 8, punkt 15 listy).
+10. **Zbieranie ofert** (Otodom): tylko własny użytek, spokojne tempo, tylko pola techniczne. Od 18.11.2026 (decyzja właściciela) zbieranie może robić sam serwer, uruchamiane przez właściciela (docelowo przyciskiem w aplikacji); bez harmonogramu nocnego bez jego zgody. Sprawa regulaminu (sekcja 8, punkt 15) pozostaje otwarta.
 11. **Jedna karta aplikacji naraz** (dwie karty doprowadziły do utraty ofert z serwera; od 1.11.2 jest zabezpieczenie, ale zasada zostaje).
 
 ## 3. Architektura aplikacji
