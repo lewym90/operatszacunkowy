@@ -19,6 +19,7 @@ bash test/sync.sh
 node test/lock.cjs
 node test/poza.cjs
 python3 test/rcn_paczka_test.py
+python3 test/otodom_reguly_test.py
 node test/start.cjs
 node test/geokod.test.mjs
 node test/rynek.cjs "$SP"
