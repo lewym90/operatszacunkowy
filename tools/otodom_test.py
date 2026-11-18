@@ -29,7 +29,7 @@ with sync_playwright() as p:
                 print(f'{n}: status {st}, BRAK DANYCH ({blok}), tytuł: {pg.title()[:60]}'); continue
             d = json.loads(m.group(1)); it = znajdz(d, 'items') or []; tot = znajdz(d, 'totalCount')
             pag = znajdz(d, 'pagination') or {}
-            print(f'{n}: status {st}, ofert na stronie {len(it)}, wszystkich ogłoszeń {tot or pag.get("totalResults") or "?"}, stron {pag.get("totalPages", "?")}')
+            print(f'{n}: status {st}, ofert na stronie {len(it)}, wszystkich ogłoszeń {pag.get("totalItems") or tot or "?"}, stron {pag.get("totalPages", "?")}')
             ok += bool(it)
         except Exception as e: print(f'{n}: BŁĄD {str(e)[:120]}')
         time.sleep(6)
