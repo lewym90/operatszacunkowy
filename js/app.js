@@ -14,9 +14,9 @@ import { geocode, neighbors, suggest as suggestAddr } from './geokod.js';
 import { exposure, trendSeries, yieldByDistrict, districtAssigner, lineChart, barChart, bindCharts } from './rynek.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer, districtCenters } from './mapa.js';
 
-const VERSION = '1.25.2';
+const VERSION = '1.26.0';
 const S = { wlasne: [], teczki: [], foto: {}, dokumenty: [],
-  offers: [], poza: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
+  offers: [], poza: [], katy: [], sprz: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
   form: { tryb: 'sprzedaz', kat: 'mieszkanie', pod: '', dzm2: '', ulica: '', nr: '', dzielnica: '', m2: '', pokoje: 2, pietro: null, rok: '', rynek: '', standard: '', meble: '', zapamietaj: true, ud: [] },
 };
@@ -25,8 +25,11 @@ const ownToOffer = w => ({ id: 'w' + w.id, own: true, ...(w.kat && w.kat !== 'mi
   tags: { nowe: w.rok && w.rok >= 2018 ? 1 : 0, wysoki: w.standard === 'wysoki' ? 1 : 0 }, tytul: 'własna umowa', wlaczone: true, flagi: [] });
 // Oferty spoza Lublina czekają w S.poza: są zapisywane i synchronizowane, ale nie wchodzą do wycen, rynku, mapy ani list, dopóki aplikacja nie obsłuży innych obszarów.
 const lubOK = o => { const m = (o.miasto || '').trim().toLowerCase(); return !m || m === 'lublin'; };
-const podziel = all => { S.offers = all.filter(lubOK); S.poza = all.filter(o => !lubOK(o)); };
-const wszystkie = () => S.offers.concat(S.poza);
+// Pule: S.offers = najem mieszkań w Lublinie (wyceny, rynek, mapa, listy); S.katy = najem domów, lokali, hal, garaży w Lublinie (tylko wycena tych kategorii);
+// S.sprz = oferty sprzedaży w Lublinie (osobno, nigdy w wycenach najmu); S.poza = wszystko spoza Lublina.
+const sprzOK = o => o.typ === 'sprzedaz', katOK = o => !sprzOK(o) && o.kat && o.kat !== 'mieszkanie';
+const podziel = all => { S.poza = all.filter(o => !lubOK(o)); const l = all.filter(lubOK); S.sprz = l.filter(sprzOK); S.katy = l.filter(katOK); S.offers = l.filter(o => !sprzOK(o) && !katOK(o)); };
+const wszystkie = () => S.offers.concat(S.katy, S.sprz, S.poza);
 const allOffers = () => S.offers.concat((S.wlasne || []).map(ownToOffer));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const now = () => new Date().getFullYear();
@@ -275,7 +278,7 @@ function computeEntry(f) {
   }
   if (rok && flat && f.zapamietaj && f.ulica && f.nr && f.tryb === 'sprzedaz') { S.budynki[addrKey(f.ulica, f.nr)] = rok; save.budynki(); }
   const yearOf = k => S.budynki[k] ?? null;
-  const res = f.tryb === 'najem' ? (flat ? estimateRent(allOffers(), subj) : (kat === 'dom' || kat === 'lokal' || kat === 'obiekt' || kat === 'garaz') ? estimateRentKat(allOffers(), subj) : { ok: false, reason: `Najem nie dotyczy kategorii „${KAT[kat].n}”.` }) : flat ? estimateSale(S.tx, subj, { yearOf }) : estimateSaleKat(S.pool, subj, { geo: S.pool });
+  const res = f.tryb === 'najem' ? (flat ? estimateRent(allOffers(), subj) : (kat === 'dom' || kat === 'lokal' || kat === 'obiekt' || kat === 'garaz') ? estimateRentKat(allOffers().concat(S.katy), subj) : { ok: false, reason: `Najem nie dotyczy kategorii „${KAT[kat].n}”.` }) : flat ? estimateSale(S.tx, subj, { yearOf }) : estimateSaleKat(S.pool, subj, { geo: S.pool });
   if (f.tryb === 'najem' && flat && res.ok) { try { const baseRent = res.adjusted ? estimateRent(allOffers(), { ...subj, rok: null, standard: null }) : res; res.cross = crossCheckRent(allOffers(), S.tx, subj, baseRent.ok ? baseRent : res); const c = res.cross; if (res.adjusted && baseRent.ok) c.vsBase = baseRent.total; if (c.ok && c.agreement === 'rozbieżne' && c.r2 >= 0.3 && res.confidence.score > 1) { res.confidence.score -= 1; res.confidence.level = res.confidence.score === 1 ? 'niska' : 'średnia'; res.confidence.why.push('obniżono: kontrola ze sprzedażą (wiarygodna, R² ≥ 0,3) daje wyraźnie inny czynsz'); } } catch (e) { res.cross = { ok: false, reason: 'Nie udało się policzyć kontroli: ' + e.message }; } }
   if (subj.parking === 'osobno' && res.ok) res.parking = parkingExtra(allOffers());
   if (dzNote && res.ok) res.notes.unshift(dzNote);
@@ -529,7 +532,7 @@ function statusFn() {
 }
 const parkNote = p => !p ? '' : p.stan === 'wliczony' ? 'parking w czynszu' : p.stan === 'dodatkowo' ? 'parking osobno' + (p.kwota > 0 ? ' +' + fmt(p.kwota) + ' zł' : '') : '';
 function applyCollection(found, opt = {}) {
-  S.offers = wszystkie(); S.poza = [];
+  S.offers = wszystkie(); S.poza = []; S.katy = []; S.sprz = [];
   const t = Date.now(), z = (S.ust.zebrania || []).slice(); let c = z[z.length - 1];
   if (!c || t - c.ts > 12 * 3600000) { c = { id: (c ? c.id : 0) + 1, ts: t, pelne: false, n: 0 }; z.push(c); } else { c = { ...c, ts: t }; z[z.length - 1] = c; }
   if (opt.pelne) c.pelne = true;
@@ -538,8 +541,8 @@ function applyCollection(found, opt = {}) {
   for (const r of found) {
     const ex = (r.portalId && byP.get(String(r.portalId))) || byK.get(offerKey(r));
     let o;
-    if (ex) { o = ex; updated++; if (r.cena != null && r.cena !== o.cena && o.cena > 0) o.hc = (o.hc && o.hc.length ? o.hc : [[o.pierw || 0, o.cena]]).concat([[c.id, r.cena]]); for (const k of ['cena', 'czynsz', 'pokoje', 'm2', 'pietro', 'ulica', 'dzielnica', 'miasto']) if (r[k] != null) o[k] = r[k]; if (r.url) o.url = r.url; if (r.portalId) o.portalId = String(r.portalId); if (r.rokBand) o.rokBand = r.rokBand; if (r.zabudowa) o.zabudowa = r.zabudowa; }
-    else { o = { ...r, flagi: r.flagi || offerFlags(r), id: uid(), typ: 'najem', ts: t, wlaczone: true, pierw: c.id }; if (o.portalId) o.portalId = String(o.portalId); S.offers.push(o); added++; if (o.portalId) byP.set(o.portalId, o); byK.set(offerKey(o), o); }
+    if (ex) { o = ex; updated++; if (r.cena != null && r.cena !== o.cena && o.cena > 0) o.hc = (o.hc && o.hc.length ? o.hc : [[o.pierw || 0, o.cena]]).concat([[c.id, r.cena]]); for (const k of ['cena', 'czynsz', 'pokoje', 'm2', 'pietro', 'ulica', 'dzielnica', 'miasto', 'rok', 'stan', 'rynek', 'dzm2', 'szcz']) if (r[k] != null) o[k] = r[k]; if (r.url) o.url = r.url; if (r.portalId) o.portalId = String(r.portalId); if (r.rokBand) o.rokBand = r.rokBand; if (r.zabudowa) o.zabudowa = r.zabudowa; }
+    else { o = { ...r, flagi: r.flagi || offerFlags(r), id: uid(), typ: r.typ || 'najem', ts: t, wlaczone: true, pierw: c.id }; if (o.portalId) o.portalId = String(o.portalId); S.offers.push(o); added++; if (o.portalId) byP.set(o.portalId, o); byK.set(offerKey(o), o); }
     o.ost = c.id; batch.add(o);
     if (r.parking && r.parking.stan) o.parking = { stan: r.parking.stan, ...(r.parking.kwota > 0 ? { kwota: r.parking.kwota } : {}) };
     if (r.attrs) o.attrs = { ...(o.attrs || {}), ...r.attrs };
@@ -547,6 +550,7 @@ function applyCollection(found, opt = {}) {
   const recent = o => t - (o.ts || 0) < 3 * 86400000;
   for (const k of opt.attrs || []) {
     for (const o of S.offers) {
+      if (sprzOK(o) || katOK(o)) continue;                     // cechy z filtrów dotyczą tylko najmu mieszkań
       const inB = batch.has(o);
       if (k === 'garaz') {                                  // lista z filtrem „Garaż”: stan rozliczenia ustala się z ogłoszenia
         if (inB) { if (!o.parking) o.parking = { stan: 'nieznany' }; } else if ((o.ost === c.id || recent(o)) && !o.parking) o.parking = { stan: 'brak' };
@@ -616,7 +620,7 @@ function viewDane() {
   const n = S.offers.length, fl = S.offers.filter(o => o.flagi && o.flagi.length).length, off = S.offers.filter(o => o.wlaczone === false).length;
   const meta = S.rcn?.meta;
   const html = head('Dane', 'Źródła i import') + safeBanner() + `
-  <div class="card"><div class="eyebrow">Oferty najmu</div><div class="kv"><span>W bazie</span><b>${fmt(n)}</b></div>${S.poza.length ? `<div class="kv"><span>Spoza Lublina (czekają, poza wycenami)</span><b>${fmt(S.poza.length)}</b></div>` : ''}<div class="kv"><span>Podejrzane (pominięte)</span><b>${fl}</b></div><div class="kv"><span>Wyłączone ręcznie</span><b>${off}</b></div>
+  <div class="card"><div class="eyebrow">Oferty najmu</div><div class="kv"><span>W bazie</span><b>${fmt(n)}</b></div>${S.katy.length ? `<div class="kv"><span>Najem domów, lokali, hal, garaży</span><b>${fmt(S.katy.length)}</b></div>` : ''}${S.sprz.length ? `<div class="kv"><span>Oferty sprzedaży (osobno, poza wycenami najmu)</span><b>${fmt(S.sprz.length)}</b></div>` : ''}${S.poza.length ? `<div class="kv"><span>Spoza Lublina (czekają, poza wycenami)</span><b>${fmt(S.poza.length)}</b></div>` : ''}<div class="kv"><span>Podejrzane (pominięte)</span><b>${fl}</b></div><div class="kv"><span>Wyłączone ręcznie</span><b>${off}</b></div>
     <div class="gap"></div><button class="btn" data-act="pdf">Wgraj PDF z ofertami</button><div class="gap"></div><button class="btn ghost" data-act="paste">Wklej tekst ofert</button>
     <input type="file" id="fpdf" accept="application/pdf" multiple hidden>
     <p class="tiny muted" style="margin:10px 0 0">W Safari: lista ofert → Udostępnij → Drukuj → pinch na podglądzie → Zapisz do Plików. Plik wgrywasz tutaj. Odczyt dzieje się na tym urządzeniu, bez internetu i bez AI.</p></div>
@@ -645,7 +649,7 @@ function viewDane() {
     $('[data-act="exp"]', v).onclick = async () => { const blob = new Blob([JSON.stringify({ v: 1, offers: wszystkie(), wlasne: S.wlasne, budynki: S.budynki, wyceny: S.wyceny, teczki: S.teczki, dokumenty: S.dokumenty, ust: S.ust })], { type: 'application/json' }); await saveFile(blob, 'kopia-wycena-' + new Date().toISOString().slice(0, 10) + '.json'); };
     const fb = $('#fbak', v); $('[data-act="imp"]', v).onclick = () => fb.click();
     fb.onchange = async () => { try { const d = JSON.parse(await fb.files[0].text()); if (!Array.isArray(d.offers)) throw new Error('to nie jest kopia'); podziel(d.offers); sync.allowMassDelete(); S.wlasne = d.wlasne || []; save.wlasne(); S.budynki = d.budynki || {}; S.wyceny = d.wyceny || []; if (d.teczki) { S.teczki = d.teczki; save.teczki(); } S.ust = { ...S.ust, ...(d.ust || {}) }; save.offers(); save.budynki(); save.wyceny(); save.ust(); toast('Przywrócono'); render(); } catch (e) { toast('Błąd: ' + e.message); } };
-    $('[data-act="clear"]', v).onclick = () => { if (confirm(syncOn ? 'Usunąć wszystkie oferty z bazy? Zniknie też z serwera i z pozostałych urządzeń.' : 'Usunąć wszystkie oferty z bazy?')) { S.offers = []; S.poza = []; sync.allowMassDelete(); save.offers(); render(); } };
+    $('[data-act="clear"]', v).onclick = () => { if (confirm(syncOn ? 'Usunąć wszystkie oferty z bazy? Zniknie też z serwera i z pozostałych urządzeń.' : 'Usunąć wszystkie oferty z bazy?')) { S.offers = []; S.poza = []; S.katy = []; S.sprz = []; sync.allowMassDelete(); save.offers(); render(); } };
   }];
 }
 async function setRcn(pack, quiet) {

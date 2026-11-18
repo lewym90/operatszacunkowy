@@ -49,11 +49,22 @@ export function parseLines(rawLines) {
 // Kontrole sensowności: nie poprawiają danych, tylko flagują podejrzane rekordy.
 export function flags(r) {
   const f = [];
+  if (r.typ === 'sprzedaz' || (r.kat && r.kat !== 'mieszkanie')) return flagsKat(r);
   if (r.m2 < 12 || r.m2 > 250) f.push('metraż_nietypowy');
   const pm2 = r.cena / r.m2;
   if (pm2 < 20 || pm2 > 150) f.push('cena_za_m2_nietypowa');
   if (/pok[oó]j (do|w)|pokoje do wynaj|współlokator|miejsce w pokoju|lokal(u)? (biurow|użytk)|biur(o|owy)/i.test(r.tytul || '')) f.push('to_nie_mieszkanie_całe');
   if (r.czynsz != null && r.czynsz > r.cena) f.push('czynsz_wyższy_niż_najem');
   if (r.pokoje > 1 && r.m2 / r.pokoje < 9) f.push('metraż_na_pokój_za_mały');
+  return f;
+}
+
+// Sprzedaż i najem innych kategorii: tylko zakres metrażu i ceny za m² (ten sam co przy kontroli RCN dla sprzedaży).
+const ZAKRES = { mieszkanie: [12, 250, 2000, 30000], dom: [30, 1000, 1500, 40000], dzialka: [30, 3e6, 3, 8000], lokal: [5, 3000, 500, 40000], obiekt: [20, 60000, 300, 40000], garaz: [8, 120, 1000, 40000] };
+function flagsKat(r) {
+  const z = ZAKRES[r.kat || 'mieszkanie'], f = [];
+  if (!z) return f;
+  if (r.m2 < z[0] || r.m2 > z[1]) f.push('metraż_nietypowy');
+  if (r.typ === 'sprzedaz' && r.m2 > 0 && (r.cena / r.m2 < z[2] || r.cena / r.m2 > z[3])) f.push('cena_za_m2_nietypowa');
   return f;
 }

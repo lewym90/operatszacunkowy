@@ -18,5 +18,17 @@ const poza = Array.from({ length: 40 }, (_, i) => ({ id: 'c' + i, portalId: 'pc'
   ok(await p.evaluate(() => { const S = window.__am.S; return S.poza.length === 40 && S.offers.length === 151 && !S.poza.some(o => o.id === window.__usun); }), 'odbiór z serwera dzieli oferty na właściwe listy i usuwa');
   await p.evaluate(() => window.__am.adapters.offers.apply([], ['n2'])); await p.waitForTimeout(500); await p.reload(); await p.waitForFunction(() => window.__am); await p.waitForTimeout(1000); ok(await p.evaluate(() => window.__am.S.poza.length === 40 && window.__am.S.offers.length === 150), 'po ponownym otwarciu nic nie ginie'); ok(await wycena() === przed, 'po ponownym otwarciu wycena ta sama');
   await p.evaluate(() => { location.hash = '#/dane'; }); await p.waitForTimeout(400); ok(/Spoza Lublina/i.test(await p.innerText('#view')) && /\b40\b/.test(await p.innerText('#view')), 'Dane pokazują oferty spoza Lublina'); await p.evaluate(() => { location.hash = '#/oferty'; }); await p.waitForTimeout(600); ok(!/Chełm/.test(await p.innerText('#view')), 'lista ofert bez Chełma');
+  // pule: sprzedaż i najem innych kategorii nie wchodzą do najmu mieszkań
+  { const przed2 = await wycena();
+    const mix = [...Array.from({ length: 30 }, (_, i) => ({ portalId: 'sp' + i, typ: 'sprzedaz', cena: 400000 + i * 1000, m2: 50, pokoje: 2, pietro: 2, ulica: 'Lipowa', dzielnica: 'Śródmieście', miasto: 'Lublin', tytul: 'Sprzedam', rynek: 'wtorny' })),
+      ...Array.from({ length: 8 }, (_, i) => ({ portalId: 'ld' + i, kat: 'lokal', cena: 5000 + i * 100, m2: 80, ulica: 'Lipowa', dzielnica: 'Śródmieście', miasto: 'Lublin', tytul: 'Lokal' })),
+      { portalId: 'sz1', typ: 'sprzedaz', kat: 'dom', cena: 900000, m2: 150, dzm2: 600, miasto: 'Świdnik', tytul: 'Dom' }];
+    await p.evaluate(m => { window.__am.importOffers(m, { attrs: ['balkon'] }); }, mix); await p.waitForTimeout(300);
+    const st = await p.evaluate(() => { const S = window.__am.S; return { o: S.offers.length, k: S.katy.length, s: S.sprz.length, p: S.poza.length, fl: S.sprz.filter(o => o.flagi.length).length, at: S.sprz.filter(o => o.attrs).length, typ: S.sprz[0].typ }; });
+    ok(st.o === 150 && st.k === 8 && st.s === 30 && st.p === 41 && st.fl === 0 && st.at === 0 && st.typ === 'sprzedaz', 'pule: ' + JSON.stringify(st));
+    ok(await wycena() === przed2, 'wycena najmu mieszkań bez zmian po dodaniu sprzedaży i lokali');
+    ok(await p.evaluate(async () => { const { estimateRentKat } = await import('./js/engine.js'); const S = window.__am.S; return estimateRentKat(S.offers.concat(S.katy), { tryb: 'najem', kat: 'lokal', ulica: 'Lipowa', dzielnica: 'Śródmieście', m2: 80 }).ok; }), 'wycena najmu lokalu widzi oferty lokali');
+    await p.reload(); await p.waitForFunction(() => window.__am); await p.waitForTimeout(800); ok(await p.evaluate(() => window.__am.S.sprz.length === 30 && window.__am.S.katy.length === 8 && window.__am.adapters.offers.read().length === 229), 'po ponownym otwarciu pule zostają, synchronizacja widzi wszystkie');
+    await p.evaluate(() => { location.hash = '#/dane'; }); await p.waitForTimeout(400); const tx = await p.innerText('#view'); ok(/Oferty sprzedaży/i.test(tx) && /Najem domów, lokali/i.test(tx), 'Dane pokazują nowe pule'); }
   ok(!err.length, 'bez błędów JS: ' + err.join(' | ')); await b.close(); srv.close(); if (zle) process.exit(1); console.log('poza: OK');
 })().catch(e => { console.error(e); process.exit(1); });
