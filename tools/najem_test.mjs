@@ -2,7 +2,7 @@
 // Tylko liczy: niczego nie zapisuje. Na wyjściu są same zbiorcze liczby, bez adresów i ofert.
 // Użycie (katalog z js/engine.js i js/rcn.js): node najem_test.mjs oferty.json rcn_lublin.json osm_lublin.json [ust.json]
 import fs from 'node:fs';
-import { estimateRent, segmentTags, streetKey } from './js/engine.js';
+import { estimateRent, estimateRentKat, segmentTags, streetKey } from './js/engine.js';
 import { rcnToObjects } from './js/rcn.js';
 
 const [fOf, fRcn, fOsm, fUst] = process.argv.slice(2), PROG = 0.5;
@@ -10,7 +10,11 @@ const log = m => console.error(m), mean = a => a.reduce((s, v) => s + v, 0) / a.
 const KX = 111.32 * Math.cos(51.2 * Math.PI / 180), dist = (a, b) => Math.hypot((a[0] - b[0]) * 111.32, (a[1] - b[1]) * KX);
 const hash = s => { let h = 2166136261; for (const c of String(s)) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; };
 
-const all = JSON.parse(fs.readFileSync(fOf, 'utf8')), pool = all.filter(o => (!o.kat || o.kat === 'mieszkanie') && o.wlaczone !== false && !(o.flagi && o.flagi.length) && o.m2 > 0 && o.cena > 0);
+// Te same pule co w aplikacji (1.26.0+): tylko najem w Lublinie; sprzedaż i oferty spoza Lublina nie biorą udziału.
+const lubOK = o => { const m = (o.miasto || '').trim().toLowerCase(); return !m || m === 'lublin'; }, najemOK = o => (o.typ || 'najem') === 'najem';
+const dobre = o => o.wlaczone !== false && !(o.flagi && o.flagi.length) && o.m2 > 0 && o.cena > 0;
+const all = JSON.parse(fs.readFileSync(fOf, 'utf8')), pool = all.filter(o => najemOK(o) && lubOK(o) && (!o.kat || o.kat === 'mieszkanie') && dobre(o));
+const pomin = { sprzedaz: all.filter(o => !najemOK(o)).length, poza: all.filter(o => najemOK(o) && !lubOK(o)).length, inne: all.filter(o => najemOK(o) && lubOK(o) && o.kat && o.kat !== 'mieszkanie').length };
 if (pool.length < 100) { console.log(`Za mało ofert do rzetelnego testu: ${pool.length}, potrzeba co najmniej 100.`); process.exit(1); }
 const tx = rcnToObjects(JSON.parse(fs.readFileSync(fRcn, 'utf8'))).filter(t => t.kat === 'mieszkanie' && t.lat != null && t.lon != null);
 const osm = JSON.parse(fs.readFileSync(fOsm, 'utf8')), zebr = fUst ? (JSON.parse(fs.readFileSync(fUst, 'utf8')).zebrania || []) : [];
@@ -83,6 +87,7 @@ const pl = v => v.toFixed(1).replace('.', ','), zn = v => (v >= 0 ? '+' : '') + 
 const lista = [...baza.keys()], jest = c => pool.filter(o => o[c] != null).length, sr = mean(lista.map(o => ape(o, baza.get(o)))), obc = mean(lista.map(o => Math.log(baza.get(o) / o.cena))) * 100;
 const wiszN = pool.filter(wiszaca).length, rokN = pool.filter(o => o._rokRcn).length, los = [...losowo.keys()].filter(o => baza.has(o));
 console.log(`\nTEST TRAFNOŚCI WYCENY NAJMU  (kod narzędzia: ${new Date().toISOString().slice(0, 10)})`);
+console.log(`Pominięte (osobne pule): sprzedaż ${pomin.sprzedaz}, najem spoza Lublina ${pomin.poza}; najem innych rodzajów ${pomin.inne} (osobna tabela na końcu).`);
 console.log(`Ofert w teście: ${pool.length}, z wynikiem: ${lista.length}, ulic: ${grupy.filter(g => g[0] === 'u').length}. Pokrycie: ceny RCN ${jest('_rcn')}, uczelnia ${jest('_ucz')}, punkt ulicy ${jest('_p')}.`);
 console.log(`Błąd dzisiaj: średni ${pl(sr)}%, mediana ${pl(med(lista.map(o => ape(o, baza.get(o)))))}%, odchylenie w górę/dół ${zn(obc)}%.`);
 console.log(`Dla porównania, gdy chowamy pojedyncze oferty, a nie całe ulice: średni ${pl(mean(los.map(o => ape(o, losowo.get(o)))))}%.\n`);
@@ -101,3 +106,16 @@ console.log(`\nGDZIE APLIKACJA MYLI SIĘ NAJBARDZIEJ\n${'GRUPA'.padEnd(26)} ${'O
 for (const [nag, fn] of POD) { const gr = new Map(); lista.forEach(o => { const k = fn(o); (gr.get(k) || gr.set(k, []).get(k)).push(o); }); console.log(nag); const wyn = [...gr].filter(([, l]) => l.length >= 10).sort((a, b) => b[1].length - a[1].length); for (const [k, l] of wyn) { const e = l.map(o => ape(o, baza.get(o))), za = mean(l.map(o => (baza.get(o) / o.cena - 1) * 100)), wp = l.filter(o => inf.get(o) && o.cena >= inf.get(o).lo && o.cena <= inf.get(o).hi).length / l.length * 100; console.log(`  ${String(k).slice(0, 24).padEnd(24)} ${String(l.length).padStart(5)} ${(pl(mean(e)) + '%').padStart(7)} ${(pl(med(e)) + '%').padStart(7)} ${zn(za).padStart(7)} ${(Math.round(e.filter(x => x > 30).length / l.length * 100) + '%').padStart(5)} ${(Math.round(wp) + '%').padStart(12)}`); } const r = [...gr].filter(([, l]) => l.length < 10).reduce((a, [, l]) => a + l.length, 0); if (r) console.log(`  (pominięto małe grupy, razem ofert: ${r})`); }
 console.log('\nZAWYŻA: plus = aplikacja daje za dużo, minus = za mało. >30%: udział ofert z pomyłką ponad 30%. W PRZEDZIALE: ile prawdziwych cen wpadło w pokazywany przedział (cel ok. 50%).');
 console.log(`\nZYSK to punkty procentowe mniej błędu. POMAGA tylko, gdy cały margines jest powyżej zera i zysk ma co najmniej ${pl(PROG)} pkt.`);
+
+// ---------- najem innych rodzajów (lokale, hale, domy, garaże): ta sama metoda, chowanie całych ulic ----------
+const KN = { lokal: 'lokale użytkowe', obiekt: 'hale i magazyny', dom: 'domy', garaz: 'garaże' };
+console.log(`\nNAJEM INNYCH RODZAJÓW (Lublin, wycena tylko z ofert tego rodzaju)\n${'RODZAJ'.padEnd(18)} ${'OFERT'.padStart(5)} ${'Z WYNIKIEM'.padStart(10)} ${'ŚREDNI'.padStart(7)} ${'MEDIANA'.padStart(7)} ${'ZAWYŻA'.padStart(7)} ${'>30%'.padStart(5)} ${'W PRZEDZIALE'.padStart(12)}`);
+for (const [k, n] of Object.entries(KN)) {
+  const pk = all.filter(o => najemOK(o) && lubOK(o) && o.kat === k && dobre(o)), w = new Map();
+  if (pk.length < 10) { console.log(`${n.padEnd(18)} ${String(pk.length).padStart(5)}  za mało ofert do testu (potrzeba 10)`); continue; }
+  for (const f of foldy(pk, Math.min(10, pk.length), 3)) { const ws = new Set(f), ucz = pk.filter(o => !ws.has(o)); for (const o of f) { const r = estimateRentKat(ucz, { tryb: 'najem', kat: k, ulica: o.ulica || '', dzielnica: o.dzielnica || '', m2: o.m2 }); if (r.ok && r.total?.mid > 0) w.set(o, r.total); } }
+  const l = [...w.keys()]; if (!l.length) { console.log(`${n.padEnd(18)} ${String(pk.length).padStart(5)}  brak wyników`); continue; }
+  const e = l.map(o => Math.abs(o.cena / w.get(o).mid - 1) * 100), za = mean(l.map(o => (w.get(o).mid / o.cena - 1) * 100)), wp = l.filter(o => o.cena >= w.get(o).lo && o.cena <= w.get(o).hi).length / l.length * 100;
+  console.log(`${n.padEnd(18)} ${String(pk.length).padStart(5)} ${String(l.length).padStart(10)} ${(pl(mean(e)) + '%').padStart(7)} ${(pl(med(e)) + '%').padStart(7)} ${zn(za).padStart(7)} ${(Math.round(e.filter(x => x > 30).length / l.length * 100) + '%').padStart(5)} ${(Math.round(wp) + '%').padStart(12)}`);
+}
+console.log('Uwaga: przy innych rodzajach aplikacja zawsze pokazuje pewność niską. Lokale i hale bardzo się różnią przeznaczeniem, więc duży błąd jest tu spodziewany.');
