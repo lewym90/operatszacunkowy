@@ -107,15 +107,82 @@ for (const [nag, fn] of POD) { const gr = new Map(); lista.forEach(o => { const 
 console.log('\nZAWYŻA: plus = aplikacja daje za dużo, minus = za mało. >30%: udział ofert z pomyłką ponad 30%. W PRZEDZIALE: ile prawdziwych cen wpadło w pokazywany przedział (cel ok. 50%).');
 console.log(`\nZYSK to punkty procentowe mniej błędu. POMAGA tylko, gdy cały margines jest powyżej zera i zysk ma co najmniej ${pl(PROG)} pkt.`);
 
+// ---------- KALIBRACJA (21.11.2026): pewność, poprawka pokoi, stare oferty ----------
+// Wszystko uczone wyłącznie na części uczącej (wewnętrzne części z chowaniem ulic), sprawdzane na schowanych ulicach. Nic nie zmienia aplikacji.
+const lastFull = zebr.filter(z => z.pelne).map(z => z.id).reduce((a, b) => Math.max(a, b), -Infinity);
+const aktualna = o => !Number.isFinite(lastFull) || o.ost == null || o.ost >= lastFull;
+const szacR = (u, o) => { const r = estimateRent(u, subjectOf(o)); return r.ok && r.total?.mid > 0 ? r : null; };
+const gPok = o => o.pokoje >= 4 ? 4 : o.pokoje || 0;
+const cechyR = (r, o) => [Math.log(r.total.hi / r.total.lo), r.model?.agreement ?? 0, Math.log(r.n || 1), r.confidence?.score || 1, Math.abs(Math.log(o.m2 / 50)), o.pokoje >= 4 ? 1 : 0, o.m2 >= 85 ? 1 : 0];
+const skala = (lo, mid, hi, k) => [mid * (lo / mid) ** k, mid * (hi / mid) ** k];
+const pokryj = (l, R, k = () => 1) => l.length ? l.filter(o => { const r = R.get(o), [a, b] = skala(r.total.lo, r.total.mid, r.total.hi, k(o)); return o.cena >= a && o.cena <= b; }).length / l.length * 100 : NaN;
+const Rout = new Map(), nowaEt = new Map(), nowaK = new Map(), pokAll = new Map(), pok1 = new Map(), bezStarych = new Map();
+const t1 = Date.now(); log('Kalibracja: liczę (kilka minut)…');
+foldy(pool, K, 1).forEach((f, i) => {
+  const w = new Set(f), u = pool.filter(o => !w.has(o)), Rin = new Map();
+  for (const g of foldy(u, ILE_WEW, 20 + i)) { const ws = new Set(g), uu = u.filter(o => !ws.has(o)); for (const o of g) { const r = szacR(uu, o); if (r) Rin.set(o, r); } }
+  const inL = [...Rin.keys()];
+  // 1) pewność: przewidywany błąd z cech wyniku, progi z tercyli części uczącej, przedział skalowany do 50% w każdej grupie
+  const fn = dopasuj(inL.map(o => cechyR(Rin.get(o), o)), inL.map(o => Math.abs(Math.log(o.cena / Rin.get(o).total.mid))), 5);
+  const pin = inL.map(o => fn(cechyR(Rin.get(o), o))).sort((a, b) => a - b), q1 = pin[Math.floor(pin.length / 3)], q2 = pin[Math.floor(pin.length * 2 / 3)];
+  const et = p => p <= q1 ? 'wysoka' : p <= q2 ? 'średnia' : 'niska', kEt = {};
+  for (const e of ['wysoka', 'średnia', 'niska']) { const l = inL.filter(o => et(fn(cechyR(Rin.get(o), o))) === e); let best = 1, bd = 1e9; for (let k = 0.4; k <= 3.01; k += 0.05) { const d = Math.abs(pokryj(l, Rin, () => k) - 50); if (d < bd) { bd = d; best = k; } } kEt[e] = best; }
+  // 2) poprawka pokoi: średnia reszta w grupie, ściągnięta do zera (n/(n+30))
+  const c = {}; for (const g of [1, 2, 3, 4]) { const l = inL.filter(o => gPok(o) === g), sm = l.reduce((s, o) => s + Math.log(o.cena / Rin.get(o).total.mid), 0); c[g] = sm / (l.length + 30); }
+  const uAkt = u.filter(aktualna);
+  for (const o of f) {
+    const r = szacR(u, o); if (!r) continue; Rout.set(o, r);
+    const e = et(fn(cechyR(r, o))); nowaEt.set(o, e); nowaK.set(o, kEt[e]);
+    pokAll.set(o, r.total.mid * Math.exp(c[gPok(o)] || 0)); pok1.set(o, r.total.mid * Math.exp(gPok(o) === 1 ? c[1] : 0));
+    if (aktualna(o)) { const r2 = szacR(uAkt, o); if (r2) bezStarych.set(o, r2.total.mid); }
+  }
+  log(`  kalibracja: część ${i + 1} z ${K}, ${Math.round((Date.now() - t1) / 1000)} s`);
+});
+{
+  const L = [...Rout.keys()], blad = o => Math.abs(o.cena / Rout.get(o).total.mid - 1) * 100;
+  const tab = (tyt, grupuj, k) => { console.log(tyt); for (const e of ['wysoka', 'średnia', 'niska']) { const l = L.filter(o => grupuj(o) === e); if (!l.length) { console.log(`  ${e.padEnd(10)} 0`); continue; } const b = l.map(blad); console.log(`  ${e.padEnd(10)} ${String(l.length).padStart(5)} ${(pl(mean(b)) + '%').padStart(7)} ${(pl(med(b)) + '%').padStart(7)} ${(Math.round(b.filter(x => x > 30).length / l.length * 100) + '%').padStart(5)} ${(Math.round(pokryj(l, Rout, k)) + '%').padStart(12)}`); } };
+  console.log(`\nKALIBRACJA PEWNOŚCI (${L.length} ofert)\n  ${'POZIOM'.padEnd(10)} ${'OFERT'.padStart(5)} ${'ŚREDNI'.padStart(7)} ${'MEDIANA'.padStart(7)} ${'>30%'.padStart(5)} ${'W PRZEDZIALE'.padStart(12)}`);
+  tab('Dziś w aplikacji:', o => Rout.get(o).confidence?.level, () => 1);
+  tab('Propozycja (pewność z przewidywanego błędu, przedział dopasowany do poziomu):', o => nowaEt.get(o), o => nowaK.get(o));
+  const kk = {}; for (const e of ['wysoka', 'średnia', 'niska']) { const v = L.filter(o => nowaEt.get(o) === e).map(o => nowaK.get(o)); kk[e] = v.length ? pl(med(v)) : '-'; }
+  console.log(`  szerokość przedziału względem dzisiejszej: wysoka ×${kk.wysoka}, średnia ×${kk['średnia']}, niska ×${kk.niska}`);
+  const zaw = (l, M) => l.length ? zn(mean(l.map(o => (M.get(o) / o.cena - 1) * 100))) : '-';
+  const p1 = L.filter(o => gPok(o) === 1), mid = new Map(L.map(o => [o, Rout.get(o).total.mid]));
+  console.log(`\nPOPRAWKA WG LICZBY POKOI (uczona na części uczącej)`);
+  console.log(wiersz('Tylko 1 pokój', porownaj(pok1)) + `  (1 pok.: zawyżenie ${zaw(p1, mid)}% → ${zaw(p1, pok1)}%)`);
+  console.log(wiersz('Wszystkie grupy pokoi', porownaj(pokAll)) + `  (razem: zawyżenie ${zaw(L, mid)}% → ${zaw(L, pokAll)}%)`);
+  const akt = L.filter(aktualna), stare = L.filter(o => !aktualna(o));
+  console.log(`\nSTARE OFERTY (aktualnych ${akt.length}, nieaktualnych ${stare.length}; ostatnie pełne zebranie nr ${Number.isFinite(lastFull) ? lastFull : '-'})`);
+  console.log(`  zawyżenie przy ofertach aktualnych ${zaw(akt, mid)}%, przy nieaktualnych ${zaw(stare, mid)}%`);
+  if (bezStarych.size >= 30) console.log(wiersz('Wycena tylko z aktualnych ofert', porownaj(bezStarych, aktualna)) + `  (zawyżenie ${zaw([...bezStarych.keys()], mid)}% → ${zaw([...bezStarych.keys()], bezStarych)}%)`);
+  else console.log('  za mało danych o zebraniach do tego porównania');
+}
+
 // ---------- najem innych rodzajów (lokale, hale, domy, garaże): ta sama metoda, chowanie całych ulic ----------
 const KN = { lokal: 'lokale użytkowe', obiekt: 'hale i magazyny', dom: 'domy', garaz: 'garaże' };
 console.log(`\nNAJEM INNYCH RODZAJÓW (Lublin, wycena tylko z ofert tego rodzaju)\n${'RODZAJ'.padEnd(18)} ${'OFERT'.padStart(5)} ${'Z WYNIKIEM'.padStart(10)} ${'ŚREDNI'.padStart(7)} ${'MEDIANA'.padStart(7)} ${'ZAWYŻA'.padStart(7)} ${'>30%'.padStart(5)} ${'W PRZEDZIALE'.padStart(12)}`);
 for (const [k, n] of Object.entries(KN)) {
   const pk = all.filter(o => najemOK(o) && lubOK(o) && o.kat === k && dobre(o)), w = new Map();
   if (pk.length < 10) { console.log(`${n.padEnd(18)} ${String(pk.length).padStart(5)}  za mało ofert do testu (potrzeba 10)`); continue; }
-  for (const f of foldy(pk, Math.min(10, pk.length), 3)) { const ws = new Set(f), ucz = pk.filter(o => !ws.has(o)); for (const o of f) { const r = estimateRentKat(ucz, { tryb: 'najem', kat: k, ulica: o.ulica || '', dzielnica: o.dzielnica || '', m2: o.m2 }); if (r.ok && r.total?.mid > 0) w.set(o, r.total); } }
+  const w2 = new Map(), bs = [];
+  for (const f of foldy(pk, Math.min(10, pk.length), 3)) {
+    const ws = new Set(f), ucz = pk.filter(o => !ws.has(o)), sub = o => ({ tryb: 'najem', kat: k, ulica: o.ulica || '', dzielnica: o.dzielnica || '', m2: o.m2 });
+    const x = ucz.map(o => Math.log(o.m2)), y = ucz.map(o => Math.log(o.cena / o.m2)), mx = mean(x), my = mean(y), b = x.reduce((s, v, j) => s + (v - mx) * (y[j] - my), 0) / (x.reduce((s, v) => s + (v - mx) ** 2, 0) || 1); bs.push(b);
+    for (const o of f) {
+      const r = estimateRentKat(ucz, sub(o)); if (r.ok && r.total?.mid > 0) w.set(o, r.total);
+      const r2 = estimateRentKat(ucz.map(q => ({ ...q, cena: q.cena * (o.m2 / q.m2) ** b })), sub(o)); if (r2.ok && r2.total?.mid > 0) w2.set(o, r2.total);   // cena za m² przeliczona na metraż wycenianego
+    }
+  }
   const l = [...w.keys()]; if (!l.length) { console.log(`${n.padEnd(18)} ${String(pk.length).padStart(5)}  brak wyników`); continue; }
   const e = l.map(o => Math.abs(o.cena / w.get(o).mid - 1) * 100), za = mean(l.map(o => (w.get(o).mid / o.cena - 1) * 100)), wp = l.filter(o => o.cena >= w.get(o).lo && o.cena <= w.get(o).hi).length / l.length * 100;
   console.log(`${n.padEnd(18)} ${String(pk.length).padStart(5)} ${String(l.length).padStart(10)} ${(pl(mean(e)) + '%').padStart(7)} ${(pl(med(e)) + '%').padStart(7)} ${zn(za).padStart(7)} ${(Math.round(e.filter(x => x > 30).length / l.length * 100) + '%').padStart(5)} ${(Math.round(wp) + '%').padStart(12)}`);
+  const l2 = l.filter(o => w2.has(o));
+  if (l2.length) {
+    const e2 = l2.map(o => Math.abs(o.cena / w2.get(o).mid - 1) * 100), e1 = l2.map(o => Math.abs(o.cena / w.get(o).mid - 1) * 100), za2 = mean(l2.map(o => (w2.get(o).mid / o.cena - 1) * 100)), wp2 = l2.filter(o => o.cena >= w2.get(o).lo && o.cena <= w2.get(o).hi).length / l2.length * 100;
+    const gr = new Map(); l2.forEach((o, j) => { const g = grupa(o); (gr.get(g) || gr.set(g, []).get(g)).push(j); }); const gl = [...gr.values()]; let sd = 11; const rnd = () => (sd = (sd * 1664525 + 1013904223) % 4294967296) / 4294967296, z = [];
+    for (let t = 0; t < 2000; t++) { let A = 0, B = 0, c = 0; for (let q = 0; q < gl.length; q++) for (const j of gl[Math.floor(rnd() * gl.length)]) { A += e1[j]; B += e2[j]; c++; } z.push((A - B) / c); } z.sort((a, b) => a - b);
+    const zys = mean(e1) - mean(e2), w_ = z[100] > 0 && zys >= PROG ? 'POMAGA' : z[1899] < 0 ? 'SZKODZI' : 'BEZ PEWNEJ RÓŻNICY';
+    console.log(`  + poprawka metrażu (cena za m² przy 2× większym metrażu: ${zn((2 ** med(bs) - 1) * 100)}%): średni ${(pl(mean(e2)) + '%')}, mediana ${pl(med(e2))}%, zawyża ${zn(za2)}, w przedziale ${Math.round(wp2)}%; zysk ${zn(zys)} pkt (margines ${zn(z[100])} do ${zn(z[1899])}) ${w_}`);
+  }
 }
 console.log('Uwaga: przy innych rodzajach aplikacja zawsze pokazuje pewność niską. Lokale i hale bardzo się różnią przeznaczeniem, więc duży błąd jest tu spodziewany.');
