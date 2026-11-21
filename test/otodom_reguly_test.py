@@ -14,4 +14,5 @@ i = {'id': 5, 'slug': 'ladne-ID4abc', 'totalPrice': {'value': 2500}, 'rentPrice'
 assert Z.rekord(i) == {'portalId': 'ID4abc', 'url': 'https://www.otodom.pl/pl/oferta/ladne-ID4abc', 'cena': 2500, 'czynsz': 400, 'pokoje': 2, 'm2': 45, 'pietro': 0, 'ulica': 'Lipowa', 'dzielnica': 'Śródmieście', 'miasto': 'Lublin', 'tytul': 'Ładne', 'sprzedawca': 'prywatna'}
 assert Z.rekord({**i, 'images': [{'small': 'https://x.olxcdn.com/a.jpg'}]})['foto'] == 'https://x.olxcdn.com/a.jpg' and 'foto' not in Z.rekord({**i, 'images': [{'small': 'javascript:x'}]})
 assert Z.rekord({**i, 'hidePrice': True}) is None and Z.rekord({**i, 'estate': 'INVESTMENT'}) is None
+assert Z.czynsz_ad({'target': {'Rent': 500}}) == 500 and Z.czynsz_ad({'target': {'Rent': '450.0'}}) == 450 and Z.czynsz_ad({'target': {}}) is None and Z.czynsz_ad({'target': {'Rent': 'x'}}) is None
 print('otodom_reguly: OK')

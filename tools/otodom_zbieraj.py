@@ -107,12 +107,22 @@ def lista(pg, extra='', sciezka='wynajem/mieszkanie', typ='najem', kat='mieszkan
     lista.widziane = len(wid)                      # wszystkie pozycje listy, także pominięte (inwestycje, ukryta cena)
     return list(out.values()), tot
 
+def czynsz_ad(ad):
+    """Czynsz administracyjny ze strony ogłoszenia (pole Rent), gdy lista go nie podała."""
+    v = (ad.get('target') or {}).get('Rent')
+    try: v = int(float(v))
+    except (TypeError, ValueError): return None
+    return v if 0 < v < 20000 else None
+
 def szczegoly_sprz(pg, r):
     """Oferta sprzedaży: rok budowy, stan wykończenia, rynek, powierzchnia działki domu. Tylko pola techniczne."""
     st, d = next_data(pg, r['url'])
     ad = (((d or {}).get('props') or {}).get('pageProps') or {}).get('ad') if d else None
     if not ad: return 'brak'
-    t = ad.get('target') or {}; y = rok_z(ad, ''); c = (t.get('Construction_status') or [None])[0]; mk = t.get('MarketType')
+    t = ad.get('target') or {}; y = rok_z(ad, '')
+    rc = czynsz_ad(ad)
+    if rc and not r.get('czynsz'): r['czynsz'] = rc
+    c = (t.get('Construction_status') or [None])[0]; mk = t.get('MarketType')
     if y: r['rok'] = y
     if STAN.get(c): r['stan'] = STAN[c]
     if mk in ('primary', 'secondary'): r['rynek'] = 'pierwotny' if mk == 'primary' else 'wtorny'
@@ -127,6 +137,8 @@ def szczegoly(pg, r):
     ad = (((d or {}).get('props') or {}).get('pageProps') or {}).get('ad') if d else None
     if not ad: return 'brak'
     opis = tekst(ad.get('description')); y = rok_z(ad, opis); p = parking(opis)
+    rc = czynsz_ad(ad)
+    if rc and not r.get('czynsz'): r['czynsz'] = rc
     if y: r['rok'] = y
     if p: r['parking'] = p
     if meble(opis): r['attrs'] = {'meble': 1}

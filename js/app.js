@@ -598,11 +598,12 @@ function viewOferty() {
       const prevTxt = o => { const h = (o.hc || []).map(x => x[1]).slice(0, -1).reverse(); return h.length ? ` <span class="prev">(poprzednio ${h.map(x => fmt(x) + ' zł').join(', ')})</span>` : ''; };
       const row = ([o, s]) => {
         const title = esc([o.ulica, o.dzielnica].filter(Boolean).join(', ') || 'Oferta najmu'), pk = parkNote(o.parking);
-        const meta = `${String(o.m2).replace('.', ',')} m² · ${o.pokoje} pok.${o.pietro != null ? ' · ' + (o.pietro === 0 ? 'parter' : o.pietro + '. p.') : ''}${o.czynsz ? ' · czynsz adm. ' + fmt(o.czynsz) + ' zł' : ''}`;
+        const meta = `${String(o.m2).replace('.', ',')} m² · ${o.pokoje} pok.${o.pietro != null ? ' · ' + (o.pietro === 0 ? 'parter' : o.pietro + '. p.') : ''}`;
+        const cz = o.czynsz ? `<div class="cz">+ czynsz adm. ${fmt(o.czynsz)} zł</div>` : '<div class="cz none">czynsz adm. nie podano</div>';
         const badges = `${s !== 'aktualne' ? `<i class="bd ${s}">${s}</i>` : ''}${pk ? `<i class="bd park">${esc(pk)}</i>` : ''}${o.flagi && o.flagi.length ? '<i class="bd warn">podejrzana</i>' : ''}`;
         // miniatura z portalu: tylko w monitoringu ofert, do rozpoznania ogłoszenia; nigdy w wycenach ani raportach dla klienta
         const foto = /^https:\/\//.test(o.foto || '') ? `<img class="ofoto" src="${esc(o.foto)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : '';
-        const inner = `${foto}<div class="t"><b>${title}</b>${o.url ? '<span class="ext" aria-hidden="true">↗</span>' : ''}</div><div class="p">${fmt(o.cena)} zł${prevTxt(o)}</div><div class="m">${meta}</div><div class="b">${badges}</div>`;
+        const inner = `${foto}<div class="t"><b>${title}</b>${o.url ? '<span class="ext" aria-hidden="true">↗</span>' : ''}</div><div class="p">${fmt(o.cena)} zł${prevTxt(o)}</div>${cz}<div class="m">${meta}</div><div class="b">${badges}</div>`;
         return `<div class="orow ${o.wlaczone === false ? 'dis' : ''}">${o.url ? `<a class="oin${foto ? ' zf' : ''}" href="${esc(o.url)}" target="_blank" rel="noopener noreferrer">${inner}</a>` : `<div class="oin${foto ? ' zf' : ''}">${inner}</div>`}<button type="button" class="otg" data-id="${o.id}" aria-label="${o.wlaczone === false ? 'Włącz ofertę do wycen' : 'Wyłącz ofertę z wycen'}">${o.wlaczone === false ? 'wyłączona' : 'w wycenach'}</button></div>`;
       };
       $('#of-list', v).innerHTML = S.offers.length ? `<div class="eyebrow">Pokazano ${fmt(shown.length)} z ${fmt(rows.length)} (w bazie ${fmt(S.offers.length)})</div>${shown.map(row).join('') || '<p class="small muted" style="margin:10px 0 0">Żadna oferta nie spełnia filtrów.</p>'}${rows.length > shown.length ? `<div class="gap"></div><button class="btn ghost" id="of-more">Pokaż więcej</button>` : ''}`
