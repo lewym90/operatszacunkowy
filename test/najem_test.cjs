@@ -10,6 +10,7 @@ const oferty = (efekt, pelne) => { const o = []; for (let i = 0; i < 240; i++) {
 const kalib = () => { const o = []; for (let i = 0; i < 300; i++) { const u = st[i % N], pok = 1 + i % 3, m = pok === 1 ? 25 + (i * 7) % 15 : 35 + (i * 11) % 45, stara = i % 4 === 0;
     o.push({ id: 'q' + i, cena: Math.round(m * 55 * (pok === 1 ? 0.8 : 1) * (stara ? 1.6 : 1) * Math.exp(u.lvl * .3 + gs() * .06)), m2: m, pokoje: pok, pietro: 2, ulica: u.n, dzielnica: 'Jedna', tytul: 'Mieszkanie', wlaczone: true, flagi: [], ost: stara ? 1 : 3, pierw: 1 }); }
   for (let i = 0; i < 80; i++) { const u = st[i % N], m = 30 + (i * 37) % 900; o.push({ id: 'h' + i, kat: 'obiekt', cena: Math.round(m * 60 * (m / 100) ** -0.45 * Math.exp(gs() * .08)), m2: m, ulica: u.n, dzielnica: 'Jedna', miasto: 'Lublin', tytul: 'Hala', wlaczone: true, flagi: [] }); }
+  for (let i = 0; i < 6; i++) { const u = st[i % N]; o.push({ id: 'zz' + i, kat: 'obiekt', cena: 15, m2: 800, ulica: u.n, dzielnica: 'Jedna', miasto: 'Lublin', tytul: 'Hala cena za m2', wlaczone: true, flagi: [] }); }
   return o; };
 const bieg = (efekt, pelne, wlasne) => { fs.writeFileSync(T + '/oferty.json', JSON.stringify(wlasne || oferty(efekt, pelne))); fs.writeFileSync(T + '/ust.json', JSON.stringify(wlasne ? { zebrania: [{ id: 1, pelne: true, ts: 1 }, { id: 3, pelne: true, ts: 3 }] } : {})); const w = execFileSync('node', ['najem_test.mjs', 'oferty.json', 'rcn.json', 'osm.json', 'ust.json'], { cwd: T, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 280000 }); return w; };
 const a = bieg(true), b = bieg(false), c = bieg(true, true), lin = (w, n) => w.split('\n').find(l => l.startsWith(n)) || ''; let zle = 0; const ok = (c, m) => { console.log((c ? 'OK   ' : 'FAIL ') + m); if (!c) zle++; };
@@ -25,6 +26,8 @@ const d = bieg(false, false, kalib());
 ok(/Tylko 1 pokój.*BEZ PEWNEJ/.test(d), 'efekt pokoi, który silnik już widzi: poprawka nic nie obiecuje: ' + (d.split('\n').find(l => l.startsWith('Tylko 1 pokój')) || ''));
 { const l = d.split('\n').find(l => l.startsWith('Wycena tylko')) || '', m = l.match(/zawyżenie ([+-][\d,]+)% → ([+-][\d,]+)%/), v = x => +x.replace(',', '.'); ok(/nieaktualnych 75/.test(d) && m && v(m[2]) < v(m[1]) - 1, 'stare, droższe oferty: wycena tylko z aktualnych zmniejsza zawyżenie: ' + l); }
 ok(/hale i magazyny[\s\S]*?poprawka metrażu.*POMAGA/.test(d), 'poprawka metrażu hal wykrywa zaszyty efekt: ' + (d.split('\n').find(l => l.includes('poprawka metrażu')) || ''));
+ok(/hale i magazyny \(86 ofert\)/.test(d) && /reguła „ponad 4× od mediany w górę lub w dół”: podejrzanych 6 /.test(d), 'czystość: 6 hal z ceną za m² wykryte: ' + (d.split('\n').find(l => l.includes('reguła „poza 3')) || ''));
+ok(/bez podejrzanych  .*zysk [+-]\d/.test(d) && /poprawka metrażu .*POMAGA/.test(d), 'czystość: porównanie liczone, poprawka metrażu na czystych danych wykryta: ' + (d.split('\n').find(l => l.includes('bez podejrzanych  ')) || ''));
 ok(/KALIBRACJA PEWNOŚCI/.test(d) && /Propozycja/.test(d) && !/NaN/.test(d), 'tabela pewności');
 ok(!/Tylko 1 pokój.*POMAGA/.test(a) && !/hale i magazyny[\s\S]*?poprawka metrażu.*POMAGA/.test(a), 'bez zaszytych efektów: poprawki nic nie obiecują');
 ok(!/Testowa/.test(a + b + c + d), 'wynik bez nazw ulic'); ok(!a.includes('NaN') && !b.includes('NaN'), 'bez NaN');

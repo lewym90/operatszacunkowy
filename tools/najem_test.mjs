@@ -185,4 +185,31 @@ for (const [k, n] of Object.entries(KN)) {
     console.log(`  + poprawka metrażu (cena za m² przy 2× większym metrażu: ${zn((2 ** med(bs) - 1) * 100)}%): średni ${(pl(mean(e2)) + '%')}, mediana ${pl(med(e2))}%, zawyża ${zn(za2)}, w przedziale ${Math.round(wp2)}%; zysk ${zn(zys)} pkt (margines ${zn(z[100])} do ${zn(z[1899])}) ${w_}`);
   }
 }
+// ---------- CZYSTOŚĆ DANYCH lokali i hal (21.11.2026): ogłoszenia z nierealną ceną za m² ----------
+{
+  const GR = { lokal: [10, 300], obiekt: [3, 100] }, q = (a, p) => { const v = a.slice().sort((x, y) => x - y); return v[Math.min(v.length - 1, Math.floor(p * (v.length - 1)))]; };
+  const kat2 = (k, ucz, o, b) => { const u = b == null ? ucz : ucz.map(x => ({ ...x, cena: x.cena * (o.m2 / x.m2) ** b })); const r = estimateRentKat(u, { tryb: 'najem', kat: k, ulica: o.ulica || '', dzielnica: o.dzielnica || '', m2: o.m2 }); return r.ok && r.total?.mid > 0 ? r.total : null; };
+  const elast = u => { const x = u.map(o => Math.log(o.m2)), y = u.map(o => Math.log(o.cena / o.m2)), mx = mean(x), my = mean(y); return x.reduce((s, v, j) => s + (v - mx) * (y[j] - my), 0) / (x.reduce((s, v) => s + (v - mx) ** 2, 0) || 1); };
+  const ocena = (l, M) => { const e = l.map(o => Math.abs(o.cena / M.get(o).mid - 1) * 100); return { n: l.length, sr: mean(e), me: med(e), za: mean(l.map(o => (M.get(o).mid / o.cena - 1) * 100)), wp: l.filter(o => o.cena >= M.get(o).lo && o.cena <= M.get(o).hi).length / l.length * 100, e }; };
+  const zysk = (l, e1, e2) => { const gr = new Map(); l.forEach((o, j) => { const g = grupa(o); (gr.get(g) || gr.set(g, []).get(g)).push(j); }); const gl = [...gr.values()]; let sd = 13; const rnd = () => (sd = (sd * 1664525 + 1013904223) % 4294967296) / 4294967296, z = []; for (let t = 0; t < 2000; t++) { let A = 0, B = 0, c = 0; for (let i = 0; i < gl.length; i++) for (const j of gl[Math.floor(rnd() * gl.length)]) { A += e1[j]; B += e2[j]; c++; } z.push((A - B) / c); } z.sort((a, b) => a - b); const zm = mean(e1) - mean(e2); return `${zn(zm)} pkt (margines ${zn(z[100])} do ${zn(z[1899])}) ${z[100] > 0 && zm >= PROG ? 'POMAGA' : z[1899] < 0 ? 'SZKODZI' : 'BEZ PEWNEJ RÓŻNICY'}`; };
+  const wr = (t, r) => `  ${t.padEnd(44)} ${String(r.n).padStart(4)} ${(pl(r.sr) + '%').padStart(7)} ${(pl(r.me) + '%').padStart(7)} ${zn(r.za).padStart(7)} ${(Math.round(r.wp) + '%').padStart(5)}`;
+  console.log(`\nCZYSTOŚĆ DANYCH: LOKALE I HALE (cena za m² miesięcznie)`);
+  for (const [k, [gd, gg]] of Object.entries(GR)) {
+    const pk = all.filter(o => najemOK(o) && lubOK(o) && o.kat === k && dobre(o)); if (pk.length < 20) { console.log(`${KN[k]}: za mało ofert`); continue; }
+    const pm = pk.map(o => o.cena / o.m2), md = med(pm);
+    console.log(`${KN[k]} (${pk.length} ofert): cena za m² 1% ${pl(q(pm, .01))}, 5% ${pl(q(pm, .05))}, 25% ${pl(q(pm, .25))}, mediana ${pl(md)}, 75% ${pl(q(pm, .75))}, 95% ${pl(q(pm, .95))}, 99% ${pl(q(pm, .99))} zł; cena miesięczna poniżej 300 zł: ${pk.filter(o => o.cena < 300).length}`);
+    const REG = [[`poza ${gd}–${gg} zł/m²`, o => { const v = o.cena / o.m2; return v < gd || v > gg; }], ['ponad 4× od mediany w górę lub w dół', o => { const v = o.cena / o.m2; return v < md / 4 || v > md * 4; }]];
+    for (const [nz, zle_] of REG) {
+      const brud = pk.filter(zle_), czyste = pk.filter(o => !zle_(o));
+      console.log(` reguła „${nz}”: podejrzanych ${brud.length} (${pl(brud.length / pk.length * 100)}%), np. cena za m²: ${brud.slice(0, 8).map(o => { const v = o.cena / o.m2; return v < 1 ? v.toFixed(3).replace('.', ',') : pl(v); }).join('; ') || '-'}`);
+      if (!brud.length || czyste.length < 20) continue;
+      const M0 = new Map(), M1 = new Map(), M2 = new Map(), bs = [];
+      for (const f of foldy(pk, 10, 5)) { const ws = new Set(f), u = pk.filter(o => !ws.has(o)), uc = u.filter(o => !zle_(o)), b = elast(uc); bs.push(b); for (const o of f) { if (zle_(o)) continue; const a0 = kat2(k, u, o), a1 = kat2(k, uc, o), a2 = kat2(k, uc, o, b); if (a0 && a1 && a2) { M0.set(o, a0); M1.set(o, a1); M2.set(o, a2); } } }
+      const l = [...M0.keys()]; if (l.length < 15) continue; const r0 = ocena(l, M0), r1 = ocena(l, M1), r2 = ocena(l, M2);
+      console.log(`  ${'WYCENA CZYSTYCH OFERT'.padEnd(44)} ${'OFERT'.padStart(4)} ${'ŚREDNI'.padStart(7)} ${'MEDIANA'.padStart(7)} ${'ZAWYŻA'.padStart(7)} ${'PRZEDZ.'.padStart(5)}`);
+      console.log(wr('dziś (uczy się też na podejrzanych)', r0)); console.log(wr('bez podejrzanych', r1) + `  zysk ${zysk(l, r0.e, r1.e)}`); console.log(wr(`bez podejrzanych + poprawka metrażu (${zn((2 ** med(bs) - 1) * 100)}% przy 2× m²)`, r2) + `  zysk wobec „bez podejrzanych” ${zysk(l, r1.e, r2.e)}`);
+    }
+  }
+  console.log('Podejrzane ogłoszenia nie są tu nigdzie wyceniane ani usuwane; test tylko liczy, jak bardzo psują wyceny pozostałych.');
+}
 console.log('Uwaga: przy innych rodzajach aplikacja zawsze pokazuje pewność niską. Lokale i hale bardzo się różnią przeznaczeniem, więc duży błąd jest tu spodziewany.');
