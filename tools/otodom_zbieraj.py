@@ -32,6 +32,12 @@ def miejsce(loc):
     d = [x['name'] for x in L if x.get('locationLevel') not in ('voivodeship', 'county', 'municipality', 'city_or_village', 'street', 'country')]
     return m, (d[-1] if d else None)
 
+def zdjecie(i):
+    """Adres miniatury zdjęcia głównego z portalu (sam link, plik nie jest pobierany). Tylko do rozpoznania oferty przez pośrednika."""
+    im = (i.get('images') or [{}])[0] or {}
+    u = im.get('small') or im.get('medium') or ''
+    return u if u.startswith('https://') else None
+
 def rekord(i, typ='najem', kat='mieszkanie'):
     if i.get('hidePrice') or not (i.get('totalPrice') or {}).get('value') or i.get('estate') == 'INVESTMENT' or not (i.get('areaInSquareMeters') or 0) > 0: return None
     m, d = miejsce(i.get('location')); slug = i.get('slug') or ''
@@ -39,6 +45,7 @@ def rekord(i, typ='najem', kat='mieszkanie'):
             'czynsz': int(i['rentPrice']['value']) if (i.get('rentPrice') or {}).get('value') else None, 'pokoje': POKOJE.get(i.get('roomsNumber')),
             'm2': i.get('areaInSquareMeters'), 'pietro': PIETRO.get(i.get('floorNumber')), 'ulica': ulica(((i.get('location') or {}).get('address'))),
             'dzielnica': d, 'miasto': m, 'tytul': (i.get('title') or '').strip(), 'sprzedawca': 'prywatna' if i.get('isPrivateOwner') else 'biuro',
+            **({'foto': f} if (f := zdjecie(i)) else {}),
             **({'typ': typ} if typ != 'najem' else {}), **({'kat': kat} if kat != 'mieszkanie' else {})}
 
 def tekst(html):

@@ -12,5 +12,6 @@ assert Z.rok_z({'target': {'Build_year': '2016'}}, '') == 2016 and Z.rok_z({}, '
 i = {'id': 5, 'slug': 'ladne-ID4abc', 'totalPrice': {'value': 2500}, 'rentPrice': {'value': 400}, 'roomsNumber': 'TWO', 'areaInSquareMeters': 45, 'floorNumber': 'GROUND', 'isPrivateOwner': True, 'title': ' Ładne ',
      'location': {'address': {'street': {'name': 'ul. Lipowa', 'number': '5'}}, 'reverseGeocoding': {'locations': [{'locationLevel': 'voivodeship', 'name': 'lubelskie'}, {'locationLevel': 'city_or_village', 'name': 'Lublin'}, {'locationLevel': 'district', 'name': 'Śródmieście'}]}}}
 assert Z.rekord(i) == {'portalId': 'ID4abc', 'url': 'https://www.otodom.pl/pl/oferta/ladne-ID4abc', 'cena': 2500, 'czynsz': 400, 'pokoje': 2, 'm2': 45, 'pietro': 0, 'ulica': 'Lipowa', 'dzielnica': 'Śródmieście', 'miasto': 'Lublin', 'tytul': 'Ładne', 'sprzedawca': 'prywatna'}
+assert Z.rekord({**i, 'images': [{'small': 'https://x.olxcdn.com/a.jpg'}]})['foto'] == 'https://x.olxcdn.com/a.jpg' and 'foto' not in Z.rekord({**i, 'images': [{'small': 'javascript:x'}]})
 assert Z.rekord({**i, 'hidePrice': True}) is None and Z.rekord({**i, 'estate': 'INVESTMENT'}) is None
 print('otodom_reguly: OK')
