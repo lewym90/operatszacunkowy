@@ -600,15 +600,15 @@ function viewOferty() {
         const title = esc([o.ulica, o.dzielnica].filter(Boolean).join(', ') || 'Oferta najmu'), pk = parkNote(o.parking);
         const meta = `${String(o.m2).replace('.', ',')} m² · ${o.pokoje} pok.${o.pietro != null ? ' · ' + (o.pietro === 0 ? 'parter' : o.pietro + '. p.') : ''}`;
         const cz = o.czynsz ? `<div class="cz">+ czynsz adm. ${fmt(o.czynsz)} zł</div>` : '<div class="cz none">czynsz adm. nie podano</div>';
-        const badges = `${s !== 'aktualne' ? `<i class="bd ${s}">${s}</i>` : ''}${pk ? `<i class="bd park">${esc(pk)}</i>` : ''}${o.flagi && o.flagi.length ? '<i class="bd warn">podejrzana</i>' : ''}`;
+        const badges = `${s !== 'aktualne' ? `<i class="bd ${s}">${s}</i>` : ''}${pk ? `<i class="bd park">${esc(pk)}</i>` : ''}${o.flagi && o.flagi.length ? '<i class="bd warn">podejrzana</i>' : ''}${o.wlaczone === false ? '<i class="bd warn">wyłączona z wycen</i>' : ''}`;
         // miniatura z portalu: tylko w monitoringu ofert, do rozpoznania ogłoszenia; nigdy w wycenach ani raportach dla klienta
         const foto = /^https:\/\//.test(o.foto || '') ? `<img class="ofoto" src="${esc(o.foto)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : '';
         const inner = `${foto}<div class="t"><b>${title}</b>${o.url ? '<span class="ext" aria-hidden="true">↗</span>' : ''}</div><div class="p">${fmt(o.cena)} zł${prevTxt(o)}</div>${cz}<div class="m">${meta}</div><div class="b">${badges}</div>`;
-        return `<div class="orow ${o.wlaczone === false ? 'dis' : ''}">${o.url ? `<a class="oin${foto ? ' zf' : ''}" href="${esc(o.url)}" target="_blank" rel="noopener noreferrer">${inner}</a>` : `<div class="oin${foto ? ' zf' : ''}">${inner}</div>`}<button type="button" class="otg" data-id="${o.id}" aria-label="${o.wlaczone === false ? 'Włącz ofertę do wycen' : 'Wyłącz ofertę z wycen'}">${o.wlaczone === false ? 'wyłączona' : 'w wycenach'}</button></div>`;
+        return `<div class="orow ${o.wlaczone === false ? 'dis' : ''}">${o.url ? `<a class="oin${foto ? ' zf' : ''}" href="${esc(o.url)}" target="_blank" rel="noopener noreferrer">${inner}</a>` : `<div class="oin${foto ? ' zf' : ''}">${inner}</div>`}<button type="button" class="otg ${o.wlaczone === false ? 'wyl' : ''}" data-id="${o.id}" aria-label="${o.wlaczone === false ? 'Włącz ofertę do wycen' : 'Wyłącz ofertę z wycen'}" title="${o.wlaczone === false ? 'Włącz do wycen' : 'Wyłącz z wycen'}">${o.wlaczone === false ? EYE_OFF : EYE}</button></div>`;
       };
       $('#of-list', v).innerHTML = S.offers.length ? `<div class="eyebrow">Pokazano ${fmt(shown.length)} z ${fmt(rows.length)} (w bazie ${fmt(S.offers.length)})</div>${shown.map(row).join('') || '<p class="small muted" style="margin:10px 0 0">Żadna oferta nie spełnia filtrów.</p>'}${rows.length > shown.length ? `<div class="gap"></div><button class="btn ghost" id="of-more">Pokaż więcej</button>` : ''}`
         : '<div class="empty"><b>Brak ofert</b><span>Dodaj oferty w zakładce Dane.</span></div>';
-      $$('.otg', v).forEach(b => b.onclick = () => { const o = S.offers.find(x => x.id === b.dataset.id); o.wlaczone = o.wlaczone === false; save.offers(); draw(); });
+      $$('.otg', v).forEach(b => b.onclick = () => { const o = S.offers.find(x => x.id === b.dataset.id); o.wlaczone = o.wlaczone === false; save.offers(); toast(o.wlaczone ? 'Oferta wróciła do wycen' : 'Oferta wyłączona z wycen'); draw(); });
       const more = $('#of-more', v); if (more) more.onclick = () => { f.lim += 60; draw(); };
     };
     $$('[data-of]', v).forEach(g => $$('button', g).forEach(b => b.onclick = () => { f[g.dataset.of] = b.dataset.v; f.lim = 60; $$('button', g).forEach(x => x.classList.toggle('on', x === b)); draw(); }));
@@ -657,6 +657,8 @@ function viewDane() {
     $('[data-act="clear"]', v).onclick = () => { if (confirm(syncOn ? 'Usunąć wszystkie oferty z bazy? Zniknie też z serwera i z pozostałych urządzeń.' : 'Usunąć wszystkie oferty z bazy?')) { S.offers = []; S.poza = []; S.katy = []; S.sprz = []; sync.allowMassDelete(); save.offers(); render(); } };
   }];
 }
+const EYE = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_OFF = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 5.1A10 10 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4.1M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
 /* Zbieranie ofert z Otodom na serwerze: przycisk zostawia prośbę, serwer zbiera w tle (ok. 2 h), telefon pobiera wynik synchronizacją. */
 let zbTimer = null;
 async function zbieranieCard(v) {
