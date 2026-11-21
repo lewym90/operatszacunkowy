@@ -14,7 +14,7 @@ import { geocode, neighbors, suggest as suggestAddr } from './geokod.js';
 import { exposure, trendSeries, yieldByDistrict, districtAssigner, lineChart, barChart, bindCharts } from './rynek.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer, districtCenters } from './mapa.js';
 
-const VERSION = '1.26.0';
+const VERSION = '1.27.0';
 const S = { wlasne: [], teczki: [], foto: {}, dokumenty: [],
   offers: [], poza: [], katy: [], sprz: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -624,6 +624,7 @@ function viewDane() {
     <div class="gap"></div><button class="btn" data-act="pdf">Wgraj PDF z ofertami</button><div class="gap"></div><button class="btn ghost" data-act="paste">Wklej tekst ofert</button>
     <input type="file" id="fpdf" accept="application/pdf" multiple hidden>
     <p class="tiny muted" style="margin:10px 0 0">W Safari: lista ofert → Udostępnij → Drukuj → pinch na podglądzie → Zapisz do Plików. Plik wgrywasz tutaj. Odczyt dzieje się na tym urządzeniu, bez internetu i bez AI.</p></div>
+  <div class="card" id="zbcard"><div class="eyebrow">Zbieranie ofert przez serwer</div><div id="zbbody"><p class="small muted" style="margin:0">Sprawdzam…</p></div></div>
   <div class="card"><div class="eyebrow">Cechy ofert (z filtrów portalu)</div>${attrCard()}</div>
   <div class="card"><div class="eyebrow">Własne umowy najmu</div><p class="small muted" style="margin:0 0 10px">Prawdziwe umowy Twojego biura lub najmy, które znasz z pierwszej ręki. Mają największą wagę w wycenie i pozwalają zmierzyć standard, meble i budynek, których nie ma w ogłoszeniach.</p>
     ${(S.wlasne || []).map(w => `<button class="off" data-own="${w.id}"><div><b>${esc([w.ulica, w.dzielnica].filter(Boolean).join(', ') || 'Najem')}</b></div><div class="p">${fmt(w.cena)} zł</div><div class="m">${w.m2} m² · ${w.pokoje} pok.${w.rok ? ' · rok ' + w.rok : ''}${w.standard ? ' · ' + ({ remont: 'do remontu', dobry: 'dobry', wysoki: 'wysoki' })[w.standard] : ''}${w.meble === 'tak' ? ' · meble' : ''}</div><div class="m" style="text-align:right">${fmt(w.cena / w.m2)} zł/m²</div></button>`).join('')}
@@ -640,6 +641,7 @@ function viewDane() {
     $('[data-act="pdf"]', v).onclick = () => pdfIn.click();
     pdfIn.onchange = () => importPdfs([...pdfIn.files]);
     $('[data-act="paste"]', v).onclick = pasteSheet;
+    zbieranieCard(v);
     $('[data-act="own"]', v).onclick = () => ownSheet(null);
     $$('[data-own]', v).forEach(b => b.onclick = () => ownSheet(b.dataset.own));
     const oc = $('[data-act="ownchk"]', v); if (oc) oc.onclick = () => { const box = $('#ownchk', v); box.innerHTML = '<p class="small muted" style="margin:0">Liczę…</p>'; setTimeout(() => { box.innerHTML = ownImpactHTML(); }, 30); };
@@ -652,6 +654,34 @@ function viewDane() {
     $('[data-act="clear"]', v).onclick = () => { if (confirm(syncOn ? 'Usunąć wszystkie oferty z bazy? Zniknie też z serwera i z pozostałych urządzeń.' : 'Usunąć wszystkie oferty z bazy?')) { S.offers = []; S.poza = []; S.katy = []; S.sprz = []; sync.allowMassDelete(); save.offers(); render(); } };
   }];
 }
+/* Zbieranie ofert z Otodom na serwerze: przycisk zostawia prośbę, serwer zbiera w tle (ok. 2 h), telefon pobiera wynik synchronizacją. */
+let zbTimer = null;
+async function zbieranieCard(v) {
+  const box = $('#zbbody', v); if (!box) return;
+  clearTimeout(zbTimer);
+  const czas = t => t ? new Date(t * 1000).toLocaleString('pl-PL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+  let st;
+  try { st = await sync.api('/v1/zbieranie'); }
+  catch (e) { box.innerHTML = `<p class="small muted" style="margin:0">${esc(e.message)}</p>`; return; }
+  if (!document.body.contains(box)) return;
+  const trwa = st.czeka || st.stan === 'trwa';
+  const wynik = st.wynik ? esc(st.wynik.replace(/^WYNIK:\s*/, '')) : '';
+  box.innerHTML = trwa
+    ? `<div class="kv"><span>Stan</span><b style="color:var(--gold-l)">${st.czeka && st.stan !== 'trwa' ? 'za chwilę rusza' : 'trwa'}</b></div>${st.start && st.stan === 'trwa' ? `<div class="kv"><span>Start</span><b>${czas(st.start)}</b></div>` : ''}${st.stan === 'trwa' && st.etap ? `<p class="small muted" style="margin:10px 0 0">${esc(st.etap)}</p>` : ''}${st.stan === 'trwa' && st.log?.length ? `<p class="tiny muted" style="margin:6px 0 0">${esc(st.log[st.log.length - 1].trim())}</p>` : ''}<p class="tiny muted" style="margin:10px 0 0">Trwa ok. 2 godzin. Możesz zamknąć aplikację, serwer zbiera dalej. Wynik pojawi się sam po zakończeniu.</p>`
+    : `${st.stan !== 'brak' ? `<div class="kv"><span>Ostatnie zbieranie</span><b>${czas(st.koniec || st.start)}</b></div><p class="small ${st.stan === 'blad' ? '' : 'muted'}" style="margin:8px 0 12px${st.stan === 'blad' ? ';color:var(--warn)' : ''}">${st.proba ? 'Próba bez zapisu. ' : ''}${wynik || (st.stan === 'blad' ? 'Przerwane.' : '')}</p>` : '<p class="small muted" style="margin:0 0 12px">Serwer jeszcze nie zbierał ofert.</p>'}
+       <button class="btn" data-act="zbieraj">Zbierz oferty teraz</button><p class="tiny muted" style="margin:8px 0 0">Najem i sprzedaż z całego województwa. Serwer zbiera w tle ok. 2 godzin, a nowe oferty pobiorą się same przy synchronizacji.</p>`;
+  const b = $('[data-act="zbieraj"]', box);
+  if (b) b.onclick = async () => {
+    if (!confirm('Uruchomić zbieranie ofert na serwerze? Potrwa ok. 2 godzin.')) return;
+    b.disabled = true;
+    try { await sync.api('/v1/zbieranie', {}); toast('Zbieranie ruszy w ciągu minuty'); }
+    catch (e) { toast(e.message); }
+    zbieranieCard(v);
+  };
+  if (trwa) zbTimer = setTimeout(() => { if (document.body.contains(box)) zbieranieCard(v); }, 30000);
+  else if (st.stan === 'gotowe' && !st.proba && (st.koniec || 0) * 1000 > (S.ust.zbWidziane || 0)) { S.ust.zbWidziane = Date.now(); save.ust(); sync.run(); }
+}
+
 async function setRcn(pack, quiet) {
   if (!pack || !Array.isArray(pack.cols) || !Array.isArray(pack.rows) || !pack.cols.includes('cena')) throw new Error('nieznany format');
   await store.set('rcn', pack); S.rcn = pack; setTx();

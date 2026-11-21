@@ -19,6 +19,30 @@ MAX_BODY = 60 * 1024 * 1024
 PAGE = 2000
 COLLS = {'offers', 'wlasne', 'wyceny', 'teczki', 'dokumenty', 'budynki', 'ust'}
 LOCK = threading.Lock()
+# Zbieranie ofert uruchamiane z aplikacji: serwer tylko zostawia plik-prośbę; podejmuje ją usługa systemowa operat-otodom-start (path unit).
+ZB_REQ = os.environ.get('OPERAT_ZB_REQ', '/var/lib/operat-sync/zbieraj.req')
+ZB_DIR = os.environ.get('OPERAT_ZB_DIR', '/var/lib/operat-otodom')
+ZB_ODSTEP = 3600                       # najwcześniej godzinę po poprzednim starcie
+
+
+def zb_stan():
+    try: st = json.load(open(os.path.join(ZB_DIR, 'stan.json')))
+    except Exception: st = {'stan': 'brak'}
+    try:
+        with open(os.path.join(ZB_DIR, 'log.txt'), encoding='utf-8', errors='replace') as f: lin = [l.rstrip() for l in f.readlines()[-400:] if l.strip()]
+    except Exception: lin = []
+    st['czeka'] = os.path.exists(ZB_REQ)
+    st['log'] = lin[-14:]
+    st['etap'] = next((l.strip() for l in reversed(lin) if l[:2] in ('1/', '2/', '3/', '4/', '5/')), '')
+    return st
+
+
+def zb_start():
+    st = zb_stan()
+    if st.get('czeka') or st.get('stan') == 'trwa': return 409, {'error': 'Zbieranie już trwa'}
+    if time.time() - (st.get('start') or 0) < ZB_ODSTEP: return 429, {'error': 'Poprzednie zbieranie ruszyło mniej niż godzinę temu'}
+    with open(ZB_REQ, 'w') as f: f.write(str(int(time.time())))
+    return 200, {'ok': True}
 
 
 def db():
@@ -114,10 +138,14 @@ class H(BaseHTTPRequestHandler):
             with db() as c:
                 n = c.execute('SELECT COUNT(*) FROM rec WHERE del=0').fetchone()[0]
             return self._send(200, {'ok': True, 'v': 1, 'records': n})
+        if self.path.rstrip('/').endswith('/zbieranie'): return self._send(200, zb_stan())
         self._send(404, {'error': 'nie ma takiej ścieżki'})
 
     def do_POST(self):
         if not self._auth(): return self._send(401, {'error': 'zły klucz'})
+        if self.path.rstrip('/').endswith('/zbieranie'):
+            try: return self._send(*zb_start())
+            except Exception as e: return self._send(500, {'error': str(e)})
         if not self.path.rstrip('/').endswith('/sync'): return self._send(404, {'error': 'nie ma takiej ścieżki'})
         try:
             n = int(self.headers.get('Content-Length') or 0)

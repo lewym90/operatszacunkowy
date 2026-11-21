@@ -34,7 +34,7 @@ export function createSync({ kv, adapters, hooks = {}, fetchFn = (...a) => fetch
     try { r = await fetchFn(cfg.url.replace(/\/+$/, '') + path, { method: body ? 'POST' : 'GET', headers: { Authorization: 'Bearer ' + cfg.key, ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' }); }
     catch { const e = new Error('Brak połączenia z serwerem'); e.offline = true; throw e; }
     if (r.status === 401) throw new Error('Serwer odrzucił klucz (zły klucz)');
-    if (!r.ok) throw new Error('Serwer: HTTP ' + r.status);
+    if (!r.ok) { let m = ''; try { m = (await r.json()).error || ''; } catch {} throw new Error(m || 'Serwer: HTTP ' + r.status); }
     return r.json();
   }
 
@@ -146,5 +146,6 @@ export function createSync({ kv, adapters, hooks = {}, fetchFn = (...a) => fetch
     if (typeof document !== 'undefined') document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') run(); });
     if (typeof window !== 'undefined') window.addEventListener('online', () => run());
   }
-  return { freeze: () => { frozen = true; clearTimeout(timer); clearInterval(poll); }, allowMassDelete: () => { massOK = true; }, run, schedule, connect, disconnect, start, status: () => ({ ...status }), config: () => kv.get('sync', null) };
+  return { freeze: () => { frozen = true; clearTimeout(timer); clearInterval(poll); }, allowMassDelete: () => { massOK = true; }, run, schedule, connect, disconnect, start, status: () => ({ ...status }), config: () => kv.get('sync', null),
+    api: async (path, body) => { const c = await kv.get('sync', null); if (!c || !c.url) throw new Error('Najpierw połącz to urządzenie z serwerem (Ustawienia)'); return call(c, path, body); } };
 }
