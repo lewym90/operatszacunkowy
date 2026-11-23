@@ -1,6 +1,6 @@
 # KONTYNUACJA — OPERAT SZACUNKOWY (AM Nieruchomości)
 
-Plik przekazania pracy między kontami/sesjami Claude. Stan na **2026-11-23, wersja aplikacji 1.27.2** (pełna analiza z teczki, IRR/NPV, jakość porównań, porównanie wycen, promienie, nowe raporty z numeracją, mapa rentowności).
+Plik przekazania pracy między kontami/sesjami Claude. Stan na **2026-11-23, wersja aplikacji 1.27.3** (pełna analiza z teczki, IRR/NPV, jakość porównań, porównanie wycen, promienie, nowe raporty z numeracją, mapa rentowności).
 Ten plik zawiera całą wiedzę potrzebną do kontynuacji: nie wymaga dostępu do poprzednich rozmów ani do poprzedniego projektu Claude.
 
 > **UWAGA — repozytorium jest PUBLICZNE (GitHub Pages).** W tym pliku nie ma i nie wolno zapisywać haseł, kluczy, tokenów, kodu synchronizacji „AMSYNC1:…”, adresu IP serwera ani danych ofert/klientów. Nigdy nie wklejaj klucza synchronizacji do czatu ani na zrzut ekranu — właściciel wpisuje go sam.
@@ -162,6 +162,7 @@ Adres IP i domena są znane właścicielowi (wpisane w ustawieniach aplikacji); 
 **Przycisk w aplikacji (1.27.0, zaakceptowany 21.11):** Dane → „Zbieranie ofert przez serwer”. `POST /v1/zbieranie` (klucz synchronizacji) zapisuje `/var/lib/operat-sync/zbieraj.req`; `operat-otodom-start.path` → `operat-otodom-start.service` (root, oneshot) pobiera `otodom_zbieraj.sh` i uruchamia go. `GET /v1/zbieranie` zwraca `/var/lib/operat-otodom/stan.json` (trwa / gotowe / blad, start, koniec, wynik) i ostatnie linie logu. Blokady: trwa → 409, start mniej niż godzinę temu → 429. Instalacja jednorazowa: `server/zbieranie_install.sh`.
 **1.27.1 (21.11, zaakceptowane):** miniatura zdjęcia głównego (`foto`: sam link do miniatury z listy portalu, bez pobierania plików) tylko w Monitoringu ofert, nigdy w wycenach ani raportach; czynsz administracyjny osobną linią („+ czynsz adm. X zł” / „nie podano”), uzupełniany z ogłoszenia (`target.Rent`) przy otwieraniu; w wycenach nadal bez opłat. Przełącznik wycen jako mała ikona oka (`.otg`, wyłączona: `.wyl` + znaczek „wyłączona z wycen”).
 **1.27.2 (23.11):** Operat działa też wewnątrz Mojej Agencji (kafelek „Wycena”, kopia przypiętej wersji wgrywana stamtąd poleceniem `aktualizuj_operat`; docelowo Operat będzie tylko tam). Nowe: dane nieruchomości w adresie — `#/wycena?tryb=sprzedaz|najem&kat=…&ulica=…&nr=…&dzielnica=…&m2=…&dzm2=…&pokoje=…&pietro=…&rok=…` wypełniają formularz wyceny od czysta (`js/adres.js`, test `test/adres.test.mjs`); przycisk „Wyceń w Operacie” na karcie oferty w Mojej Agencji. Tylko dane nieruchomości, bez osób. Usunięty przypadkowy katalog `undefined/` (zrzuty z testu uruchomionego bez argumentu) i wykluczony w `tools/mksw.py`.
+**1.27.3 (23.11):** odświeżenie po nowej wersji tylko, gdy wcześniej stroną zarządzał service worker Operatu (w Mojej Agencji najpierw obsługuje ją service worker biura i niepotrzebne odświeżenie gubiło dane przekazane w adresie).
 **Technika w przeglądarce (panel Claude), dawna:** lista `?page=N`; parser artykułów pomija śmieci karuzeli („…”, „1 / 14”) i startuje od pierwszej linii z ceną; identyfikatory per filtr: tylko artykuły zawierające „zł” i „lubelskie”; dane między kartami przez `window.name`, z domeny github.io do karty aplikacji przez BroadcastChannel („am-collect” oferty, „am-ids” identyfikatory filtrów); przed testem w panelu wyrejestrować service worker i wyczyścić cache; pętle `setTimeout` zatrzymują się między wywołaniami → wykonywać synchronicznie w jednym wywołaniu; ogłoszenie 404 pomijamy.
 Ogłoszenie Otodom (dane strukturalne) zawiera: tytuł, rok budowy (`build_year`), wyposażenie (`equipment_types`), dodatki (`extras_types`), ogrzewanie, czynsz administracyjny (`rent`); odczyt ok. 3 s na ogłoszenie.
 
@@ -270,7 +271,7 @@ Nie teraz: prognozy cen (najpierw walidacja, dane tylko z okresu wzrostu), wycen
 ### Do zrobienia przez właściciela
 - Na serwerze: `curl -fsSL https://lewym90.github.io/operatszacunkowy/server/update_sync.sh | bash` (teczki i historia dokumentów zaczną się synchronizować).
 - Do decyzji: `DEFAULT_URL` w `js/sync.js` zawiera adres IP serwera w publicznym repo (stare, wbrew zasadzie z początku pliku).
-- Zamknąć i otworzyć aplikację na wszystkich urządzeniach (jedna karta naraz), żeby pobrała 1.27.2 (przy problemach z odświeżeniem: zamknąć aplikację całkiem i otworzyć dwa razy).
+- Zamknąć i otworzyć aplikację na wszystkich urządzeniach (jedna karta naraz), żeby pobrała 1.27.3 (przy problemach z odświeżeniem: zamknąć aplikację całkiem i otworzyć dwa razy).
 - Sprawdzić na telefonie: najem → ulica „Granata”, nr „1” (karta „Najbliższe okolice”), to samo w sprzedaży; Mapa → warstwy OSM.
 - Ok. 7 listopada zrobić kolejne pełne zebranie ofert najmu.
 - Opcjonalnie: wgrać własne logo, dodać umowy domów/lokali/hal, uruchomić eksport RCN dla Chełma, Zamościa, Puław.

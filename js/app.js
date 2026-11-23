@@ -15,7 +15,7 @@ import { geocode, neighbors, suggest as suggestAddr } from './geokod.js';
 import { exposure, trendSeries, yieldByDistrict, districtAssigner, lineChart, barChart, bindCharts } from './rynek.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer, districtCenters } from './mapa.js';
 
-const VERSION = '1.27.2';
+const VERSION = '1.27.3';
 const S = { wlasne: [], teczki: [], foto: {}, dokumenty: [],
   offers: [], poza: [], katy: [], sprz: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -1429,7 +1429,8 @@ async function boot() {
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && got) checkRcn(); });
   setInterval(() => { if (got && document.visibilityState === 'visible') checkRcn(); }, 30 * 60e3);
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-    const had = !!navigator.serviceWorker.controller; let done = false;
+    // Odświeżamy tylko przy zmianie wersji Operatu. W Mojej Agencji stronę może najpierw obsługiwać jej własny service worker (szerszy zakres) — jego zmiana na nasz to nie nowa wersja, a odświeżenie zgubiłoby dane przekazane w adresie.
+    const c = navigator.serviceWorker.controller, had = !!c && new URL(c.scriptURL).pathname === new URL('sw.js', location.href).pathname; let done = false;
     navigator.serviceWorker.addEventListener('controllerchange', () => { if (had && !done) { done = true; location.reload(); } });   // nowa wersja przejęła kontrolę: odśwież raz
     navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => { });
   }
