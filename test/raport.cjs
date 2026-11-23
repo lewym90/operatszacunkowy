@@ -73,5 +73,14 @@ const offers = []; for (let i = 0; i < 150; i++) { const d = DZ[i % 3], m2 = Mat
   // sprzedaż: ta sama karta
   await p.goto('http://localhost:8765/index.html#/wycena'); await p.waitForTimeout(500); await p.fill('[name=ulica]', 'Granata'); await p.fill('[name=nr]', '1'); await p.fill('[name=m2]', '45'); await p.click('#f .btn'); await p.waitForTimeout(2500);
   ok(await p.$eval('#okol', e => /Granata 1/.test(e.textContent) && e.querySelectorAll('.okt').length === 7), 'sprzedaż: ta sama karta okolic z rejestru');
+  // Moja Agencja: wycena otwarta z oferty (oferta=7) → „Dołącz do oferty” oddaje PDF programowi
+  ok(!(await p.$('#dolacz')), 'bez Mojej Agencji nie ma przycisku „Dołącz do oferty”');
+  await p.evaluate(() => { window.__dolaczone = null; window.amDolaczRaport = async (blob, nazwa, oferta) => { window.__dolaczone = { typ: blob.type, n: blob.size, nazwa, oferta }; return true; }; });
+  await p.goto('http://localhost:8765/index.html#/wycena?tryb=sprzedaz&kat=mieszkanie&ulica=Granata&nr=5&m2=45&oferta=7'); await p.waitForTimeout(800);
+  await p.click('#f .btn'); await p.waitForTimeout(2000); await p.click('[data-act=report]'); await p.waitForSelector('.report-img', { timeout: 15000 }); await p.waitForTimeout(800);
+  ok(!!(await p.$('#dolacz')), 'z Mojej Agencji: przycisk „Dołącz do oferty”');
+  await p.click('#dolacz'); await p.waitForTimeout(3000);
+  const dol = await p.evaluate(() => window.__dolaczone);
+  ok(dol && dol.oferta === 7 && dol.typ === 'application/pdf' && dol.n > 1000 && /^Analiza-.*\.pdf$/.test(dol.nazwa), 'PDF przekazany do oferty 7 ' + JSON.stringify(dol));
   console.log('BŁĘDY:', errs.length ? errs : 'brak'); await b.close(); srv.kill(); if (fail.length || errs.length) process.exit(1);
 })().catch(e => { console.error('TEST PADŁ', e); process.exit(1); });
