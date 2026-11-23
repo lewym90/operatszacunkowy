@@ -5,6 +5,7 @@ import { linesFromPdf, offersFromLines, offerKey } from './pdfimport.js';
 import { flags as offerFlags } from './parseOtodom.js';
 import { esc, $, $$, fmt, roundTo, toast, openSheet, closeSheet, countUp, saveFile, ICON, suggest } from './ui.js';
 import { buildReport, makePdf } from './report.js';
+import { daneZAdresu } from './adres.js';
 import { createSync, DEFAULT_URL, encodeCode, decodeCode } from './sync.js';
 import { investCalc, sensitivity, TAX, holdCalc, scenarios, whatIf } from './invest.js';
 import { qualityOf, compWhy, diffWyceny } from './jakosc.js';
@@ -14,7 +15,7 @@ import { geocode, neighbors, suggest as suggestAddr } from './geokod.js';
 import { exposure, trendSeries, yieldByDistrict, districtAssigner, lineChart, barChart, bindCharts } from './rynek.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer, districtCenters } from './mapa.js';
 
-const VERSION = '1.27.1';
+const VERSION = '1.27.2';
 const S = { wlasne: [], teczki: [], foto: {}, dokumenty: [],
   offers: [], poza: [], katy: [], sprz: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -106,7 +107,13 @@ function tabs(active) {
     + `<button type="button" class="more ${MAIN.includes(active) ? '' : 'on'}" data-menu aria-label="Więcej">${ICON.wiecej}${n ? `<i class="nb">${n}</i>` : ''}<span>Więcej</span></button></div>`;
 }
 document.addEventListener('click', e => { if (e.target.closest('[data-menu]')) menuSheet(); });
+function przyjmijDane() {
+  const f = daneZAdresu(location.hash); if (!f) return;
+  Object.assign(S.form, f); S.teczkaNext = null;
+  history.replaceState(null, '', location.pathname + location.search + '#/wycena');
+}
 function render() {
+  przyjmijDane();
   const h = location.hash.replace(/^#\/?/, '') || 'start', p = h.split('/');
   let html = '', mount = null, tab = p[0];
   closeSheet(); if (mapCtl) { try { mapCtl.destroy(); } catch { } mapCtl = null; }
