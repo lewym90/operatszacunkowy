@@ -9,5 +9,7 @@ export function daneZAdresu(hash) {
   const f = { kat: KAT_ORDER.includes(t('kat')) ? t('kat') : 'mieszkanie', pod: '', ulica: t('ulica'), nr: t('nr').slice(0, 12), dzielnica: t('dzielnica'), m2: liczba('m2'), dzm2: liczba('dzm2'), pietro: cal('pietro', 0, 30), rok: String(cal('rok', 1800, 2100) ?? '') };
   if (['sprzedaz', 'najem'].includes(t('tryb'))) f.tryb = t('tryb');
   const pk = cal('pokoje', 1, 8); if (pk != null) f.pokoje = pk;
+  // numer oferty w programie, z którego otwarto wycenę (raport PDF można do niej dołączyć)
+  const of = t('oferta'); f.oferta = /^\d{1,9}$/.test(of) ? +of : null;
   return f;
 }

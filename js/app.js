@@ -15,7 +15,7 @@ import { geocode, neighbors, suggest as suggestAddr } from './geokod.js';
 import { exposure, trendSeries, yieldByDistrict, districtAssigner, lineChart, barChart, bindCharts } from './rynek.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer, districtCenters } from './mapa.js';
 
-const VERSION = '1.27.3';
+const VERSION = '1.27.4';
 const S = { wlasne: [], teczki: [], foto: {}, dokumenty: [],
   offers: [], poza: [], katy: [], sprz: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -167,7 +167,7 @@ function viewStart() {
   <div class="skyline" aria-hidden="true"><img src="img/panorama.webp" alt=""></div>`;
   return [html, v => {
     $$('[data-tile]', v).forEach(b => b.onclick = () => { const k = b.dataset.tile;
-      if (k === 'sale' || k === 'rent') { S.form.tryb = k === 'sale' ? 'sprzedaz' : 'najem'; go('#/wycena'); } else if (k === 'tec') { S.histTab = 'teczki'; go('#/historia'); } else go(k); });
+      if (k === 'sale' || k === 'rent') { S.form.tryb = k === 'sale' ? 'sprzedaz' : 'najem'; S.form.oferta = null; go('#/wycena'); } else if (k === 'tec') { S.histTab = 'teczki'; go('#/historia'); } else go(k); });
     $('[data-act="bell"]', v).onclick = () => { S.histTab = 'zadania'; go('#/historia'); };
     const paint = m => { if (!m) return; const a = $('#hs-m', v), b = $('#hs-y', v); if (a) a.textContent = fmt(m.med); if (b && m.yoy != null) b.textContent = plPct(m.yoy); const r = $('[data-tile="#/rynek"] small', v); if (r && m.yoy != null) r.textContent = plPct(m.yoy) + ' rok do roku'; };
     if (startMemo && startMemo.n === S.pool.length) paint(startMemo); else if (S.pool.length) setTimeout(() => { if (!v.isConnected || v.dataset.view !== 'start') return; try { const T = trendSeries(S.pool, { kat: 'mieszkanie', m2min: 15, m2max: 200, years: 3 }); if (T.ok) { startMemo = { n: S.pool.length, med: T.points[T.points.length - 1].med, yoy: T.yoy ? T.yoy.pct : null }; paint(startMemo); } } catch { } }, 60);
@@ -258,6 +258,7 @@ function readForm(v) {
 }
 function submitForm() {
   const c = computeEntry(S.form); if (c.err) return toast(c.err);
+  if (S.form.oferta) c.entry.oferta = S.form.oferta;
   S.last[S.form.tryb] = c.entry; store.set('last', S.last); go('#/wynik/' + S.form.tryb);
 }
 // Liczy wycenę z danych formularza. Używane przez formularz i przez pełną analizę z teczki.
@@ -473,7 +474,7 @@ function viewRaport(p) {
   if (!VAR.some(x => x[0] === variant)) variant = 'full';
   const html = head('Raport', 'Dla klienta', true) + `<div class="chips" id="rvar" style="margin-bottom:12px">${VAR.map(([k, n]) => `<button type="button" class="chip ${k === variant ? 'on' : ''}" data-v="${k}">${n}</button>`).join('')}</div>
     <p class="tiny muted" id="rvh" style="margin:-4px 0 12px"></p><div id="rp"><div class="empty"><b>Przygotowuję raport…</b></div></div>
-    <div class="row" style="position:sticky;bottom:calc(var(--nav) + var(--sab) + 12px)"><button class="btn" id="pdf" disabled>Udostępnij PDF</button></div>`;
+    <div class="row" style="position:sticky;bottom:calc(var(--nav) + var(--sab) + 12px)"><button class="btn" id="pdf" disabled>Udostępnij PDF</button>${e.oferta && typeof window.amDolaczRaport === 'function' ? '<button class="btn ghost" id="dolacz" disabled>Dołącz do oferty</button>' : ''}</div>`;
   const HINT = { short: 'Jedna strona: wynik, przedział i pewność oceny. Bez tabeli porównań.', full: 'Wynik, opis metody, tabela porównań przy sprzedaży lub porównanie rynkowe przy najmie i najbliższe okolice (odległości do przystanków, szkół itp., gdy serwer ma dane).', market: 'Jak pełny, a do tego wykres cen transakcyjnych w czasie i rentowność najmu w dzielnicach.', inwest: 'Zwrot, IRR, NPV, wynik po sprzedaży i scenariusze, z danych wpisanych w kalkulatorze.', lokal: 'Odległości od budynku i liczba punktów w promieniach od 300 m do 3 km.', rent: 'Wartość i czynsz tej nieruchomości oraz rentowność brutto na tle dzielnic.', rynek: 'Trend cen, rentowność dzielnic i czas ekspozycji ofert. Bez wyniku wyceny.' };
   return [html, async v => {
     $('[data-back]', v).onclick = back; let pages = [], seq = 0, lastOpts = null, busy = false;
@@ -487,7 +488,7 @@ function viewRaport(p) {
       return out;
     };
     const draw = async () => {
-      const my = ++seq, b = $('#pdf', v); b.disabled = true; $('#rvh', v).textContent = HINT[variant];
+      const my = ++seq, b = $('#pdf', v); b.disabled = true; if (bd) bd.disabled = true; $('#rvh', v).textContent = HINT[variant];
       $('#rp', v).innerHTML = '<div class="empty"><b>Przygotowuję raport…</b></div>';
       let okol = null, okSrc = '', okMiss = false, prom = null, okOpis = ''; if (variant !== 'short' && variant !== 'rynek' && variant !== 'inwest' && variant !== 'rent') { try { const g = await ensureGeo(e); if (g.ok) { const lay = (await loadAll({ url: osmUrl(S.ust.rcnUrl) })).layers; okol = okolica(g.ll, lay); prom = promienie(g.ll, lay); okOpis = opisLokalizacji(prom); okSrc = g.source === 'prg' ? `Położenie budynku: ${g.street} ${g.number}, ${g.city || 'Lublin'} (Państwowy Rejestr Granic, GUGiK).` : 'Położenie budynku wskazano ręcznie na mapie.'; } else okMiss = true; } catch { okMiss = true; } }
       const extra = { variant, market: ['market', 'rent', 'rynek'].includes(variant) ? market() : null, okolica: okol, okolicaNote: okSrc, promienie: prom, okolicaOpis: okOpis, radii: PROMIENIE.map(promLbl) };
@@ -505,15 +506,19 @@ function viewRaport(p) {
       $('#rp', v).innerHTML = pages.map(c => `<img class="report-img" alt="Strona raportu" src="${c.toDataURL('image/jpeg', .92)}">`).join('');
       if (okMiss) $('#rvh', v).textContent += ' Brak położenia budynku, więc raport nie zawiera odległości do ważnych miejsc (uzupełnisz je w wyniku wyceny).';
       if (variant === 'market' && !market().trend && !market().yield) $('#rvh', v).textContent += ' Brak wystarczających danych RCN do wykresów, więc raport ich nie zawiera.';
-      b.disabled = false;
+      b.disabled = false; if (bd) bd.disabled = false;
     };
     $('#rvar', v).onclick = ev => { const bt = ev.target.closest('button[data-v]'); if (!bt || busy) return; variant = bt.dataset.v; try { localStorage.setItem('am-rapvar', variant); } catch { } $$('#rvar button', v).forEach(x => x.classList.toggle('on', x === bt)); draw(); };
-    const b = $('#pdf', v);
-    b.onclick = async () => { busy = true; b.disabled = true; const vr = variant, op = lastOpts; try {
+    const b = $('#pdf', v), bd = $('#dolacz', v);
+    // PDF z numerem dokumentu; „Dołącz do oferty” oddaje go programowi, z którego otwarto wycenę
+    const zrobPdf = async (dokad) => { busy = true; b.disabled = true; if (bd) bd.disabled = true; const vr = variant, op = lastOpts; try {
       const docNo = nextDoc(), done = await buildReport(e, S.ust, { ...op, docNo, docWid: e.id || '' }), blob = makePdf(done);
-      const nm = 'Analiza-' + ({ short: 'krotka', market: 'rynek', inwest: 'inwestycyjna', lokal: 'lokalizacja', rent: 'rentownosc', rynek: 'rynek-lokalny' }[vr] || 'rynkowa') + '-' + docNo.replace(/\//g, '-') + '.pdf', r = await saveFile(blob, nm);
-      if (r !== 'cancel') { S.dokumenty.unshift({ id: uid(), no: docNo, ts: Date.now(), typ: VAR.find(x => x[0] === vr)[1], wid: e.id || null, opis: subjLine(e.subj) }); save.dokumenty(); toast(r === 'share' ? 'Gotowe' : 'Pobrano PDF'); }
-    } catch (err) { toast('Nie udało się zapisać PDF'); } finally { busy = false; b.disabled = false; } };
+      const nm = 'Analiza-' + ({ short: 'krotka', market: 'rynek', inwest: 'inwestycyjna', lokal: 'lokalizacja', rent: 'rentownosc', rynek: 'rynek-lokalny' }[vr] || 'rynkowa') + '-' + docNo.replace(/\//g, '-') + '.pdf';
+      const r = dokad === 'oferta' ? ((await window.amDolaczRaport(blob, nm, e.oferta)) ? 'oferta' : 'cancel') : await saveFile(blob, nm);
+      if (r !== 'cancel') { S.dokumenty.unshift({ id: uid(), no: docNo, ts: Date.now(), typ: VAR.find(x => x[0] === vr)[1], wid: e.id || null, opis: subjLine(e.subj) }); save.dokumenty(); toast(r === 'oferta' ? 'Dołączono do oferty' : r === 'share' ? 'Gotowe' : 'Pobrano PDF'); }
+    } catch (err) { toast(dokad === 'oferta' ? (err && err.message) || 'Nie udało się dołączyć PDF' : 'Nie udało się zapisać PDF'); } finally { busy = false; b.disabled = false; if (bd) bd.disabled = false; } };
+    b.onclick = () => zrobPdf('plik');
+    if (bd) bd.onclick = () => zrobPdf('oferta');
     draw();
   }];
 }
@@ -962,7 +967,7 @@ function viewTeczka(id) {
     drawDiff();
     $('[data-act="pelna"]', v).onclick = async ev => { const b = ev.currentTarget; b.disabled = true; b.textContent = 'Analizuję…'; await new Promise(r => setTimeout(r, 30)); let err = null; try { err = await fullAnalysis(t); } catch (x) { err = 'Analiza nie powiodła się: ' + x.message; }
       const tu = location.hash === '#/teczka/' + t.id; if (err) { toast(err); if (b.isConnected) { b.disabled = false; b.textContent = 'Pełna analiza nieruchomości'; } } else if (tu) go('#/analiza/' + t.id); else toast('Pełna analiza gotowa: ' + tName(t)); };
-    const prefill = tryb => { Object.assign(S.form, { tryb, kat: t.kat || 'mieszkanie', ulica: t.ulica || '', nr: t.nr || '', dzielnica: t.dzielnica || '', m2: t.m2 ? String(t.m2) : '', pokoje: t.pokoje === '' ? S.form.pokoje : t.pokoje, pietro: t.pietro === '' ? null : t.pietro, rok: t.rok ? String(t.rok) : '' }); S.teczkaNext = t.id; go('#/wycena'); };
+    const prefill = tryb => { Object.assign(S.form, { tryb, kat: t.kat || 'mieszkanie', ulica: t.ulica || '', nr: t.nr || '', dzielnica: t.dzielnica || '', m2: t.m2 ? String(t.m2) : '', pokoje: t.pokoje === '' ? S.form.pokoje : t.pokoje, pietro: t.pietro === '' ? null : t.pietro, rok: t.rok ? String(t.rok) : '', oferta: null }); S.teczkaNext = t.id; go('#/wycena'); };
     $('[data-act="w-sale"]', v).onclick = () => prefill('sprzedaz'); $('[data-act="w-rent"]', v).onclick = () => prefill('najem');
     const tph = $('#tph', v); $('[data-act="addph"]', v).onclick = () => tph.click();
     tph.onchange = async () => { const list = (S.foto[id] || []).slice(); for (const f of [...tph.files]) { if (list.length >= 12) { toast('Najwyżej 12 zdjęć w teczce'); break; } try { list.push(await resizePhoto(f)); } catch { toast('Nie udało się wczytać zdjęcia'); } } S.foto[id] = list; await store.set('foto', S.foto); render(); };
@@ -1001,7 +1006,7 @@ function viewOgledziny(p) {
     return [html, v => {
       $('[data-back]', v).onclick = () => go(o.done ? '#/teczka/' + id : '#/ogledziny/' + id);
       const z = $('[data-act="zap"]', v); if (z) z.onclick = () => { o.done = true; o.w = ocen(o, kat); o.ts = Date.now(); t.ts = Date.now(); save.teczki(); toast('Zapisano w teczce'); go('#/teczka/' + id); };
-      const u = $('[data-act="uzyj"]', v); if (u) u.onclick = () => { Object.assign(S.form, { tryb: S.form.tryb, kat, ulica: t.ulica || '', nr: t.nr || '', dzielnica: t.dzielnica || '', m2: t.m2 ? String(t.m2) : '', pokoje: t.pokoje === '' || t.pokoje == null ? S.form.pokoje : t.pokoje, pietro: t.pietro === '' ? null : t.pietro, rok: t.rok ? String(t.rok) : '', standard: STD }); S.teczkaNext = id; toast('Standard wpisany do formularza'); go('#/wycena'); };
+      const u = $('[data-act="uzyj"]', v); if (u) u.onclick = () => { Object.assign(S.form, { tryb: S.form.tryb, kat, ulica: t.ulica || '', nr: t.nr || '', dzielnica: t.dzielnica || '', m2: t.m2 ? String(t.m2) : '', pokoje: t.pokoje === '' || t.pokoje == null ? S.form.pokoje : t.pokoje, pietro: t.pietro === '' ? null : t.pietro, rok: t.rok ? String(t.rok) : '', standard: STD, oferta: null }); S.teczkaNext = id; toast('Standard wpisany do formularza'); go('#/wycena'); };
       $('[data-act="pop"]', v).onclick = () => { o.done = false; delete o.w; t.ts = Date.now(); save.teczki(); go('#/ogledziny/' + id); };
       $('[data-act="del"]', v).onclick = () => { if (!confirm('Usunąć te oględziny?')) return; t.ogledziny = lst.filter(x => x !== o); t.ts = Date.now(); save.teczki(); go('#/teczka/' + id); };
     }];
