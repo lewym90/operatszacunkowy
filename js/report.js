@@ -2,7 +2,8 @@
 import { KAT, POD_TXT } from './rcn.js';
 import { rentBins } from './jakosc.js';
 const W = 1240, H = 1754, M = 84;
-const C = { onyx: '#0B0B0D', gold: '#C8A44D', goldD: '#8A6C2A', goldL: '#E6CE94', bone: '#E8E5DE', paper: '#FBFAF6', ink: '#16161A', ink2: '#55544F', line: '#E3DECF' };
+// szata 2.0: granat i niebieski na białym papierze (nazwy pól jak dawniej: onyx = ciemne tło, gold = akcent, goldL = jasny tekst na ciemnym)
+const C = { onyx: '#13234A', gold: '#6F9BF2', goldD: '#1D4ED8', goldL: '#E4ECFD', bone: '#FFFFFF', paper: '#FFFFFF', ink: '#0F1B33', ink2: '#5A6478', line: '#E3E8EF' };
 const money = n => Math.round(n).toLocaleString('pl-PL');
 const round = (n, s) => Math.round(n / s) * s;
 const LV = { 'niska': 'niska', 'średnia': 'średnia', 'wysoka': 'wysoka' };
@@ -23,7 +24,7 @@ function lineChartCv(ctx, pts, x0, y0, w, h) {
   const tx = i => x0 + padL + (pts.length === 1 ? pw / 2 : i * pw / (pts.length - 1)), ty = v => y0 + 10 + ph * (1 - (v - a) / (b - a));
   ctx.strokeStyle = C.line; ctx.lineWidth = 2; ctx.fillStyle = C.ink2; ctx.font = '400 21px Archivo'; ctx.textAlign = 'right';
   for (let i = 0; i <= 4; i++) { const v = a + (b - a) * i / 4, yy = ty(v); ctx.beginPath(); ctx.moveTo(x0 + padL, yy); ctx.lineTo(x0 + padL + pw, yy); ctx.stroke(); ctx.fillText(money(v), x0 + padL - 12, yy + 7); }
-  const bg = ctx.createLinearGradient(0, y0, 0, y0 + ph); bg.addColorStop(0, 'rgba(200,164,77,.42)'); bg.addColorStop(1, 'rgba(200,164,77,.1)'); ctx.fillStyle = bg; ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(tx(i), ty(p.p75)) : ctx.moveTo(tx(i), ty(p.p75))); for (let i = pts.length - 1; i >= 0; i--) ctx.lineTo(tx(i), ty(pts[i].p25)); ctx.closePath(); ctx.fill();
+  const bg = ctx.createLinearGradient(0, y0, 0, y0 + ph); bg.addColorStop(0, 'rgba(29,78,216,.42)'); bg.addColorStop(1, 'rgba(29,78,216,.1)'); ctx.fillStyle = bg; ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(tx(i), ty(p.p75)) : ctx.moveTo(tx(i), ty(p.p75))); for (let i = pts.length - 1; i >= 0; i--) ctx.lineTo(tx(i), ty(pts[i].p25)); ctx.closePath(); ctx.fill();
   ctx.strokeStyle = C.goldD; ctx.lineWidth = 5; ctx.lineJoin = 'round'; ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(tx(i), ty(p.med)) : ctx.moveTo(tx(i), ty(p.med))); ctx.stroke();
   ctx.fillStyle = C.goldD; pts.forEach((p, i) => { ctx.beginPath(); ctx.arc(tx(i), ty(p.med), 5, 0, 7); ctx.fill(); });
   ctx.fillStyle = C.ink2; ctx.textAlign = 'center'; ctx.font = '400 21px Archivo'; let lastX = -1e9;
@@ -34,7 +35,7 @@ function barChartCv(ctx, rows, ref, x0, y0, w) {
   const labW = 300, rowH = 50, max = Math.max(...rows.map(r => r.yHi || r.y), ref) * 1.1, bw = w - labW - 110, X = v => x0 + labW + bw * v / max;
   ctx.font = '400 24px Archivo'; y0 += 30;
   rows.forEach((r, i) => { const yy = y0 + i * rowH; ctx.fillStyle = C.ink; ctx.textAlign = 'left'; let nm = r.name; while (ctx.measureText(nm).width > labW - 16 && nm.length > 3) nm = nm.slice(0, -1);
-    ctx.fillText(nm, x0, yy + 8); { const bw2 = X(r.y) - x0 - labW, gb = ctx.createLinearGradient(x0 + labW, 0, x0 + labW + bw2, 0); gb.addColorStop(0, '#AD8B3A'); gb.addColorStop(1, '#E6CE94'); ctx.fillStyle = gb; ctx.beginPath(); ctx.roundRect(x0 + labW, yy - 15, bw2, 30, 8); ctx.fill(); }
+    ctx.fillText(nm, x0, yy + 8); { const bw2 = X(r.y) - x0 - labW, gb = ctx.createLinearGradient(x0 + labW, 0, x0 + labW + bw2, 0); gb.addColorStop(0, '#1D4ED8'); gb.addColorStop(1, '#93B0F5'); ctx.fillStyle = gb; ctx.beginPath(); ctx.roundRect(x0 + labW, yy - 15, bw2, 30, 8); ctx.fill(); }
     if (r.yLo != null && r.yHi != null) { ctx.strokeStyle = C.ink; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(X(r.yLo), yy); ctx.lineTo(X(r.yHi), yy); ctx.stroke(); }
     ctx.fillStyle = C.ink; ctx.font = '700 24px Archivo'; ctx.fillText(plN(r.y) + '%', X(Math.max(r.y, r.yHi || 0)) + 12, yy + 8); ctx.font = '400 24px Archivo'; });
   ctx.strokeStyle = C.goldD; ctx.lineWidth = 3; ctx.setLineDash([8, 6]); ctx.beginPath(); ctx.moveTo(X(ref), y0 - 28); ctx.lineTo(X(ref), y0 + rows.length * rowH - 20); ctx.stroke(); ctx.setLineDash([]);
@@ -46,7 +47,7 @@ function barChartCv(ctx, rows, ref, x0, y0, w) {
 function marketCv(ctx, D, mark, x0, y0, w, h) {
   const top = 92, bot = 62, gap = 12, base = y0 + h - bot, ph = base - y0 - top, X = v => x0 + (v - D.lo) / (D.hi - D.lo) * w, max = Math.max(...D.bins.map(b => b.n));
   ctx.textAlign = 'left'; ctx.fillStyle = C.line; ctx.fillRect(x0, base, w, 2);
-  D.bins.forEach(b => { if (!b.n) return; const bh = Math.max(14, b.n / max * (ph - 44)), bx = X(b.a) + gap / 2, bw = X(b.b) - X(b.a) - gap, g = ctx.createLinearGradient(0, base - bh, 0, base); g.addColorStop(0, '#E6CE94'); g.addColorStop(.45, C.gold); g.addColorStop(1, '#AD8B3A'); ctx.fillStyle = g; ctx.beginPath(); ctx.roundRect(bx, base - bh, bw, bh, [10, 10, 0, 0]); ctx.fill(); });
+  D.bins.forEach(b => { if (!b.n) return; const bh = Math.max(14, b.n / max * (ph - 44)), bx = X(b.a) + gap / 2, bw = X(b.b) - X(b.a) - gap, g = ctx.createLinearGradient(0, base - bh, 0, base); g.addColorStop(0, '#93B0F5'); g.addColorStop(.45, '#4A78E6'); g.addColorStop(1, '#1D4ED8'); ctx.fillStyle = g; ctx.beginPath(); ctx.roundRect(bx, base - bh, bw, bh, [10, 10, 0, 0]); ctx.fill(); });
   const mx = X(mark); ctx.strokeStyle = C.onyx; ctx.lineWidth = 3; ctx.setLineDash([9, 7]); ctx.beginPath(); ctx.moveTo(mx, y0 + 58); ctx.lineTo(mx, base); ctx.stroke(); ctx.setLineDash([]);
   ctx.textAlign = 'center'; ctx.font = '700 28px Archivo'; ctx.lineJoin = 'round'; D.bins.forEach(b => { if (!b.n) return; const bh = Math.max(14, b.n / max * (ph - 44)), cx = (X(b.a) + X(b.b)) / 2, ty = base - bh - 14; ctx.strokeStyle = C.paper; ctx.lineWidth = 8; ctx.strokeText(String(b.n), cx, ty); ctx.fillStyle = C.ink; ctx.fillText(String(b.n), cx, ty); });
   const lbl = `Wynik analizy: ${money(mark)} zł`; ctx.font = '700 25px Archivo'; const tw = ctx.measureText(lbl).width + 48, px = Math.max(x0, Math.min(x0 + w - tw, mx - tw / 2)); ctx.fillStyle = C.onyx; ctx.beginPath(); ctx.roundRect(px, y0, tw, 58, 29); ctx.fill(); ctx.fillStyle = C.goldL; ctx.fillText(lbl, px + tw / 2, y0 + 38);
@@ -56,8 +57,8 @@ function marketCv(ctx, D, mark, x0, y0, w, h) {
 
 export async function buildReport(e, ust, opts = {}) {
   const variant = opts.variant || 'full';
-  await Promise.all([document.fonts.load('40px Marcellus'), document.fonts.load('400 20px Archivo'), document.fonts.load('700 20px Archivo')]);
-  const custom = !!ust.logo, logo = await loadImg(ust.logo || 'icons/logo-am.png'), cover = await loadImg('img/okladka.jpg'), paper = await loadImg('img/papier.jpg');
+  await Promise.all([document.fonts.load('400 20px Archivo'), document.fonts.load('700 20px Archivo')]);
+  const custom = !!ust.logo, logo = await loadImg(ust.logo || 'icons/am-mono.png'), cover = null, paper = null;
   const { subj: s, res: r } = e, sale = s.tryb === 'sprzedaz', step = sale ? 1000 : 10;
   const pages = []; let cv, ctx, y, docTitle = '', docSub = '';
   const newPage = first => {
@@ -66,13 +67,13 @@ export async function buildReport(e, ust, opts = {}) {
     if (first) {
       const BH = 344; ctx.fillStyle = C.onyx; ctx.fillRect(0, 0, W, BH);
       if (cover) { const sh = cover.width * BH / W; ctx.drawImage(cover, 0, cover.height - sh, cover.width, sh, 0, 0, W, BH); }
-      const sh1 = ctx.createLinearGradient(0, 0, W * .8, 0); sh1.addColorStop(0, 'rgba(11,11,13,.86)'); sh1.addColorStop(.7, 'rgba(11,11,13,.55)'); sh1.addColorStop(1, 'rgba(11,11,13,.05)'); ctx.fillStyle = sh1; ctx.fillRect(0, 0, W, BH); const sh2 = ctx.createLinearGradient(0, 0, 0, 200); sh2.addColorStop(0, 'rgba(11,11,13,.8)'); sh2.addColorStop(1, 'rgba(11,11,13,0)'); ctx.fillStyle = sh2; ctx.fillRect(0, 0, W, 200);
-      const g = ctx.createLinearGradient(0, 0, W, 0); g.addColorStop(0, 'rgba(200,164,77,.2)'); g.addColorStop(.5, 'rgba(230,206,148,1)'); g.addColorStop(1, 'rgba(200,164,77,.2)'); ctx.fillStyle = g; ctx.fillRect(0, BH, W, 4);
-      if (logo) { if (custom) { ctx.fillStyle = '#FFFFFF'; ctx.beginPath(); ctx.roundRect(M, 40, 156, 156, 18); ctx.fill(); const k = Math.min(132 / logo.width, 132 / logo.height); ctx.drawImage(logo, M + 78 - logo.width * k / 2, 118 - logo.height * k / 2, logo.width * k, logo.height * k); } else { ctx.save(); ctx.beginPath(); ctx.roundRect(M, 40, 156, 156, 26); ctx.clip(); ctx.drawImage(logo, M, 40, 156, 156); ctx.restore(); } }
-      ctx.fillStyle = C.goldL; ctx.font = '400 54px Marcellus'; ctx.fillText(ust.biuro || 'Biuro nieruchomości', M + 196, 112);
+      const sh1 = ctx.createLinearGradient(0, 0, W * .8, 0); sh1.addColorStop(0, 'rgba(10,20,46,.86)'); sh1.addColorStop(.7, 'rgba(10,20,46,.55)'); sh1.addColorStop(1, 'rgba(10,20,46,.05)'); ctx.fillStyle = sh1; ctx.fillRect(0, 0, W, BH); const sh2 = ctx.createLinearGradient(0, 0, 0, 200); sh2.addColorStop(0, 'rgba(10,20,46,.8)'); sh2.addColorStop(1, 'rgba(10,20,46,0)'); ctx.fillStyle = sh2; ctx.fillRect(0, 0, W, 200);
+      const g = ctx.createLinearGradient(0, 0, W, 0); g.addColorStop(0, 'rgba(29,78,216,.2)'); g.addColorStop(.5, 'rgba(147,176,245,1)'); g.addColorStop(1, 'rgba(29,78,216,.2)'); ctx.fillStyle = g; ctx.fillRect(0, BH, W, 4);
+      if (logo) { if (true) { ctx.fillStyle = '#FFFFFF'; ctx.beginPath(); ctx.roundRect(M, 40, 156, 156, 18); ctx.fill(); const k = Math.min(132 / logo.width, 132 / logo.height); ctx.drawImage(logo, M + 78 - logo.width * k / 2, 118 - logo.height * k / 2, logo.width * k, logo.height * k); } else { ctx.save(); ctx.beginPath(); ctx.roundRect(M, 40, 156, 156, 26); ctx.clip(); ctx.drawImage(logo, M, 40, 156, 156); ctx.restore(); } }
+      ctx.fillStyle = C.goldL; ctx.font = '700 48px Archivo'; ctx.fillText(ust.biuro || 'Biuro nieruchomości', M + 196, 112);
       ctx.fillStyle = C.bone; ctx.font = '400 26px Archivo'; ctx.fillText(ust.haslo || '', M + 196, 158);
       ctx.textAlign = 'right'; ctx.fillStyle = C.bone; ctx.font = '400 24px Archivo'; const dat = t => new Date(t).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' }); ctx.fillText(dat(opts.docNo ? Date.now() : e.ts), W - M, 112); if (opts.docNo) { ctx.font = '400 22px Archivo'; ctx.fillText('Dokument ' + opts.docNo, W - M, 150); ctx.fillText('Wycena' + (opts.docWid ? ' nr ' + opts.docWid.slice(-6).toUpperCase() : '') + ' z ' + dat(e.ts), W - M, 182); } ctx.textAlign = 'left';
-      ctx.textAlign = 'left'; ctx.fillStyle = '#FFFFFF'; ctx.font = '400 46px Marcellus'; ctx.fillText(docTitle, M, 272); ctx.fillStyle = C.goldL; ctx.font = '400 24px Archivo'; ctx.fillText(docSub, M, 314);
+      ctx.textAlign = 'left'; ctx.fillStyle = '#FFFFFF'; ctx.font = '700 40px Archivo'; ctx.fillText(docTitle, M, 272); ctx.fillStyle = C.goldL; ctx.font = '400 24px Archivo'; ctx.fillText(docSub, M, 314);
       y = 412;
     } else { ctx.fillStyle = C.gold; ctx.fillRect(0, 0, W, 10); y = 110; }
   };
@@ -80,7 +81,7 @@ export async function buildReport(e, ust, opts = {}) {
     ctx.font = `${weight} ${size}px ${font}`; ctx.fillStyle = color;
     for (const ln of wrap(ctx, t, maxW)) { ctx.fillText(ln, M, y); y += size * lh; }
   };
-  const hd = t => { text(t, 34, C.ink, 400, 'Marcellus'); ctx.fillStyle = C.gold; ctx.fillRect(M, y - 26, 56, 3); y += 2; };
+  const hd = t => { text(t, 30, C.ink, 700, 'Archivo'); ctx.fillStyle = C.goldD; ctx.fillRect(M, y - 26, 56, 3); y += 2; };
   const footer = n => {
     ctx.font = '400 21px Archivo'; ctx.fillStyle = C.ink2; ctx.textAlign = 'center'; ctx.fillText('Orientacyjna analiza, nie operat szacunkowy w rozumieniu ustawy o gospodarce nieruchomościami.', W / 2, H - 34); ctx.textAlign = 'left';
     ctx.fillStyle = C.line; ctx.fillRect(M, H - 118, W - 2 * M, 2);
@@ -98,7 +99,7 @@ export async function buildReport(e, ust, opts = {}) {
   const finish = disc => {
     ctx.font = '400 22px Archivo'; const dl = wrap(ctx, disc, W - 2 * M - 48), dh = dl.length * 31 + 44;
     if (y + dh > H - 140) { footer(pages.length); newPage(false); }
-    ctx.font = '400 22px Archivo'; ctx.fillStyle = '#F2EEE2'; ctx.beginPath(); ctx.roundRect(M, y, W - 2 * M, dh, 18); ctx.fill(); ctx.fillStyle = C.ink2; dl.forEach((l, i) => ctx.fillText(l, M + 24, y + 38 + i * 31));
+    ctx.font = '400 22px Archivo'; ctx.fillStyle = '#EEF2F7'; ctx.beginPath(); ctx.roundRect(M, y, W - 2 * M, dh, 18); ctx.fill(); ctx.fillStyle = C.ink2; dl.forEach((l, i) => ctx.fillText(l, M + 24, y + 38 + i * 31));
     footer(pages.length);
     pages.forEach((p, i) => { const c2 = p.getContext('2d'); c2.fillStyle = C.paper; c2.fillRect(W - M - 260, H - 100, 260, 40); if (paper) c2.drawImage(paper, (W - M - 260) * paper.width / W, (H - 100) * paper.height / H, 260 * paper.width / W, 40 * paper.height / H, W - M - 260, H - 100, 260, 40); c2.fillStyle = C.ink2; c2.font = '400 22px Archivo'; c2.textAlign = 'right'; c2.fillText(`Strona ${i + 1}/${pages.length}`, W - M, H - 70); c2.textAlign = 'left'; });
     return pages;
@@ -156,8 +157,8 @@ export async function buildReport(e, ust, opts = {}) {
   // wynik
   const bx = M, bw = W - 2 * M, bh = 280; ctx.fillStyle = C.onyx; ctx.strokeStyle = C.gold; ctx.lineWidth = 3; ctx.beginPath(); ctx.roundRect(bx, y, bw, bh, 26); ctx.fill(); ctx.stroke();
   ctx.fillStyle = C.gold; ctx.font = '700 22px Archivo'; ctx.textAlign = 'center'; ctx.fillText((sale ? 'SZACUNKOWA WARTOŚĆ RYNKOWA' : 'SZACUNKOWY CZYNSZ NAJMU, MIESIĘCZNIE').toUpperCase(), W / 2, y + 56);
-  ctx.fillStyle = C.goldL; ctx.font = '400 84px Marcellus'; ctx.fillText(`${money(round(r.total.lo, step))} – ${money(round(r.total.hi, step))} zł`, W / 2, y + 148);
-  ctx.fillStyle = '#C9C5BA'; ctx.font = '400 26px Archivo'; ctx.fillText(`środek przedziału: ${money(round((r.total.lo + r.total.hi) / 2, step))} zł  ·  mediana: ${money(round(r.total.mid, step))} zł  ·  ${money(r.pm2.mid)} zł za m²`, W / 2, y + 196);
+  ctx.fillStyle = C.goldL; ctx.font = '700 74px Archivo'; ctx.fillText(`${money(round(r.total.lo, step))} – ${money(round(r.total.hi, step))} zł`, W / 2, y + 148);
+  ctx.fillStyle = '#B8C4DA'; ctx.font = '400 26px Archivo'; ctx.fillText(`środek przedziału: ${money(round((r.total.lo + r.total.hi) / 2, step))} zł  ·  mediana: ${money(round(r.total.mid, step))} zł  ·  ${money(r.pm2.mid)} zł za m²`, W / 2, y + 196);
   ctx.fillText(`pewność oceny: ${LV[r.confidence.level]}  ·  liczba porównań: ${r.n}`, W / 2, y + 234); ctx.textAlign = 'left'; y += bh + 40;
   hd('Jak to policzono'); y += 4;
   text(sale ? `Metoda porównawcza. Podstawą są ceny z aktów notarialnych zapisane w Rejestrze Cen Nieruchomości (RCN) dla ${fl ? 'lokali o zbliżonej powierzchni, liczbie pokoi, piętrze i położeniu' : ({ dom: 'domów o zbliżonej powierzchni, wielkości działki i położeniu', dzialka: 'działek o zbliżonej powierzchni, przeznaczeniu i położeniu', lokal: 'lokali użytkowych o zbliżonej powierzchni, funkcji i położeniu', obiekt: 'obiektów o zbliżonej powierzchni, rodzaju i położeniu', garaz: 'garaży o zbliżonej powierzchni i położeniu' })[kat]}. Podany przedział to ${r.rangeKind}. Starsze transakcje mają mniejszą wagę.`
@@ -191,8 +192,8 @@ export async function buildReport(e, ust, opts = {}) {
       marketCv(ctx, D, mark, M, y, W - 2 * M, 430); y += 478; text(fl ? 'Wynik analizy uwzględnia też cechy tego mieszkania, takie jak metraż, piętro, rok budowy czy wyposażenie, dlatego nie musi wypadać na środku wykresu.' : 'Wynik analizy uwzględnia też powierzchnię i rodzaj tej nieruchomości, dlatego nie musi wypadać na środku wykresu.', 24, C.ink2); y += 26; }
   }
   if (variant !== 'short' && opts.ogled) { const o = opts.ogled, bl = (t, a) => { if (!a.length) return; ensure(60 + a.length * 34); ctx.font = '700 22px Archivo'; ctx.fillStyle = C.goldD; ctx.fillText(t.toUpperCase(), M, y); y += 34; a.forEach(x => text('•  ' + x, 24, C.ink, 400, 'Archivo', 1.34)); y += 12; };
-    ensure(440); hd('Standard nieruchomości'); y += 8; const bh2 = o.wstep.length ? 196 : 164; ctx.fillStyle = C.onyx; ctx.strokeStyle = C.gold; ctx.lineWidth = 3; ctx.beginPath(); ctx.roundRect(M, y - 26, W - 2 * M, bh2, 22); ctx.fill(); ctx.stroke(); ctx.textAlign = 'center'; ctx.fillStyle = C.gold; ctx.font = '700 20px Archivo'; ctx.fillText(o.fl ? 'STANDARD MIESZKANIA' : 'STANDARD NIERUCHOMOŚCI', W / 2, y + 12); ctx.fillStyle = C.goldL; ctx.font = '400 62px Marcellus'; ctx.fillText(o.kat[0].toUpperCase() + o.kat.slice(1), W / 2, y + 76);
-    if (o.wstep.length) { ctx.fillStyle = '#E8A64C'; ctx.font = '400 22px Archivo'; ctx.fillText('wstępnie, nie sprawdzono: ' + o.wstep.join(', '), W / 2, y + 112); } ctx.fillStyle = '#C9C5BA'; ctx.font = '400 22px Archivo'; ctx.fillText(o.opis, W / 2, y + (o.wstep.length ? 146 : 114)); ctx.textAlign = 'left'; y += bh2 + 14;
+    ensure(440); hd('Standard nieruchomości'); y += 8; const bh2 = o.wstep.length ? 196 : 164; ctx.fillStyle = C.onyx; ctx.strokeStyle = C.gold; ctx.lineWidth = 3; ctx.beginPath(); ctx.roundRect(M, y - 26, W - 2 * M, bh2, 22); ctx.fill(); ctx.stroke(); ctx.textAlign = 'center'; ctx.fillStyle = C.gold; ctx.font = '700 20px Archivo'; ctx.fillText(o.fl ? 'STANDARD MIESZKANIA' : 'STANDARD NIERUCHOMOŚCI', W / 2, y + 12); ctx.fillStyle = C.goldL; ctx.font = '700 55px Archivo'; ctx.fillText(o.kat[0].toUpperCase() + o.kat.slice(1), W / 2, y + 76);
+    if (o.wstep.length) { ctx.fillStyle = '#F5B759'; ctx.font = '400 22px Archivo'; ctx.fillText('wstępnie, nie sprawdzono: ' + o.wstep.join(', '), W / 2, y + 112); } ctx.fillStyle = '#B8C4DA'; ctx.font = '400 22px Archivo'; ctx.fillText(o.opis, W / 2, y + (o.wstep.length ? 146 : 114)); ctx.textAlign = 'left'; y += bh2 + 14;
     bl('Atuty', o.atuty); bl('Do poprawy', o.popraw); bl('Nie sprawdzono', o.nie.length ? [o.nie.join(', ')] : []); ensure(90); text(o.nota, 21, C.ink2, 400, 'Archivo', 1.38); y += 22; }
   if (variant !== 'short' && opts.okolica && opts.okolica.length) {
     okolTab(); if (opts.okolicaOpis) { ensure(90); text(opts.okolicaOpis, 24, C.ink); y += 10; } okolSrc();

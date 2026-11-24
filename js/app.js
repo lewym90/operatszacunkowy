@@ -291,7 +291,7 @@ function viewWycena() {
   const stat = sale ? (S.pool.length ? `Baza RCN: ${fmt(S.pool.length)} transakcji${flat ? '' : `, w tym ${fmt(katN)} z kategorii „${KAT[kat].n}”`}` : '') : (S.offers.length ? `Baza ofert najmu: ${fmt(S.offers.length)}` : '');
   const chipsHTML = (name, opts, cur) => `<div class="chips" data-chips="${name}">${opts.map(([v, n]) => `<button type="button" class="chip ${cur === v ? 'on' : ''}" data-v="${v}">${n}</button>`).join('')}</div>`;
   const po = POD_OPT[kat];
-  const html = head(sale ? 'Wycena sprzedaży' : 'Wycena najmu') + safeBanner() + `
+  const html = head(sale ? 'Wycena sprzedaży' : 'Wycena najmu') + kroki(1) + safeBanner() + `
   <div class="seg" data-v="${sale ? 0 : 1}"><i></i><button data-t="sprzedaz" class="${sale ? 'on' : ''}">Sprzedaż</button><button data-t="najem" class="${sale ? '' : 'on'}">Najem</button></div>
   ${katImg(kat) ? `<img class="res-foto sm" src="${katImg(kat)}" alt="">` : ''}<div class="field" style="margin-top:14px"><span>Rodzaj nieruchomości</span><div class="chips" data-katsel>${KAT_ORDER.filter(k => k !== 'zabudowana').map(k => `<button type="button" class="chip ${kat === k ? 'on' : ''}" data-v="${k}">${KAT[k].n}</button>`).join('')}</div></div>
   ${ready ? `<div class="banner"><span>◈</span><span>${stat}. Wynik zawsze jako przedział z oceną pewności.</span></div>`
@@ -386,6 +386,13 @@ function computeEntry(f) {
 }
 
 /* ---------- WYNIK ---------- */
+// Kroki wyceny (szata 2.0, jak w projekcie): 1 Dane → 2 Porównania → 3 Wynik. Na wyniku krok 1 wraca do formularza (z tymi samymi danymi), krok 2 przewija do porównań.
+function kroki(n, edit = true) {
+  const K = [[1, 'Dane'], [2, 'Porównania'], [3, 'Wynik']];
+  return `<div class="kroki">${K.map(([i, l]) => `<button type="button" class="kr${i === n ? ' on' : i < n ? ' done' : ''}" data-krok="${i}"${(n === 1 && i > 1) || (i === 1 && n !== 1 && !edit) ? ' disabled' : ''}><i>${i}</i><span>${l}</span></button>`).join('<b></b>')}</div>`;
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-krok]'); if (!b || b.disabled) return; const k = +b.dataset.krok;
+  if (k === 1 && !b.classList.contains('on')) go('#/wycena'); else if (k === 2) { const el = $('#porow') || $('#szcz'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } else if (k === 3) { const el = $('.hero'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } });
 const subjLine = s => { const k = s.kat || 'mieszkanie', fl = k === 'mieszkanie', sale = s.tryb === 'sprzedaz';
   return [fl ? '' : KAT[k].n, sale || !fl ? [s.ulica, s.nr].filter(Boolean).join(' ') : [s.dzielnica, s.ulica].filter(Boolean).join(', '), `${String(s.m2).replace('.', ',')} m²`, fl ? `${s.pokoje} pok.` : '', k === 'dom' && s.dzm2 ? `działka ${String(s.dzm2).replace('.', ',')} m²` : '', s.pod ? (POD_TXT[s.pod] || '') : '',
     fl ? (s.pietro == null ? '' : s.pietro === 0 ? 'parter' : `${s.pietro}. piętro`) : '', s.rok ? `rok ${s.rok}` : ''].filter(Boolean).join(' · '); };
@@ -410,6 +417,7 @@ function viewWynik(p) {
       <button class="btn ghost" data-act="back">Zmień dane</button>`;
     return [html, v => { $('[data-back]', v).onclick = () => history.length > 1 ? history.back() : go('#/wycena'); $('[data-act="back"]', v).onclick = () => go('#/wycena'); }];
   }
+  html += kroki(3, !saved);
   const lo = roundTo(r.total.lo, step), hi = roundTo(r.total.hi, step), mid = roundTo(r.total.mid, step);
   const pm = r.comps.map(c => c.pm2), dMin = Math.min(...pm, r.pm2.lo), dMax = Math.max(...pm, r.pm2.hi), span = (dMax - dMin) || 1, X = v => ((v - dMin) / span * 100).toFixed(2);
   const srodek = roundTo((r.total.lo + r.total.hi) / 2, step), foto = (e.teczka && (S.foto[e.teczka] || [])[0]) || katImg(s.kat), podM2 = s.m2 > 0 ? srodek / s.m2 : null;
@@ -453,7 +461,7 @@ function viewWynik(p) {
     ${r.unused.length ? `<div class="eyebrow" style="margin-top:14px">Nie uwzględniono w wycenie</div><ul class="clean">${r.unused.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}</div>`;
   const withLL = r.comps.filter(c => c.lat != null);
   if (sale && r.subLL && withLL.length >= 3) html += `<div class="card"><div class="eyebrow">Położenie porównań</div><div class="mapbox sm" id="resmap">${mapSVG(r)}</div><div id="reslegend"></div><p class="tiny muted" style="margin:8px 0 0">Złoty pierścień: lokal wyceniany (${esc(r.llKind || '')}). Większy punkt = większa waga porównania; kolor = cena za m². Dotknij punktu, aby zobaczyć transakcję.</p></div>`;
-  html += `<div class="card"><div class="eyebrow">Porównania (${r.comps.length})</div><div id="comps">${r.comps.slice(0, 10).map((c, i) => compHTML(c, i, sale, e)).join('')}</div>${r.comps.length > 10 ? '<button class="btn ghost" data-act="more" style="margin-top:10px">Pokaż wszystkie</button>' : ''}</div>
+  html += `<div class="card" id="porow"><div class="eyebrow">Porównania (${r.comps.length})</div><div id="comps">${r.comps.slice(0, 10).map((c, i) => compHTML(c, i, sale, e)).join('')}</div>${r.comps.length > 10 ? '<button class="btn ghost" data-act="more" style="margin-top:10px">Pokaż wszystkie</button>' : ''}</div>
   ${ogledKarta(e)}<div id="okol"></div>
   <div class="row">${saved ? '' : '<button class="btn ghost" data-act="save">Zapisz do historii</button>'}<button class="btn" data-act="report">Raport dla klienta</button></div>
   <div class="gap"></div><button class="btn ghost" data-act="calc">Kalkulator inwestycyjny</button>

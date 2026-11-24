@@ -412,7 +412,7 @@ details summary { cursor: pointer; }
   #view[data-view="wynik"] .body:has(> .hero), #view[data-view="dane"] .body, #view[data-view="historia"] .body { column-count: 2; column-gap: 16px; }
   #view .body > .card, #view .body > a.card { break-inside: avoid; }
   #view .body > .card:has(> .off) { max-height: 74vh; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
-  #view .body > .hero, #view .body > .stats, #view .body > .row, #view .body > .btn, #view .body > .gap, #view .body > .empty, #view .body > .res-foto, #view .body > .res-addr { column-span: all; }
+  #view .body > .hero, #view .body > .stats, #view .body > .row, #view .body > .btn, #view .body > .gap, #view .body > .empty, #view .body > .res-foto, #view .body > .res-addr, #view .body > .kroki { column-span: all; }
   #view[data-view="raport"] .report-img { max-width: 640px; margin-left: auto; margin-right: auto; }
   #sheet .pane { max-width: 620px; bottom: 4vh; max-height: 90vh; border-radius: 16px; padding: 14px 24px 24px; }
   .okgrid { grid-template-columns: repeat(3, 1fr); } .okgrid.two { grid-template-columns: 1fr 1fr; }
@@ -449,3 +449,13 @@ details summary { cursor: pointer; }
 /* bez powiększania dwoma palcami i dwuklikiem (mapa ma własne przybliżanie) */
 html, body { touch-action: pan-x pan-y; } a, button, input, select, textarea, label, summary, .tile, .chip { touch-action: manipulation; }
 .leaflet-container, .leaflet-container * { touch-action: none; }
+
+/* kroki wyceny */
+.kroki { display: flex; align-items: center; gap: 8px; margin: -4px 0 16px; }
+.kroki b { flex: 1; height: 2px; background: var(--border); border-radius: 1px; max-width: 80px; }
+.kr { display: inline-flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 8px; font-size: 13.5px; font-weight: 600; color: var(--ink3); }
+.kr i { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font: 700 12.5px var(--text); font-style: normal; background: var(--soft2); color: var(--ink2); }
+.kr.on { color: var(--ink); } .kr.on i { background: var(--brand); color: #fff; }
+.kr.done { color: var(--ink2); } .kr.done i { background: var(--brand-l); color: var(--brand); }
+.kr[disabled] { cursor: default; } .kr:not([disabled]):not(.on):hover { background: var(--soft); }
+.kr.on span { border-bottom: 2px solid var(--brand); padding-bottom: 1px; }
