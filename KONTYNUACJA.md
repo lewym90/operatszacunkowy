@@ -28,7 +28,7 @@ Właściciel wkleja do nowej sesji (z podpiętym GitHubem i repo `lewym90/operat
 - Właściciel: biuro **AM Nieruchomości** (Lublin). Biuro otwiera najwcześniej w **lutym 2027**. Marka: „Sprawdzone do końca.”, kolory onyx #0B0B0D + złoto #C8A44D, fonty Marcellus + Archivo.
 - Aplikacja: PWA „OPERAT SZACUNKOWY” — orientacyjna ocena wartości **sprzedaży** (z cen transakcyjnych RCN) i **najmu** (z ofert Otodom oraz własnych umów). Nazwa aplikacji jest tylko dla właściciela; w raportach dla klienta jej nie ma (raport = „Orientacyjna analiza…”, wynik to „szacunkowa wartość”, nie wycena rzeczoznawcy).
 - Repo: `lewym90/operatszacunkowy`, kod lokalnie zwykle w `/home/claude/operatszacunkowy`. Publikacja: GitHub Pages `https://lewym90.github.io/operatszacunkowy/` (wdrożenie po pushu trwa 1–3 min). Dane (oferty, historia, RCN) są tylko w telefonie (IndexedDB) i na prywatnym serwerze właściciela; repo zawiera sam kod.
-- Właściciel używa aplikacji głównie na iPhonie (PWA z ekranu początkowego). Zrzuty ekranu z telefonu to najlepsze źródło informacji o błędach.
+- **Od 24.11.2026 (decyzja właściciela): głównym założeniem jest praca na komputerze; telefon i tablet to dodatek.** Układ ekranów projektujemy najpierw pod komputer (szeroki ekran), potem dopasowujemy do telefonu. Dotąd aplikacja powstawała pod iPhone'a (PWA z ekranu początkowego), więc zrzuty z telefonu nadal są cenne przy błędach.
 
 ## 2. Zasady ustalone z właścicielem (obowiązujące)
 
