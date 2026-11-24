@@ -80,7 +80,7 @@ export function yieldByDistrict(offers, tx, opts = {}) {
 }
 
 /* ---------- WYKRESY SVG ---------- */
-const GOLD = '#C8A44D', GOLDL = '#E6CE94', ASH = '#9A978F', LINE = 'rgba(232,229,222,.10)';
+const GOLD = '#1D4ED8', GOLDL = '#1D4ED8', ASH = '#8A94A6', LINE = '#E9EDF3';   // szata 2.0: niebieski, jasne tło
 const niceTicks = (min, max, n = 4) => {
   const span = max - min || 1, raw = span / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag, step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag;
   const a = Math.floor(min / step) * step, out = []; for (let v = a; v <= max + step * 0.5; v += step) out.push(v); return out;
@@ -95,13 +95,13 @@ export function lineChart(points, o = {}) {
   const hasBand = points.every(p => p.p25 != null && p.p75 != null);
   const band = hasBand ? `<path d="M${points.map(p => `${X(p.t).toFixed(1)},${Y(p.p75).toFixed(1)}`).join(' L')} L${[...points].reverse().map(p => `${X(p.t).toFixed(1)},${Y(p.p25).toFixed(1)}`).join(' L')} Z" fill="${GOLD}" opacity=".13"/>` : '';
   const P = points.map(p => [X(p.t), Y(p.med)]), curve = P.map((q, i) => { if (!i) return `M${q[0].toFixed(1)},${q[1].toFixed(1)}`; const p0 = P[i - 2] || P[i - 1], p1 = P[i - 1], p2 = P[i + 1] || q, c1 = [p1[0] + (q[0] - p0[0]) / 6, p1[1] + (q[1] - p0[1]) / 6], c2 = [q[0] - (p2[0] - p1[0]) / 6, q[1] - (p2[1] - p1[1]) / 6]; return `C${c1[0].toFixed(1)},${c1[1].toFixed(1)} ${c2[0].toFixed(1)},${c2[1].toFixed(1)} ${q[0].toFixed(1)},${q[1].toFixed(1)}`; }).join(' ');
-  const base = (H - B).toFixed(1), area = `<defs><linearGradient id="lga" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${GOLD}" stop-opacity=".42"/><stop offset="1" stop-color="${GOLD}" stop-opacity="0"/></linearGradient></defs><path d="${curve} L${P[P.length - 1][0].toFixed(1)},${base} L${P[0][0].toFixed(1)},${base} Z" fill="url(#lga)"/>`;
+  const base = (H - B).toFixed(1), area = `<defs><linearGradient id="lga" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${GOLD}" stop-opacity=".18"/><stop offset="1" stop-color="${GOLD}" stop-opacity="0"/></linearGradient></defs><path d="${curve} L${P[P.length - 1][0].toFixed(1)},${base} L${P[0][0].toFixed(1)},${base} Z" fill="url(#lga)"/>`;
   const line = `${area}<path d="${curve}" fill="none" stroke="${GOLDL}" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/>`;
-  const last = points[points.length - 1], lt = `${fmt(last.med)} ${unit}`, lw = 18 + lt.length * 6.5, lq = P[P.length - 1], lx = Math.max(L, Math.min(W - R - lw, lq[0] - lw + 6)), ly = lq[1] - 34 < T ? lq[1] + 12 : lq[1] - 34, tip = `<g pointer-events="none"><rect x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" width="${lw.toFixed(1)}" height="23" rx="11.5" fill="#0B0B0D" stroke="${GOLD}"/><text x="${(lx + lw / 2).toFixed(1)}" y="${(ly + 16).toFixed(1)}" text-anchor="middle" fill="${GOLDL}" font-size="12" font-weight="700">${lt}</text></g>`;
+  const last = points[points.length - 1], lt = `${fmt(last.med)} ${unit}`, lw = 18 + lt.length * 6.5, lq = P[P.length - 1], lx = Math.max(L, Math.min(W - R - lw, lq[0] - lw + 6)), ly = lq[1] - 34 < T ? lq[1] + 12 : lq[1] - 34, tip = `<g pointer-events="none"><rect x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" width="${lw.toFixed(1)}" height="23" rx="11.5" fill="#0F1B33" stroke="#0F1B33"/><text x="${(lx + lw / 2).toFixed(1)}" y="${(ly + 16).toFixed(1)}" text-anchor="middle" fill="#FFFFFF" font-size="12" font-weight="700">${lt}</text></g>`;
   const grid = ticks.map(v => `<line x1="${L}" x2="${W - R}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="${LINE}"/><text x="${L - 8}" y="${(Y(v) + 4).toFixed(1)}" text-anchor="end" fill="${ASH}" font-size="11">${fmt(v)}</text>`).join('');
   // etykiety osi X: lata
   let lastX = -99; const years = [...new Set(points.map(p => new Date(p.t).getUTCFullYear()))].filter(y => { const x = X(Math.max(t0, Math.min(t1, Date.UTC(y, 0, 1)))); if (x - lastX < 34) return false; lastX = x; return true; }), xl = years.map(y => { const tt = Date.UTC(y, 0, 1), x = X(Math.max(t0, Math.min(t1, tt))); return `<text x="${x.toFixed(1)}" y="${H - 8}" text-anchor="${x < L + 12 ? 'start' : 'middle'}" fill="${ASH}" font-size="11">${y}</text>`; }).join('');
-  const dots = points.map((p, i) => `<circle cx="${X(p.t).toFixed(1)}" cy="${Y(p.med).toFixed(1)}" r="${(2.6 + Math.min(3, Math.sqrt(p.n || 0) / 8)).toFixed(1)}" fill="#0B0B0D" stroke="${GOLDL}" stroke-width="1.6" data-i="${i}"/>`).join('');
+  const dots = points.map((p, i) => `<circle cx="${X(p.t).toFixed(1)}" cy="${Y(p.med).toFixed(1)}" r="${(2.6 + Math.min(3, Math.sqrt(p.n || 0) / 8)).toFixed(1)}" fill="#FFFFFF" stroke="${GOLDL}" stroke-width="1.6" data-i="${i}"/>`).join('');
   const data = esc(JSON.stringify(points.map(p => ({ x: +X(p.t).toFixed(1), l: p.label, m: Math.round(p.med), a: p.p25 != null ? Math.round(p.p25) : null, b: p.p75 != null ? Math.round(p.p75) : null, n: p.n ?? null }))));
   return `<div class="chart" data-chart="${data}" data-unit="${esc(unit)}" data-med="${esc(o.medLabel || 'mediana')}" data-band="${esc(o.bandLabel || 'środkowe 50%')}"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.label || 'Wykres')}" preserveAspectRatio="xMidYMid meet">${grid}${band}${line}${dots}${tip}${xl}<line class="xh" x1="0" x2="0" y1="${T}" y2="${H - B}" stroke="${GOLDL}" stroke-width="1" opacity="0" stroke-dasharray="3 3"/></svg><div class="chart-read" aria-live="polite">Dotknij wykresu, aby zobaczyć wartość.</div></div>`;
 }
@@ -112,13 +112,13 @@ export function barChart(rows, o = {}) {
   const ref = o.ref != null ? `<line x1="${X(o.ref).toFixed(1)}" x2="${X(o.ref).toFixed(1)}" y1="${T - 4}" y2="${H - 22}" stroke="${GOLDL}" stroke-dasharray="4 4" opacity=".7"/><text x="${X(o.ref).toFixed(1)}" y="${H - 6}" text-anchor="middle" fill="${GOLDL}" font-size="11">miasto ${o.ref.toFixed(1).replace('.', ',')}%</text>` : '';
   const g = rows.map((r, i) => {
     const y = T + i * rowH, cy = y + 14;
-    return `<text x="${L - 10}" y="${cy + 5}" text-anchor="end" fill="#E8E5DE" font-size="12.5">${esc(r.name.length > 13 ? r.name.slice(0, 12) + '…' : r.name)}</text>
+    return `<text x="${L - 10}" y="${cy + 5}" text-anchor="end" fill="#0F1B33" font-size="12.5">${esc(r.name.length > 13 ? r.name.slice(0, 12) + '…' : r.name)}</text>
       <rect x="${L}" y="${cy - 9}" width="${Math.max(2, X(r.y) - L).toFixed(1)}" height="18" rx="4" fill="url(#bg)"/>
-      ${r.yLo != null ? `<line x1="${X(r.yLo).toFixed(1)}" x2="${X(r.yHi).toFixed(1)}" y1="${cy}" y2="${cy}" stroke="#0B0B0D" stroke-width="2.2" opacity=".75"/><line x1="${X(r.yLo).toFixed(1)}" x2="${X(r.yLo).toFixed(1)}" y1="${cy - 5}" y2="${cy + 5}" stroke="#0B0B0D" stroke-width="2.2" opacity=".75"/><line x1="${X(r.yHi).toFixed(1)}" x2="${X(r.yHi).toFixed(1)}" y1="${cy - 5}" y2="${cy + 5}" stroke="#0B0B0D" stroke-width="2.2" opacity=".75"/>` : ''}
+      ${r.yLo != null ? `<line x1="${X(r.yLo).toFixed(1)}" x2="${X(r.yHi).toFixed(1)}" y1="${cy}" y2="${cy}" stroke="#0F1B33" stroke-width="2.2" opacity=".55"/><line x1="${X(r.yLo).toFixed(1)}" x2="${X(r.yLo).toFixed(1)}" y1="${cy - 5}" y2="${cy + 5}" stroke="#0F1B33" stroke-width="2.2" opacity=".55"/><line x1="${X(r.yHi).toFixed(1)}" x2="${X(r.yHi).toFixed(1)}" y1="${cy - 5}" y2="${cy + 5}" stroke="#0F1B33" stroke-width="2.2" opacity=".55"/>` : ''}
       <text x="${(X(r.yHi ?? r.y) + 8).toFixed(1)}" y="${cy + 5}" fill="${GOLDL}" font-size="13" font-weight="700">${r.y.toFixed(1).replace('.', ',')}%</text>
       <text x="${L}" y="${cy + 24}" fill="${ASH}" font-size="10">${esc(r.sub || '')}</text>`;
   }).join('');
-  return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.label || 'Wykres słupkowy')}"><defs><linearGradient id="bg" x1="0" x2="1"><stop offset="0" stop-color="#8A6C2A"/><stop offset="1" stop-color="${GOLDL}"/></linearGradient></defs>${g}${ref}</svg></div>`;
+  return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.label || 'Wykres słupkowy')}"><defs><linearGradient id="bg" x1="0" x2="1"><stop offset="0" stop-color="#93B0F5"/><stop offset="1" stop-color="${GOLDL}"/></linearGradient></defs>${g}${ref}</svg></div>`;
 }
 
 // Interakcja: odczyt wartości po dotknięciu/najechaniu. Wywołać po wstawieniu HTML do dokumentu.

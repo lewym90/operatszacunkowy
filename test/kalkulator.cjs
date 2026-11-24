@@ -14,7 +14,7 @@ const SP = process.argv[2], OUT = SP + '/shots-kalk'; fs.mkdirSync(OUT, { recurs
   const h2 = await p.$eval('#ikpi [data-k=netPost]', e => e.innerText); ok(h2 !== hero, 'zmiana podatku zmienia wynik: ' + h2);
   await fill('wklad', 30); await fill('oproc', 7); await fill('lata', 25); await p.waitForTimeout(300);
   ok(/Rata kredytu/.test(await p.$eval('#ires', e => e.innerText)), 'sekcja kredytu pojawia się');
-  ok(await p.$eval('#tabs a.on', e => /Rynek/i.test(e.textContent)), 'zakładka Rynek podświetlona na kalkulatorze');
+  ok(await p.$eval('#tabs a.on', e => /Kalkulator/i.test(e.textContent)), 'zakładka Kalkulator podświetlona na kalkulatorze (szata 2.0: osobna pozycja menu)');
   await p.screenshot({ path: OUT + '/01.png', fullPage: true });
   await p.reload(); await p.waitForTimeout(1200); ok(await p.$eval('[data-iv=cena]', e => e.value) === '500000', 'dane kalkulatora zapamiętane po odświeżeniu');
   console.log('JS:', errs.length ? errs : 'brak'); await b.close(); srv.kill(); if (fail.length || errs.length) process.exit(1);

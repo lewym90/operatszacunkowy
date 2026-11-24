@@ -14,6 +14,7 @@ node test/jakosc.test.mjs
 node test/adres.test.mjs
 if grep -rIilE 'dorad' js css index.html manifest.webmanifest sw.template.js server tools; then echo 'FAIL: niedozwolone słowo z rdzenia dorad'; exit 1; fi
 node test/ogledziny.test.mjs
+node test/trafnosc.test.mjs
 node test/rynek.test.mjs
 [ -f test/invest.test.mjs ] && node test/invest.test.mjs
 bash test/sync.sh

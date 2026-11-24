@@ -29,6 +29,21 @@ export async function saveFile(blob, name) {
 }
 
 export const ICON = {
+  // szata 2.0: ikony konturowe wg projektu
+  dom: '<svg viewBox="0 0 24 24"><path d="M3.5 11 12 4l8.5 7"/><path d="M5.5 9.5V20h13V9.5"/><path d="M10 20v-5.5h4V20"/></svg>',
+  szukaj: '<svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><path d="m14.5 14.5 6 6"/><path d="M10 7v6M7 10h6"/></svg>',
+  klucz2: '<svg viewBox="0 0 24 24"><circle cx="15.5" cy="8.5" r="4.5"/><path d="M12.3 11.7 4 20M6.5 17.5l2 2M9 15l2 2"/></svg>',
+  pin: '<svg viewBox="0 0 24 24"><path d="M12 21s-6.5-5.6-6.5-10.8A6.5 6.5 0 0 1 12 3.7a6.5 6.5 0 0 1 6.5 6.5C18.5 15.4 12 21 12 21z"/><circle cx="12" cy="10" r="2.4"/></svg>',
+  wykres: '<svg viewBox="0 0 24 24"><path d="M4 4v16h16"/><path d="M8 16v-3M12 16V9M16 16v-5M7.5 9.5 11 6l3 2.5L19 4"/></svg>',
+  warstwy2: '<svg viewBox="0 0 24 24"><path d="m12 3.5 9 4.5-9 4.5L3 8z"/><path d="m3 12 9 4.5 9-4.5M3 16l9 4.5 9-4.5"/></svg>',
+  karta: '<svg viewBox="0 0 24 24"><path d="M9 4.5H6v16h12v-16h-3"/><path d="M9 3h6v3H9zM8.5 13l2.5 2.5 4.5-5"/></svg>',
+  folder: '<svg viewBox="0 0 24 24"><path d="M3.5 18.5v-12h6l2 2.5h9v9.5z"/></svg>',
+  kalkulator: '<svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h.01M12 11h.01M16 11h.01M8 14.5h.01M12 14.5h.01M16 14.5h.01M8 18h.01M12 18h.01M16 18h.01"/></svg>',
+  pdf: '<svg viewBox="0 0 24 24"><path d="M6 3.5h8.5L19 8v12.5H6z"/><path d="M14 3.5V8.5h5M9 12.5h7M9 16h7"/></svg>',
+  cel: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1"/><path d="m15 9 5.5-5.5M17.5 3.5v3h3"/></svg>',
+  chev: '<svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>',
+  info: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 8h.01"/></svg>',
+  budynek: '<svg viewBox="0 0 24 24"><path d="M4 20.5h16M6 20.5V5l7-2v17.5M13 8h5v12.5"/><path d="M9 8h1M9 11h1M9 14h1M9 17h1M15.5 11h.01M15.5 14h.01M15.5 17h.01"/></svg>',
   wycena: '<svg viewBox="0 0 24 24"><path d="M8 4.5H6v16h12v-16h-2"/><path d="M8.5 3h7v3h-7zM9 11h6M9 14.5h6M9 18h4"/></svg>',
   dane: '<svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7.5" ry="3"/><path d="M4.5 6v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6M4.5 12v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/></svg>',
   oferty: '<svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1.2"/><circle cx="4" cy="12" r="1.2"/><circle cx="4" cy="18" r="1.2"/></svg>',

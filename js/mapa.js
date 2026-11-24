@@ -4,7 +4,7 @@ import { normStreet } from './engine.js';
 import { esc, fmt } from './ui.js';
 import { KAT, POD_TXT, pm2Of } from './rcn.js';
 
-export const PALETTE = ['#7A5F26', '#A6863B', '#C8A44D', '#E0C27A', '#F6EAC6'];   // tanio → drogo: jedna skala złota, od brązu do jasnego szampana
+export const PALETTE = ['#3B82F6', '#22C55E', '#EAB308', '#F97316', '#E5484D'];   // tanio → drogo: od niebieskiego przez zielony i żółty do czerwonego (szata 2.0)
 export const LUBLIN = [51.2465, 22.5684];
 
 let lp = null;
@@ -116,7 +116,7 @@ function DotsLayer(L, items, color, popup, group) {
       const m = this._m, s = m.getSize(), dpr = Math.min(window.devicePixelRatio || 1, 2), c = this._c;
       L.DomUtil.setPosition(c, m.containerPointToLayerPoint([0, 0]));
       c.width = Math.round(s.x * dpr); c.height = Math.round(s.y * dpr); c.style.width = s.x + 'px'; c.style.height = s.y + 'px';
-      const x = c.getContext('2d'); x.setTransform(dpr, 0, 0, dpr, 0, 0); x.lineWidth = .6; x.strokeStyle = 'rgba(11,11,13,.85)'; x.globalAlpha = .82;
+      const x = c.getContext('2d'); x.setTransform(dpr, 0, 0, dpr, 0, 0); x.lineWidth = .6; x.strokeStyle = 'rgba(255,255,255,.95)'; x.globalAlpha = .82;
       const r = Math.max(2.2, Math.min(5, (m.getZoom() - 8) * .55 + 1.6));
       this._gr = []; this._si = null;
       if (group && m.getZoom() < 15 && this._it.length > 12) {   // przy oddaleniu grupy z liczbą punktów; od zbliżenia 15 pojedyncze transakcje
@@ -124,7 +124,7 @@ function DotsLayer(L, items, color, popup, group) {
         for (const q of groups) { q.x -= o.x; q.y -= o.y; } for (const q of single) q.p = { x: q.p.x - o.x, y: q.p.y - o.y }; this._si = single.map(q => q.it);
         for (const { it, p } of single) { x.fillStyle = color(it.v); x.beginPath(); x.arc(p.x, p.y, r, 0, 6.2832); x.fill(); x.stroke(); }
         x.font = '700 12px Archivo, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
-        for (const q of groups) { const rr = Math.min(24, 12 + Math.log2(q.n) * 2); q.r = rr; x.globalAlpha = .9; x.fillStyle = color(q.med); x.beginPath(); x.arc(q.x, q.y, rr, 0, 6.2832); x.fill(); x.globalAlpha = 1; x.lineWidth = 1.5; x.stroke(); x.fillStyle = '#0B0B0D'; x.fillText(q.n > 999 ? String(Math.round(q.n / 100) / 10).replace('.', ',') + ' tys.' : q.n, q.x, q.y + 1); }
+        for (const q of groups) { const rr = Math.min(24, 12 + Math.log2(q.n) * 2); q.r = rr; x.globalAlpha = .9; x.fillStyle = color(q.med); x.beginPath(); x.arc(q.x, q.y, rr, 0, 6.2832); x.fill(); x.globalAlpha = 1; x.lineWidth = 1.5; x.stroke(); x.fillStyle = '#0F1B33'; x.fillText(q.n > 999 ? String(Math.round(q.n / 100) / 10).replace('.', ',') + ' tys.' : q.n, q.x, q.y + 1); }
         this._gr = groups; return;
       }
       for (let i = 0; i < this._it.length; i++) {
@@ -164,12 +164,12 @@ export async function createMap(el, opts = {}) {
         const lyr = new DotsLayer(L, items, color, popup); lyr.addTo(layer); return items.map(it => [it.lat, it.lon]);
       }
       const pts = [];
-      for (const it of items) { L.circleMarker([it.lat, it.lon], { radius: it.r || 4.5, weight: it.approx ? 1.2 : .6, dashArray: it.approx ? '2 2' : null, color: it.approx ? color(it.v) : 'rgba(11,11,13,.85)', fillColor: color(it.v), fillOpacity: it.approx ? .35 : .8 }).bindPopup(() => popup(it)).addTo(layer); pts.push([it.lat, it.lon]); }
+      for (const it of items) { L.circleMarker([it.lat, it.lon], { radius: it.r || 4.5, weight: it.approx ? 1.2 : .6, dashArray: it.approx ? '2 2' : null, color: it.approx ? color(it.v) : 'rgba(255,255,255,.95)', fillColor: color(it.v), fillOpacity: it.approx ? .35 : .8 }).bindPopup(() => popup(it)).addTo(layer); pts.push([it.lat, it.lon]); }
       return pts;
     },
-    cells(cells, color, popup) { for (const c of cells) L.rectangle(c.bounds, { weight: .6, color: 'rgba(11,11,13,.7)', fillColor: color(c.med), fillOpacity: .62 }).bindPopup(() => popup(c)).addTo(layer); },
-    bubbles(items, color, popup) { for (const it of items) L.circleMarker([it.lat, it.lon], { radius: 24, weight: 1.5, color: 'rgba(11,11,13,.9)', fillColor: color(it.v), fillOpacity: .78 }).bindPopup(() => popup(it)).bindTooltip(it.txt, { permanent: true, direction: 'center', className: 'bubble-t' }).addTo(layer); },
-    subject(ll, label) { if (!ll) return; L.circleMarker(ll, { radius: 11, weight: 3, color: '#0B0B0D', fillOpacity: 0 }).bindTooltip(label || 'Wyceniane mieszkanie').addTo(layer); L.circleMarker(ll, { radius: 4, weight: 0, fillColor: '#0B0B0D', fillOpacity: 1 }).addTo(layer); },
+    cells(cells, color, popup) { for (const c of cells) L.rectangle(c.bounds, { weight: .6, color: 'rgba(255,255,255,.9)', fillColor: color(c.med), fillOpacity: .62 }).bindPopup(() => popup(c)).addTo(layer); },
+    bubbles(items, color, popup) { for (const it of items) L.circleMarker([it.lat, it.lon], { radius: 24, weight: 1.5, color: 'rgba(255,255,255,.95)', fillColor: color(it.v), fillOpacity: .78 }).bindPopup(() => popup(it)).bindTooltip(it.txt, { permanent: true, direction: 'center', className: 'bubble-t' }).addTo(layer); },
+    subject(ll, label) { if (!ll) return; L.circleMarker(ll, { radius: 11, weight: 3, color: '#0F1B33', fillOpacity: 0 }).bindTooltip(label || 'Wyceniane mieszkanie').addTo(layer); L.circleMarker(ll, { radius: 4, weight: 0, fillColor: '#0F1B33', fillOpacity: 1 }).addTo(layer); },
     fit(pts, pad = 24) { if (pts && pts.length > 1) map.fitBounds(L.latLngBounds(pts), { padding: [pad, pad], maxZoom: 16 }); else if (pts && pts.length === 1) map.setView(pts[0], 15); },
     destroy() { map.remove(); },
   };
