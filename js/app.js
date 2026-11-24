@@ -174,7 +174,7 @@ let startMemo = null, trafMemo = null;
 function wLast() {
   const e = lastEntry();
   if (!e) return `<div class="card w-last"><div class="eyebrow">Ostatnia wycena</div><div class="empty" style="padding:14px 0"><b>Brak wycen</b>Pierwsza wycena pojawi się tutaj.</div><button class="btn" type="button" data-tile="sale">${ICON.dom}Wycena sprzedaży</button></div>`;
-  const s = e.subj, r = e.res, sale = s.tryb === 'sprzedaz', st = sale ? 1000 : 10, k = s.kat || 'mieszkanie', foto = e.teczka && (S.foto[e.teczka] || [])[0];
+  const s = e.subj, r = e.res, sale = s.tryb === 'sprzedaz', st = sale ? 1000 : 10, k = s.kat || 'mieszkanie', foto = (e.teczka && (S.foto[e.teczka] || [])[0]) || katImg(k);
   const lo = roundTo(r.total.lo, st), hi = roundTo(r.total.hi, st), lvl = r.confidence ? r.confidence.score : 0;
   return `<div class="card w-last"><div class="eyebrow"><span>Ostatnia wycena – ${KAT[k].n.toLowerCase()} (${sale ? 'sprzedaż' : 'najem'})</span><a href="#/historia">Historia</a></div>
     <div class="lw">${foto ? `<img src="${foto}" alt="">` : `<div class="ph0">${ICON.budynek}</div>`}<div><b>${esc([s.ulica, s.nr].filter(Boolean).join(' ') || s.dzielnica || 'Nieruchomość')}${s.ulica ? ', ' + esc(obszar()[0] === 'krakow' ? 'Kraków' : 'Lublin') : ''}</b><span>${String(s.m2).replace('.', ',')} m²${s.pokoje && k === 'mieszkanie' ? ' · ' + s.pokoje + ' pok.' : ''}</span><span class="tiny">${e.ts ? new Date(e.ts).toLocaleDateString('pl-PL') : ''}</span></div></div>
@@ -400,7 +400,7 @@ function getEntry(p) {
   if (p[1] === 'h') return S.wyceny.find(w => w.id === p[2]) || null;
   return S.last[p[1]] || null;
 }
-const KIMG = ['mieszkanie', 'dom', 'dzialka', 'lokal', 'obiekt', 'garaz'], katImg = k => '';   // szata 2.0: ciemne zdjęcia kategorii wyłączone do czasu nowych, jasnych
+const KIMG = ['mieszkanie', 'dom', 'dzialka', 'lokal', 'obiekt', 'garaz'], katImg = k => KIMG.includes(k || 'mieszkanie') ? `img/k-${k || 'mieszkanie'}.webp` : '';   // szata 2.0: jasne zdjęcia kategorii (24.11.2026)
 // Pewność jako łuk z trzech części: poziom z silnika wyceny, bez procentów, których silnik nie liczy
 function confGauge(c) {
   const R = 74, cx = 90, cy = 88, pt = a => `${(cx + R * Math.cos(a)).toFixed(1)} ${(cy - R * Math.sin(a)).toFixed(1)}`, seg = i => { const a0 = Math.PI - i * Math.PI / 3 - .05, a1 = Math.PI - (i + 1) * Math.PI / 3 + .05; return `M${pt(a0)} A${R} ${R} 0 0 1 ${pt(a1)}`; };
