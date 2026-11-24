@@ -3,7 +3,8 @@
 Tylko dane potrzebne do wycen: kolumny stron transakcji poza rodzajem sprzedającego nie są w ogóle czytane.
 Braki uzupełnia z PRG (adres po punkcie) i ULDK (punkt po numerze działki, z pamięcią podręczną; można przerwać i wznowić).
     python3 rcn_paczka.py --lokale L.parquet --budynki B.parquet --dzialki D.parquet --prg 06_Punkty_Adresowe.zip --out KATALOG [--uldk cache.json] [--uldk-limit N]
-dokl (dokładność punktu): 1 = punkt z RCN, 2 = środek działki z ULDK, 3 = środek obrębu z ULDK, null = brak."""
+dokl (dokładność punktu): 1 = punkt z RCN, 2 = środek działki z ULDK, 3 = środek obrębu z ULDK, 4 = punkt adresowy PRG (po adresie z RCN), null = brak.
+Województwa: 06 lubelskie, 12 małopolskie (nazwy powiatów w NAZWY)."""
 import argparse, collections, datetime, hashlib, json, os, re, struct, sys, time, urllib.parse, urllib.request, zipfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import rcn_export as X
@@ -12,7 +13,8 @@ import rcn_export_inne as I
 GRANICA = 2021                 # punkty z ULDK dociągamy dla transakcji od tego roku
 DOD = ['msc', 'dokl', 'adr_prg']
 DZIS = datetime.date.today()
-NAZWY = {'0601': 'bialski', '0602': 'bilgorajski', '0603': 'chelmski', '0604': 'hrubieszowski', '0605': 'janowski', '0606': 'krasnostawski', '0607': 'krasnicki', '0608': 'lubartowski', '0609': 'lubelski', '0610': 'leczynski', '0611': 'lukowski', '0612': 'opolski', '0613': 'parczewski', '0614': 'pulawski', '0615': 'radzynski', '0616': 'rycki', '0617': 'swidnicki', '0618': 'tomaszowski', '0619': 'wlodawski', '0620': 'zamojski', '0661': 'biala_podlaska', '0662': 'chelm', '0663': 'lublin', '0664': 'zamosc'}
+NAZWY = {'0601': 'bialski', '0602': 'bilgorajski', '0603': 'chelmski', '0604': 'hrubieszowski', '0605': 'janowski', '0606': 'krasnostawski', '0607': 'krasnicki', '0608': 'lubartowski', '0609': 'lubelski', '0610': 'leczynski', '0611': 'lukowski', '0612': 'opolski', '0613': 'parczewski', '0614': 'pulawski', '0615': 'radzynski', '0616': 'rycki', '0617': 'swidnicki', '0618': 'tomaszowski', '0619': 'wlodawski', '0620': 'zamojski', '0661': 'biala_podlaska', '0662': 'chelm', '0663': 'lublin', '0664': 'zamosc',
+         '1201': 'bochenski', '1202': 'brzeski', '1203': 'chrzanowski', '1204': 'dabrowski', '1205': 'gorlicki', '1206': 'krakowski', '1207': 'limanowski', '1208': 'miechowski', '1209': 'myslenicki', '1210': 'nowosadecki', '1211': 'nowotarski', '1212': 'olkuski', '1213': 'oswiecimski', '1214': 'proszowicki', '1215': 'suski', '1216': 'tarnowski', '1217': 'tatrzanski', '1218': 'wadowicki', '1219': 'wielicki', '1261': 'krakow', '1262': 'nowy_sacz', '1263': 'tarnow'}
 
 def dobra_data(d):
     return d if d and datetime.date(1990, 1, 1) <= d <= DZIS + datetime.timedelta(days=31) else None
@@ -50,6 +52,13 @@ def adres(s):
     nr = re.sub(r'\s+(lok|m)\b.*$', '', d.get('NR_PORZ', ''), flags=re.I).strip()
     return d.get('UL', '').strip(), nr, d.get('MSC', '').strip()
 
+ZW = re.compile(r'^(ul|al|aleja|aleje|pl|plac|os|osiedle|rondo|skwer|bulwar)\.?\s+')
+def norm_a(t):
+    t = (t or '').strip().lower().replace('–', '-')
+    t = ZW.sub('', t); t = re.sub(r'[."\']', ' ', t); return re.sub(r'\s+', ' ', t).strip()
+def norm_nr(t):
+    t = re.sub(r'\s+(lok|m)\b.*$', '', (t or '').strip(), flags=re.I); return re.sub(r'\s+', '', t).upper()
+
 def sprz(v):
     return v if v and re.fullmatch(r'[A-Za-z]+', v) else None
 
@@ -81,6 +90,24 @@ class PRG:
                     if d <= bd: bd, best = d, i
         if best is None: return None
         q = s.pts[best]; return s.ul.get(q[4], '') if q[4] else '', q[2], s.msc.get(q[3], '')
+    def _idx(s):
+        # (miejscowość, ulica, numer) -> punkt; ulica także po ostatnim słowie (RCN bywa skrócone: „RACIBORSKA” vs „Stanisława Raciborskiego”), tylko gdy jednoznaczne
+        s.A, s.A2 = {}, collections.defaultdict(set)
+        for q in s.pts:
+            m, u, n = norm_a(s.msc.get(q[3], '')), norm_a(s.ul.get(q[4], '') if q[4] else ''), norm_nr(q[2])
+            if not (m and n): continue
+            s.A.setdefault((m, u, n), (q[0], q[1]))
+            if u: s.A2[(m, u.split(' ')[-1], n)].add((q[0], q[1]))
+    def po_adresie(s, msc, ul, nr):
+        if not hasattr(s, 'A'): s._idx()
+        m, u, n = norm_a(msc), norm_a(ul), norm_nr(nr)
+        if not (m and n): return None
+        p = s.A.get((m, u, n))
+        if p: return p
+        if u:
+            c = s.A2.get((m, u.split(' ')[-1], n))
+            if c and len(c) == 1: return next(iter(c))
+        return None
 
 # ---------- ULDK ----------
 ID = re.compile(r'^\s*(\d{6}_\d\.\d{4})(?:\.((?:AR_\d+\.)?[0-9]+(?:/[0-9]+)?))?(?:[._]|$)')
@@ -142,7 +169,11 @@ def lokale(pq, f, prg, uldk):
         if kl in seen: stat['powt'] += 1; continue
         seen.add(kl); d = dobra_data(r['dok_data']); stat['data_zla'] += (r['dok_data'] is not None and d is None)
         ul, nr, msc = adres(r['lok_adres']); rok = re.search(r'/(20\d\d|19\d\d)\s*$', r['dok_oznaczenie'] or '')
-        p, dok = uzup(r, prg, uldk, r['lok_id_lokalu'], d.year if d else None); la = lo = None; ap = 0
+        # kolejność: punkt z RCN, potem punkt adresowy PRG po adresie z aktu (dokładny budynek, bez sieci), na końcu ULDK
+        q = prg.po_adresie(msc, ul, nr) if prg and ul and nr and not r.get('geometry') else None
+        if q: p, dok = q, 4
+        else: p, dok = uzup(r, prg, uldk, r['lok_id_lokalu'], d.year if d else None)
+        la = lo = None; ap = 0
         if p:
             la, lo = wgs(p)
             if not ul and prg and dok in (1, 2):

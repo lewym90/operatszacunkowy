@@ -30,4 +30,10 @@ d = tempfile.mkdtemp(); z = os.path.join(d, 'p.zip')
 with zipfile.ZipFile(z, 'w') as q: q.writestr('a.gml', g)
 p = P.PRG(z); assert p.najblizszy((748010, 381010)) == ('Lipowa', '7', 'Wola'), 'PRG: y przed x w pliku'
 assert p.najblizszy((748000, 381480)) == ('', '9', 'Wola'), 'wieś bez ulic'; assert p.najblizszy((750000, 381000)) is None, 'za daleko: brak'
+# punkt po adresie z aktu (Kraków sprzed 2021 nie ma punktu w RCN): pełna nazwa, przedrostek „ul.”, numer z lokalem, skrót ulicy do ostatniego słowa
+assert p.po_adresie('WOLA', 'ul. LIPOWA', '7 m 3') == (748000.0, 381000.0), 'adres -> punkt PRG (wielkość liter, „ul.”, lokal)'
+assert p.po_adresie('Wola', 'Lipowa', '8') is None, 'inny numer: brak'
+assert p.po_adresie('Inna', 'Lipowa', '7') is None, 'inna miejscowość: brak'
+assert P.norm_a('al. Jana Pawła II') == 'jana pawła ii' and P.norm_nr('12 lok. 4') == '12', 'normalizacja adresu'
+assert P.NAZWY['1261'] == 'krakow' and P.NAZWY['1219'] == 'wielicki' and P.NAZWY['0663'] == 'lublin', 'nazwy powiatów 06 i 12'
 print('rcn_paczka: OK')
