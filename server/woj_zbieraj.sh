@@ -32,6 +32,6 @@ fi
 if [ -z "${OPERAT_BEZ_OSM:-}" ]; then
   krok "pobieram OSM dla województwa"
   krok "OSM w $((KAFLE * KAFLE)) częściach na warstwę (mniejsze zapytania, bez błędu 504)"
-  if "$PY" "$R/kod/osm_export.py" --out "$D/osm_woj.json.new" --bbox $BBOX --kafle $KAFLE --czas 280 >> "$S" 2>&1; then mv -f "$D/osm_woj.json.new" "$D/osm_woj.json"; chmod 644 "$D/osm_woj.json"; krok "OSM zapisane"; else rm -f "$D/osm_woj.json.new"; krok "OSM NIE POBRANE${TRYB:+ (spróbuj ponownie później)}"; fi
+  if "$PY" "$R/kod/osm_export.py" --out "$D/osm_woj.json.new" --bbox $BBOX --kafle $KAFLE --czas 280 --cache "$R/osm_czesci" >> "$S" 2>&1; then mv -f "$D/osm_woj.json.new" "$D/osm_woj.json"; chmod 644 "$D/osm_woj.json"; rm -rf "$R/osm_czesci"; krok "OSM zapisane"; else rm -f "$D/osm_woj.json.new"; krok "OSM NIEPEŁNE: pobrane części są zapamiętane, uruchom ponownie: bash /tmp/woj.sh $W osm"; fi
 fi
 krok "KONIEC: $(ls "$D" | wc -l) plików, $(du -sh "$D" | cut -f1)"

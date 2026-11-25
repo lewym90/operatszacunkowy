@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Pobiera z OpenStreetMap (Overpass) punkty otoczenia dla Lublina i okolic i zapisuje jeden plik JSON.
 Dane © współtwórcy OpenStreetMap (ODbL). Uruchamiane na serwerze (server/osm_refresh.sh), aplikacja czyta gotowy plik.
-Użycie: osm_export.py --out osm_lublin.json [--bbox S,W,N,E] [--kafle N]
+Użycie: osm_export.py --out osm_lublin.json [--bbox S,W,N,E] [--kafle N] [--cache KATALOG]
+--cache: każda pobrana część zapisuje się od razu; ponowne uruchomienie pobiera tylko brakujące (przeciążone serwery Overpass).
 --kafle N dzieli obszar na N×N części (duże województwo z dużym miastem: jedno zapytanie kończy się błędem 504 na serwerach Overpass)."""
-import argparse, hashlib, json, sys, time, urllib.parse, urllib.request
+import argparse, hashlib, json, os, sys, time, urllib.parse, urllib.request
 
 BBOX = (51.08, 22.25, 51.40, 22.85)
 LAYERS = {  # klucz: (zapytanie Overpass, nazwa)
@@ -37,7 +38,7 @@ def fetch(query, tries=2, czas=60):
                 with urllib.request.urlopen(req, timeout=czas) as r: data = json.load(r)
                 print(f'  {u}: OK {time.time() - t0:.1f}s', file=sys.stderr, flush=True); return data
             except Exception as ex: last = ex; print(f'  {u}: {ex} po {time.time() - t0:.1f}s', file=sys.stderr, flush=True); time.sleep(2)
-        time.sleep(10)
+        time.sleep(30 * (t + 1))
     raise RuntimeError(f'Overpass niedostępny: {last}')
 
 def kafle(bb, n):
@@ -45,17 +46,28 @@ def kafle(bb, n):
     return [(round(s + i * ds, 5), round(w + j * dw, 5), round(s + (i + 1) * ds, 5), round(w + (j + 1) * dw, 5)) for i in range(n) for j in range(n)]
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument('--out', required=True); ap.add_argument('--bbox'); ap.add_argument('--czas', type=int, default=60, help='sekundy na warstwę; dla województwa więcej'); ap.add_argument('--kafle', type=int, default=1)
+    ap = argparse.ArgumentParser(); ap.add_argument('--out', required=True); ap.add_argument('--bbox'); ap.add_argument('--czas', type=int, default=60, help='sekundy na warstwę; dla województwa więcej'); ap.add_argument('--kafle', type=int, default=1); ap.add_argument('--cache')
     a = ap.parse_args(); bb = tuple(float(x) for x in a.bbox.split(',')) if a.bbox else BBOX
-    layers = {}
+    layers, braki = {}, 0
+    if a.cache: os.makedirs(a.cache, exist_ok=True)
     for k, (q, n) in LAYERS.items():
         print(f'Pobieram: {n}…', file=sys.stderr, flush=True)
-        pts, seen = [], set()
+        pts, seen, ok = [], set(), True
         for b in kafle(bb, a.kafle):
-            for p in points(fetch(f'[out:json][timeout:{max(90, a.czas - 10)}];{q}({b[0]},{b[1]},{b[2]},{b[3]});out center;', tries=3, czas=a.czas)):
+            zq = f'[out:json][timeout:{max(90, a.czas - 10)}];{q}({b[0]},{b[1]},{b[2]},{b[3]});out center;'
+            cf = os.path.join(a.cache, hashlib.sha1(zq.encode()).hexdigest()[:20] + '.json') if a.cache else None
+            if cf and os.path.exists(cf): part = json.load(open(cf))
+            else:
+                try: part = points(fetch(zq, tries=3, czas=a.czas))
+                except RuntimeError as ex:
+                    if not a.cache: raise
+                    print(f'  część {b} nie pobrana ({ex}); dalej z pozostałymi', file=sys.stderr, flush=True); ok = False; braki += 1; continue
+                if cf: json.dump(part, open(cf, 'w'))
+                if a.kafle > 1: time.sleep(2)
+            for p in part:
                 if tuple(p) not in seen: seen.add(tuple(p)); pts.append(p)
-            if a.kafle > 1: time.sleep(2)
-        print(f'{n}: {len(pts)}', file=sys.stderr, flush=True); layers[k] = pts; time.sleep(2)
+        print(f'{n}: {len(pts)}' + ('' if ok else ' (niepełne)'), file=sys.stderr, flush=True); layers[k] = pts; time.sleep(2)
+    if braki: raise SystemExit(f'Brakuje {braki} części; uruchom ponownie (pobrane części są zapamiętane)')
     pack = dict(meta=dict(zrodlo='OpenStreetMap (Overpass), ODbL', pobrano=time.strftime('%Y-%m-%d'), bbox=bb, nazwy={k: v[1] for k, v in LAYERS.items()},
                           liczby={k: len(v) for k, v in layers.items()},
                           wersja=hashlib.sha1(json.dumps(layers, separators=(',', ':')).encode()).hexdigest()[:16]), layers=layers)
