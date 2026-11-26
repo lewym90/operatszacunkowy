@@ -16,7 +16,7 @@ import { exposure, trendSeries, yieldByDistrict, districtAssigner, lineChart, ba
 import * as OB from './obszary.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer, districtCenters } from './mapa.js';
 
-const VERSION = '1.28.1';
+const VERSION = '1.28.2';
 const S = { wlasne: [], teczki: [], foto: {}, dokumenty: [],
   offers: [], poza: [], katy: [], sprz: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -571,24 +571,27 @@ function katalogHTML() {
 
 /* ---------- OFERTY: zebrania danych, statusy, lista z linkami ---------- */
 const zebr = () => S.ust.zebrania || [];
-const lastFull = () => { const z = zebr().filter(x => x.pelne); return z.length ? z[z.length - 1] : null; };
-// nieaktualne: jest pełny przegląd, a oferty w nim nie było; nowe: pierwszy raz w ostatnim zebraniu (gdy były wcześniejsze)
+const zebrW = w => zebr().filter(x => (x.woj || 'lubelskie') === w);
+const lastFull = (w = 'lubelskie') => { const z = zebrW(w).filter(x => x.pelne); return z.length ? z[z.length - 1] : null; };
+// nieaktualne: jest pełny przegląd (tego województwa), a oferty w nim nie było; nowe: pierwszy raz w ostatnim zebraniu tego województwa (gdy były wcześniejsze)
 function statusFn() {
-  const z = zebr(), F = lastFull(), L = z[z.length - 1];
-  return o => (F && (o.ost || 0) < F.id) ? 'nieaktualne' : (z.length > 1 && o.pierw && o.pierw === L.id) ? 'nowe' : 'aktualne';
+  const m = {}; for (const w of ['lubelskie', 'malopolskie']) { const z = zebrW(w); m[w] = { F: lastFull(w), L: z[z.length - 1], n: z.length }; }
+  return o => { const q = m[o.woj || 'lubelskie'] || m.lubelskie; return (q.F && (o.ost || 0) < q.F.id) ? 'nieaktualne' : (q.n > 1 && o.pierw && o.pierw === q.L.id) ? 'nowe' : 'aktualne'; };
 }
 const parkNote = p => !p ? '' : p.stan === 'wliczony' ? 'parking w czynszu' : p.stan === 'dodatkowo' ? 'parking osobno' + (p.kwota > 0 ? ' +' + fmt(p.kwota) + ' zł' : '') : '';
 function applyCollection(found, opt = {}) {
   S.offers = wszystkie(); S.poza = []; S.katy = []; S.sprz = [];
-  const t = Date.now(), z = (S.ust.zebrania || []).slice(); let c = z[z.length - 1];
-  if (!c || t - c.ts > 12 * 3600000) { c = { id: (c ? c.id : 0) + 1, ts: t, pelne: false, n: 0 }; z.push(c); } else { c = { ...c, ts: t }; z[z.length - 1] = c; }
+  // Zebrania są osobne dla województw (Lublin = lubelskie, Kraków i okolice = małopolskie): pełny przegląd jednego nie oznacza ofert drugiego jako nieaktualnych.
+  const W = opt.woj || 'lubelskie', wojO = o => o.woj || 'lubelskie', wojZ = x => x.woj || 'lubelskie';
+  const t = Date.now(), z = (S.ust.zebrania || []).slice(); const li = z.map(wojZ).lastIndexOf(W); let c = li >= 0 ? z[li] : null;
+  if (!c || t - c.ts > 12 * 3600000) { c = { id: z.reduce((m, x) => Math.max(m, x.id || 0), 0) + 1, ts: t, pelne: false, n: 0, ...(W !== 'lubelskie' ? { woj: W } : {}) }; z.push(c); } else { c = { ...c, ts: t }; z[li] = c; }
   if (opt.pelne) c.pelne = true;
   const byP = new Map(), byK = new Map(); for (const o of S.offers) { if (o.portalId) byP.set(String(o.portalId), o); byK.set(offerKey(o), o); }
   const batch = new Set(); let added = 0, updated = 0;
   for (const r of found) {
     const ex = (r.portalId && byP.get(String(r.portalId))) || byK.get(offerKey(r));
     let o;
-    if (ex) { o = ex; updated++; if (r.cena != null && r.cena !== o.cena && o.cena > 0) o.hc = (o.hc && o.hc.length ? o.hc : [[o.pierw || 0, o.cena]]).concat([[c.id, r.cena]]); for (const k of ['cena', 'czynsz', 'pokoje', 'm2', 'pietro', 'ulica', 'dzielnica', 'miasto', 'rok', 'stan', 'rynek', 'dzm2', 'szcz', 'foto']) if (r[k] != null) o[k] = r[k]; if (r.url) o.url = r.url; if (r.portalId) o.portalId = String(r.portalId); if (r.rokBand) o.rokBand = r.rokBand; if (r.zabudowa) o.zabudowa = r.zabudowa; }
+    if (ex) { o = ex; updated++; if (r.cena != null && r.cena !== o.cena && o.cena > 0) o.hc = (o.hc && o.hc.length ? o.hc : [[o.pierw || 0, o.cena]]).concat([[c.id, r.cena]]); for (const k of ['cena', 'czynsz', 'pokoje', 'm2', 'pietro', 'ulica', 'dzielnica', 'miasto', 'rok', 'stan', 'rynek', 'dzm2', 'szcz', 'foto', 'woj', 'powiat']) if (r[k] != null) o[k] = r[k]; if (r.url) o.url = r.url; if (r.portalId) o.portalId = String(r.portalId); if (r.rokBand) o.rokBand = r.rokBand; if (r.zabudowa) o.zabudowa = r.zabudowa; }
     else { o = { ...r, flagi: r.flagi || offerFlags(r), id: uid(), typ: r.typ || 'najem', ts: t, wlaczone: true, pierw: c.id }; if (o.portalId) o.portalId = String(o.portalId); S.offers.push(o); added++; if (o.portalId) byP.set(o.portalId, o); byK.set(offerKey(o), o); }
     o.ost = c.id; batch.add(o);
     if (r.parking && r.parking.stan) o.parking = { stan: r.parking.stan, ...(r.parking.kwota > 0 ? { kwota: r.parking.kwota } : {}) };
@@ -597,7 +600,7 @@ function applyCollection(found, opt = {}) {
   const recent = o => t - (o.ts || 0) < 3 * 86400000;
   for (const k of opt.attrs || []) {
     for (const o of S.offers) {
-      if (sprzOK(o) || katOK(o)) continue;                     // cechy z filtrów dotyczą tylko najmu mieszkań
+      if (sprzOK(o) || katOK(o) || wojO(o) !== W) continue;    // cechy z filtrów dotyczą tylko najmu mieszkań z tego samego województwa
       const inB = batch.has(o);
       if (k === 'garaz') {                                  // lista z filtrem „Garaż”: stan rozliczenia ustala się z ogłoszenia
         if (inB) { if (!o.parking) o.parking = { stan: 'nieznany' }; } else if ((o.ost === c.id || recent(o)) && !o.parking) o.parking = { stan: 'brak' };
@@ -616,7 +619,7 @@ function zebrania() {
   const z = zebr(), st = statusFn(), cnt = { nowe: 0, aktualne: 0, nieaktualne: 0 }; S.offers.forEach(o => cnt[st(o)]++);
   const d = ts => new Date(ts).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', year: 'numeric' });
   return `<div class="kv"><span>Aktualne</span><b>${fmt(cnt.aktualne + cnt.nowe)}</b></div><div class="kv"><span>w tym nowe</span><b>${fmt(cnt.nowe)}</b></div><div class="kv"><span>Nieaktualne (zostają w bazie)</span><b>${fmt(cnt.nieaktualne)}</b></div><div class="kv"><span>Z linkiem do ogłoszenia</span><b>${fmt(S.offers.filter(o => o.url).length)}</b></div>
-    ${z.length ? `<div class="eyebrow" style="margin:12px 0 4px">Ostatnie zebrania</div>${z.slice(-4).reverse().map(x => `<div class="kv"><span>${d(x.ts)} · ${x.pelne ? 'pełny przegląd' : 'częściowe'}</span><b>${fmt(x.n)}</b></div>`).join('')}` : '<p class="tiny muted" style="margin:8px 0 0">Brak zapisanych zebrań. Pierwsze zebranie ofert oznaczy wszystkie jako aktualne.</p>'}
+    ${z.length ? `<div class="eyebrow" style="margin:12px 0 4px">Ostatnie zebrania</div>${z.slice(-4).reverse().map(x => `<div class="kv"><span>${d(x.ts)} · ${x.woj === 'malopolskie' ? 'Kraków i okolice' : 'Lublin'} · ${x.pelne ? 'pełny przegląd' : 'częściowe'}</span><b>${fmt(x.n)}</b></div>`).join('')}` : '<p class="tiny muted" style="margin:8px 0 0">Brak zapisanych zebrań. Pierwsze zebranie ofert oznaczy wszystkie jako aktualne.</p>'}
     <p class="tiny muted" style="margin:8px 0 0">Oferta „nieaktualna” to taka, której nie było w ostatnim pełnym przeglądzie portalu. Zostaje w bazie i nadal pomaga w wycenie.</p>`;
 }
 S.of = { status: '', pokoje: '', metraz: '', dz: '', attrs: [], parking: '', lim: 60 };

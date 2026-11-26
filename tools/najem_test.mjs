@@ -109,7 +109,7 @@ console.log(`\nZYSK to punkty procentowe mniej błędu. POMAGA tylko, gdy cały 
 
 // ---------- KALIBRACJA (21.11.2026): pewność, poprawka pokoi, stare oferty ----------
 // Wszystko uczone wyłącznie na części uczącej (wewnętrzne części z chowaniem ulic), sprawdzane na schowanych ulicach. Nic nie zmienia aplikacji.
-const lastFull = zebr.filter(z => z.pelne).map(z => z.id).reduce((a, b) => Math.max(a, b), -Infinity);
+const lastFull = zebr.filter(z => z.pelne && (!z.woj || z.woj === 'lubelskie')).map(z => z.id).reduce((a, b) => Math.max(a, b), -Infinity);
 const aktualna = o => !Number.isFinite(lastFull) || o.ost == null || o.ost >= lastFull;
 const szacR = (u, o) => { const r = estimateRent(u, subjectOf(o)); return r.ok && r.total?.mid > 0 ? r : null; };
 const gPok = o => o.pokoje >= 4 ? 4 : o.pokoje || 0;

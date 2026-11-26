@@ -264,6 +264,8 @@ Kraków, dane na serwerze — zrobione 25–26.11: `woj_zbieraj.sh 12` dał 45 p
 - Do decyzji właściciela: przedział wyceny obejmuje dziś ok. 45–50% cen (środkowe 50% porównań, tak samo w Lublinie); można dać szerszy przedział (np. 80%) kosztem dokładności liczby.
 - Najem w Krakowie: brak ofert (Otodom zbierany tylko dla lubelskiego) — następny krok: zbieracz Otodom dla obszaru Kraków.
 
+**Otodom dla Krakowa i okolic (1.28.2, 26.11):** `otodom_zbieraj.py --woj malopolskie` (serwer: `bash otodom_zbieraj.sh --woj malopolskie [--proba]`). Listy całego małopolskiego, potem tylko powiaty obszaru (poziom „county” z portalu, nazwa bez „powiat”, bez polskich znaków; zapasowo miasto „Kraków”); log pokazuje rozkład powiatów — sprawdzić w próbie. Każda oferta ma `woj` i `powiat`. Pierwsze zebranie województwa (<100 ofert w bazie) nie ma limitu nowych; ogłoszenia najmu otwierane najwyżej `--max-otwarc` (600) na przebieg, nieotwarte (bez `szcz`) dociągane w kolejnych przebiegach (tylko poza Lublinem); sprzedaż jak dotąd 800 na przebieg. W aplikacji zebrania mają `woj` (Lublin bez pola): pełny przegląd jednego województwa nie oznacza ofert drugiego jako nieaktualnych, scalanie zebrań w 12 h tylko w obrębie województwa, cechy z filtrów tylko dla ofert tego województwa; obszar Kraków = oferty `woj: malopolskie`. Przycisk „Zbierz oferty teraz” uruchamia nadal Lublin. Opisy ogłoszeń jak w Lublinie: czytane (rok, parking, meble), nie zapisywane.
+
 ## 11. Lista pomysłów i stan (numeracja ustalona z właścicielem 30.10)
 
 Gdy właściciel zapyta „co jeszcze jest do zrobienia”, podać punkty z sekcji „Zablokowane / czeka”.

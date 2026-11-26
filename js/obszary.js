@@ -27,9 +27,11 @@ export function url(k, plik, rcnUrlLublin) {
   return base + O.dir + O.pliki[plik];
 }
 
-// Czy oferta należy do obszaru (po polu miasto z ogłoszenia). Puste miasto = stare oferty Lublina (sprzed zbierania z województwa).
+// Czy oferta należy do obszaru. Lublin: puste miasto (stare oferty) albo „Lublin”, jak dotąd. Kraków i okolice: oferty zebrane dla małopolskiego
+// (zbieracz bierze tylko powiaty obszaru) albo z miastem z listy obszaru.
 export function ofertaW(k, o) {
   const m = String(o.miasto || '').trim().toLowerCase();
-  if (k === 'lublin' || !k) return !m || m === 'lublin';
+  if (k === 'lublin' || !k) return o.woj !== 'malopolskie' && (!m || m === 'lublin');
+  if (k === 'krakow') return o.woj === 'malopolskie' || (!!m && get(k).miasta.includes(m));
   return !!m && get(k).miasta.includes(m);
 }

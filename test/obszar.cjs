@@ -47,6 +47,25 @@ const srv = http.createServer((q, r) => { const u = decodeURIComponent(q.url.spl
   ok(await wyc() === lubW, 'wycena Lublina identyczna po przełączeniach: ' + lubW);
   await p.reload(); await p.waitForFunction(() => window.__am); await p.waitForTimeout(900);
   ok(await p.evaluate(() => window.__am.S.tx.length === 300) && /Lublin i okolice/.test(await p.innerText('.obsz')), 'po ponownym otwarciu: ostatni wybrany obszar (Lublin)');
+  // oferty: zebranie dla małopolskiego (Kraków i okolice) nie rusza ofert Lublina i odwrotnie
+  const st = await p.evaluate(() => {
+    const am = window.__am, S = am.S, L = n => Array.from({ length: n }, (_, i) => ({ portalId: 'LUB' + i, url: 'https://www.otodom.pl/pl/oferta/x-IDL' + i, cena: 2000 + i, m2: 40, pokoje: 2, pietro: 1, ulica: 'Lipowa', dzielnica: 'Czuby', miasto: 'Lublin', tytul: 'M', flagi: [] }));
+    const K = n => Array.from({ length: n }, (_, i) => ({ portalId: 'KRK' + i, url: 'https://www.otodom.pl/pl/oferta/x-IDK' + i, cena: 3500 + i, m2: 40, pokoje: 2, pietro: 1, ulica: 'Długa', dzielnica: 'Stare Miasto', miasto: 'Kraków', powiat: 'krakow', woj: 'malopolskie', tytul: 'M', flagi: [] }));
+    am.importOffers(L(60), { pelne: true });
+    am.importOffers(K(40), { pelne: true, woj: 'malopolskie' }); am.importOffers(K(40).slice(0, 10), { attrs: ['balkon'], woj: 'malopolskie' });
+    const z = S.ust.zebrania, f = am.statusFn(), all = S.offers.concat(S.katy, S.sprz, S.poza);
+    const lub = all.filter(o => (o.portalId || '').startsWith('LUB')), krk = all.filter(o => (o.portalId || '').startsWith('KRK'));
+    // drugie zebranie małopolskiego bez 5 ofert (po 13 h): tylko te 5 nieaktualne
+    z[z.length - 1].ts -= 13 * 3600e3; am.importOffers(K(40).slice(5), { pelne: true, woj: 'malopolskie' }); const f2 = am.statusFn(), all2 = S.offers.concat(S.katy, S.sprz, S.poza);
+    return { nz: z.length, woj: S.ust.zebrania.map(x => x.woj || 'lubelskie').join(','), lubAkt: lub.every(o => f(o) === 'aktualne'), krkN: krk.length, krkWoj: krk.every(o => o.woj === 'malopolskie' && o.powiat === 'krakow'),
+      balkonLub: lub.some(o => o.attrs && 'balkon' in o.attrs), balkonKrk: krk.filter(o => o.attrs && o.attrs.balkon === 1).length,
+      stare: all2.filter(o => (o.portalId || '').startsWith('KRK') && f2(o) === 'nieaktualne').length, lubPo: all2.filter(o => (o.portalId || '').startsWith('LUB')).every(o => f2(o) !== 'nieaktualne'), w: S.offers.length };
+  });
+  ok(st.woj === 'lubelskie,malopolskie,malopolskie' && st.krkN === 40 && st.krkWoj, 'zebrania osobno dla województw; oferty Krakowa z województwem i powiatem: ' + st.woj);
+  ok(st.lubAkt && st.lubPo, 'pełne zebranie Krakowa nie oznacza ofert Lublina jako nieaktualnych');
+  ok(st.stare === 5, 'drugie zebranie Krakowa: nieaktualne tylko 5 brakujących (' + st.stare + ')');
+  ok(!st.balkonLub && st.balkonKrk === 10, 'cechy z filtrów Krakowa nie trafiają do Lublina');
+  ok(await p.evaluate(() => window.__am.S.offers.every(o => (o.portalId || '').startsWith('LUB') || !o.portalId)), 'w Lublinie lista najmu bez ofert z Krakowa');
   ok(!err.length, 'bez błędów strony ' + err.join(' | '));
   await b.close(); srv.close(); if (zle) { console.log('obszar: BŁĘDY', zle); process.exit(1); } console.log('obszar: OK');
 })().catch(e => { console.log('TEST PADŁ', e.message); process.exit(1); });

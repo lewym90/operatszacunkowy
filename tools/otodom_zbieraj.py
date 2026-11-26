@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-"""Zebranie ofert z Otodom (całe woj. lubelskie): najem mieszkań, domów, lokali, hal i garaży oraz sprzedaż mieszkań, domów, działek i lokali i import do aplikacji przez synchronizację.
+"""Zebranie ofert z Otodom dla województwa (--woj lubelskie: całe województwo, jak dotąd; --woj malopolskie: tylko obszar Kraków i okolice = Kraków + 9 powiatów): najem mieszkań, domów, lokali, hal i garaży oraz sprzedaż mieszkań, domów, działek i lokali i import do aplikacji przez synchronizację.
 Procedura jak w KONTYNUACJA.md, sekcja 7: lista (wszystkie oferty) + 6 filtrów cech + pełny odczyt TYLKO nowych ogłoszeń (rok budowy, parking, meble).
 Import: aplikacja otwarta w tej samej przeglądarce (ta sama logika co na telefonie), podłączona do serwera synchronizacji.
     OPERAT_SYNC_KEY=... python3 otodom_zbieraj.py [--proba] [--app URL] [--sync URL]
 --proba: wszystko oprócz zapisu (nic nie trafia do bazy). Zbierane są tylko pola techniczne; opisy służą wyłącznie do odczytu parkingu, roku i mebli i nie są zapisywane."""
 import argparse, json, os, re, sys, time
-LISTA = 'https://www.otodom.pl/pl/wyniki/%s/lubelskie?limit=72&page=%d'
+LISTA = 'https://www.otodom.pl/pl/wyniki/%s/{woj}?limit=72&page=%d'   # {woj} wstawiane w main()
+# Obszar Kraków i okolice (decyzja właściciela 24.11.2026): powiaty jak w js/obszary.js; nazwy z poziomu „county” portalu, bez „powiat”, bez polskich znaków
+OBSZAR = {'malopolskie': {'krakow', 'krakowski', 'wielicki', 'myslenicki', 'bochenski', 'wadowicki', 'chrzanowski', 'miechowski', 'proszowicki', 'olkuski'}}
+PL = str.maketrans('ąćęłńóśźżĄĆĘŁŃÓŚŹŻ', 'acelnoszzACELNOSZZ')
+powiat_norm = lambda n: re.sub(r'^powiat\s+', '', (n or '').strip().lower()).translate(PL).replace(' ', '-') or None
 # (ścieżka portalu, typ, kategoria aplikacji). Najem mieszkań jest pierwszy i ma pełną procedurę (filtry, ogłoszenia).
 GRUPY = [('wynajem/mieszkanie', 'najem', 'mieszkanie'), ('wynajem/dom', 'najem', 'dom'), ('wynajem/lokal', 'najem', 'lokal'), ('wynajem/haleimagazyny', 'najem', 'obiekt'), ('wynajem/garaz', 'najem', 'garaz'),
          ('sprzedaz/mieszkanie', 'sprzedaz', 'mieszkanie'), ('sprzedaz/dom', 'sprzedaz', 'dom'), ('sprzedaz/dzialka', 'sprzedaz', 'dzialka'), ('sprzedaz/lokal', 'sprzedaz', 'lokal')]
@@ -32,6 +36,11 @@ def miejsce(loc):
     d = [x['name'] for x in L if x.get('locationLevel') not in ('voivodeship', 'county', 'municipality', 'city_or_village', 'street', 'country')]
     return m, (d[-1] if d else None)
 
+def powiat(loc):
+    L = ((loc or {}).get('reverseGeocoding') or {}).get('locations') or []
+    c = next((x for x in L if x.get('locationLevel') == 'county'), None)
+    return powiat_norm(c.get('name')) if c else None
+
 def zdjecie(i):
     """Adres miniatury zdjęcia głównego z portalu (sam link, plik nie jest pobierany). Tylko do rozpoznania oferty przez pośrednika."""
     im = (i.get('images') or [{}])[0] or {}
@@ -45,7 +54,7 @@ def rekord(i, typ='najem', kat='mieszkanie'):
             'czynsz': int(i['rentPrice']['value']) if (i.get('rentPrice') or {}).get('value') else None, 'pokoje': POKOJE.get(i.get('roomsNumber')),
             'm2': i.get('areaInSquareMeters'), 'pietro': PIETRO.get(i.get('floorNumber')), 'ulica': ulica(((i.get('location') or {}).get('address'))),
             'dzielnica': d, 'miasto': m, 'tytul': (i.get('title') or '').strip(), 'sprzedawca': 'prywatna' if i.get('isPrivateOwner') else 'biuro',
-            **({'foto': f} if (f := zdjecie(i)) else {}),
+            **({'foto': f} if (f := zdjecie(i)) else {}), **({'powiat': pw} if (pw := powiat(i.get('location'))) else {}),
             **({'typ': typ} if typ != 'najem' else {}), **({'kat': kat} if kat != 'mieszkanie' else {})}
 
 def tekst(html):
@@ -142,6 +151,7 @@ def szczegoly(pg, r):
     if y: r['rok'] = y
     if p: r['parking'] = p
     if meble(opis): r['attrs'] = {'meble': 1}
+    r['szcz'] = 1
     return 'ok'
 
 # ---------- aplikacja ----------
@@ -158,12 +168,17 @@ def otworz_aplikacje(ctx, app, sync, key):
 
 ZNANE_JS = '''() => { const S = window.__am.S, k = s => ((s || '').match(/-(ID[0-9A-Za-z]+)$/) || [])[1];
   const m = {}, sz = {}, all = S.offers.concat(S.poza, S.katy || [], S.sprz || []); for (const o of all) { const a = k(o.url) || (/^ID/.test(o.portalId || '') ? o.portalId : null); if (a) m[a] = o.portalId || null; if (o.portalId) { m['#' + o.portalId] = o.portalId; if (o.szcz) sz[o.portalId] = 1; } }
-  return { m, sz, n: S.offers.length, wszystkie: all.length, zebrania: (S.ust.zebrania || []).length }; }'''
+  const woj = {}; for (const o of all) { const w = o.woj || 'lubelskie'; woj[w] = (woj[w] || 0) + 1; }
+  return { m, sz, n: S.offers.length, wszystkie: all.length, zebrania: (S.ust.zebrania || []).length, woj }; }'''
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--proba', action='store_true')
     ap.add_argument('--app', default='https://lewym90.github.io/operatszacunkowy/'); ap.add_argument('--sync', default='https://188-68-247-201.sslip.io/operat-sync')
-    ap.add_argument('--max-nowych', type=int, default=400); ap.add_argument('--max-sprzedaz', type=int, default=800, help='ile ogłoszeń sprzedaży otworzyć w jednym przebiegu (reszta w kolejnych)'); ap.add_argument('--test-szczegoly', type=int, help=argparse.SUPPRESS); a = ap.parse_args()
+    ap.add_argument('--woj', default='lubelskie', choices=['lubelskie', 'malopolskie']); ap.add_argument('--max-otwarc', type=int, default=600, help='najem: ile ogłoszeń otworzyć w jednym przebiegu (pierwsze zebranie obszaru: reszta w kolejnych)')
+    ap.add_argument('--max-nowych', type=int, default=None); ap.add_argument('--max-sprzedaz', type=int, default=800, help='ile ogłoszeń sprzedaży otworzyć w jednym przebiegu (reszta w kolejnych)'); ap.add_argument('--test-szczegoly', type=int, help=argparse.SUPPRESS); a = ap.parse_args()
+    global LISTA; LISTA = LISTA.replace('{woj}', a.woj); obszar = OBSZAR.get(a.woj)
+    # w obszarze (np. Kraków i okolice) tylko oferty z powiatów obszaru; Lublin: całe województwo jak dotąd
+    wobszarze = (lambda r: (r.get('powiat') in obszar) or (not r.get('powiat') and (r.get('miasto') or '').lower() == 'kraków')) if obszar else (lambda r: True)
     key = os.environ.get('OPERAT_SYNC_KEY', '')
     if not key: raise SystemExit('Brak klucza synchronizacji (OPERAT_SYNC_KEY).')
     from playwright.sync_api import sync_playwright
@@ -172,13 +187,18 @@ def main():
         ctx = b.new_context(locale='pl-PL', timezone_id='Europe/Warsaw', viewport={'width': 1366, 'height': 900}, user_agent=UA)
         log('1/5 Aplikacja: pobieram bazę z serwera...')
         app = otworz_aplikacje(ctx, a.app, a.sync, key); zn = app.evaluate(ZNANE_JS)
-        log(f'    w bazie {zn["wszystkie"]} ofert (najem mieszkań w Lublinie {zn["n"]}), zebrań {zn["zebrania"]}')
+        log(f'    w bazie {zn["wszystkie"]} ofert (najem mieszkań w Lublinie {zn["n"]}; wg województw {zn["woj"]}), zebrań {zn["zebrania"]}')
+        pierwsze = zn['woj'].get(a.woj, 0) < 100                     # pierwsze zebranie tego województwa: wszystko jest nowe
+        maxn = a.max_nowych if a.max_nowych is not None else (30000 if pierwsze else 400)
         if zn['n'] < 100: raise SystemExit('Baza wygląda na niepełną (mniej niż 100 ofert). Przerywam, nic nie zapisano.')
         pg = ctx.new_page()
-        log('2/5 Lista ofert (całe województwo)...')
+        log(f'2/5 Lista ofert ({a.woj}{", obszar Kraków i okolice" if obszar else ", całe województwo"})...')
         wsz, tot = lista(pg)
         if wsz is None or not tot or brak(lista.widziane, tot): raise SystemExit(f'Lista niepełna ({len(wsz or [])} z {tot}). Przerywam, nic nie zapisano.')
-        log(f'    {len(wsz)} ofert (portal podaje {tot}); w Lublinie {sum(1 for r in wsz if r["miasto"] == "Lublin")}')
+        log(f'    {len(wsz)} ofert (portal podaje {tot}); w Lublinie {sum(1 for r in wsz if r["miasto"] == "Lublin")}; w Krakowie {sum(1 for r in wsz if r["miasto"] == "Kraków")}')
+        if obszar:
+            pw = {}; [pw.__setitem__(r.get('powiat') or 'brak powiatu', pw.get(r.get('powiat') or 'brak powiatu', 0) + 1) for r in wsz]
+            log('    powiaty (najem mieszkań): ' + ', '.join(f'{k} {v}' for k, v in sorted(pw.items(), key=lambda x: -x[1])))
         filtry = {}
         for k, f in FILTRY:
             time.sleep(8); rr, t = lista(pg, '&extras=%5B' + f + '%5D')
@@ -196,23 +216,31 @@ def main():
                 log(f'    w tym rynek wtórny: {len(wt)} (portal {t2})'); wt = {x['portalId'] for x in wt}
                 for x in rr: x['rynek'] = 'wtorny' if x['portalId'] in wt else 'pierwotny'
             inne += rr; log(f'    {sc}: {len(rr)} (portal {t}, pozycji na liście {wid})')
+        if obszar:
+            przed = len(wsz) + len(inne); wsz = [r for r in wsz if wobszarze(r)]; inne = [r for r in inne if wobszarze(r)]; filtry = {k: [r for r in v if wobszarze(r)] for k, v in filtry.items()}
+            log(f'    w obszarze: najem mieszkań {len(wsz)}, pozostałe {len(inne)} (odrzucone spoza obszaru: {przed - len(wsz) - len(inne)})')
+            if not wsz: raise SystemExit('Żadnej oferty z obszaru (zła nazwa powiatu?). Przerywam, nic nie zapisano.')
+        for r in wsz + inne + [x for v in filtry.values() for x in v]: r['woj'] = a.woj
         for r in wsz + inne + [x for v in filtry.values() for x in v]:      # numer ogłoszenia jak w bazie
             pid = zn['m'].get(r['portalId'])
             if pid: r['portalId'] = pid
         nowe = [r for r in wsz if r['portalId'] not in zn['m'] and ('#' + r['portalId']) not in zn['m']]
-        log(f'3/5 Nowe ogłoszenia do otwarcia: {len(nowe)} (znanych nie otwieramy)')
-        if len(nowe) > a.max_nowych: raise SystemExit(f'Podejrzanie dużo nowych ({len(nowe)}). Przerywam, nic nie zapisano.')
+        log(f'3/5 Nowe ogłoszenia: {len(nowe)}{" (pierwsze zebranie tego województwa)" if pierwsze else ""}')
+        if len(nowe) > maxn: raise SystemExit(f'Podejrzanie dużo nowych ({len(nowe)}). Przerywam, nic nie zapisano.')
+        # do otwarcia: nowe + (poza Lublinem) wcześniej zebrane, ale jeszcze nieotwarte; najwyżej --max-otwarc w jednym przebiegu, reszta w kolejnych
+        dotw = nowe + ([r for r in wsz if r not in nowe and r['portalId'] not in zn['sz']] if a.woj != 'lubelskie' else [])
+        otw = dotw[:a.max_otwarc]; log(f'    otwieram {len(otw)} ogłoszeń najmu (rok, parking, meble, czynsz){f"; pozostałe {len(dotw) - len(otw)} w kolejnych zebraniach" if len(dotw) > len(otw) else ""}')
         st = {'ok': 0, 'brak': 0}
-        for i, r in enumerate(nowe[:a.test_szczegoly] if a.test_szczegoly else nowe, 1):
+        for i, r in enumerate(otw[:a.test_szczegoly] if a.test_szczegoly else otw, 1):
             st[szczegoly(pg, r)] += 1; time.sleep(4)
-            if i % 20 == 0: log(f'    {i}/{len(nowe)}')
-        szcz = {x['portalId']: x for x in nowe}
+            if i % 20 == 0: log(f'    {i}/{len(otw)}')
+        szcz = {x['portalId']: x for x in otw}
         for v in filtry.values():
             for r in v:
                 if r['portalId'] in szcz: r.update({k: szcz[r['portalId']][k] for k in ('rok', 'parking', 'attrs') if k in szcz[r['portalId']]})
         pk = {}
-        for r in nowe: pk[(r.get('parking') or {}).get('stan', 'brak wzmianki')] = pk.get((r.get('parking') or {}).get('stan', 'brak wzmianki'), 0) + 1
-        log(f'    odczytano {st["ok"]}, niedostępne {st["brak"]}; rok budowy {sum(1 for r in nowe if r.get("rok"))}, umeblowane {sum(1 for r in nowe if r.get("attrs"))}, parking {pk}')
+        for r in otw: pk[(r.get('parking') or {}).get('stan', 'brak wzmianki')] = pk.get((r.get('parking') or {}).get('stan', 'brak wzmianki'), 0) + 1
+        log(f'    odczytano {st["ok"]}, niedostępne {st["brak"]}; rok budowy {sum(1 for r in otw if r.get("rok"))}, umeblowane {sum(1 for r in otw if r.get("attrs"))}, parking {pk}')
         kol = [r for r in inne if r.get('typ') == 'sprzedaz' and r.get('kat') in (None, 'dom') and r['portalId'] not in zn['sz']]
         kol.sort(key=lambda r: (r.get('kat') == 'dom', r.get('rynek') != 'wtorny'))
         kol = kol[:a.max_sprzedaz]; log(f'    sprzedaż: otwieram {len(kol)} ogłoszeń (rok, stan, rynek; reszta w kolejnych zebraniach)'); ok2 = 0
@@ -223,11 +251,11 @@ def main():
         if a.proba:
             log('4/5 PRÓBA: nic nie zapisuję.'); log('WYNIK: PRÓBA UDANA'); b.close(); return
         log('4/5 Import do aplikacji (jedno zebranie)...')
-        w = app.evaluate('(x) => { const r = window.__am.importOffers(x, { pelne: true }); return { dodane: r.added, zaktualizowane: r.updated, zebranie: r.zebranie.id }; }', wsz + inne)
-        for k, rr in filtry.items(): app.evaluate('([x, k]) => window.__am.importOffers(x, { attrs: [k] })', [rr, k])
-        pz = app.evaluate('() => { const S = window.__am.S; return [S.offers.length, S.katy.length, S.sprz.length, S.poza.length]; }')
+        w = app.evaluate('(x) => { const r = window.__am.importOffers(x[0], { pelne: true, woj: x[1] }); return { dodane: r.added, zaktualizowane: r.updated, zebranie: r.zebranie.id }; }', [wsz + inne, a.woj])
+        for k, rr in filtry.items(): app.evaluate('([x, k, w]) => window.__am.importOffers(x, { attrs: [k], woj: w })', [rr, k, a.woj])
+        pz = app.evaluate('() => { const S = window.__am.S, a = S.offers.concat(S.katy, S.sprz, S.poza), k = a.filter(o => o.woj === "malopolskie"); return [S.offers.length, S.katy.length, S.sprz.length, S.poza.length, k.length]; }')
         log(f'    nowe {w["dodane"]}, znane {w["zaktualizowane"]}, zebranie nr {w["zebranie"]}')
-        log(f'    w bazie: najem mieszkań Lublin {pz[0]}, najem domów/lokali/hal/garaży {pz[1]}, sprzedaż Lublin {pz[2]}, spoza Lublina {pz[3]}')
+        log(f'    w bazie: najem mieszkań Lublin {pz[0]}, najem domów/lokali/hal/garaży {pz[1]}, sprzedaż Lublin {pz[2]}, spoza Lublina {pz[3]} (w tym Kraków i okolice {pz[4]})')
         log('5/5 Wysyłam na serwer...')
         app.evaluate('() => window.__am.sync.run()'); time.sleep(3)
         for _ in range(90):
