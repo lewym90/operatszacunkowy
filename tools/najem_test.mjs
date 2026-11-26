@@ -11,7 +11,9 @@ const KX = 111.32 * Math.cos(51.2 * Math.PI / 180), dist = (a, b) => Math.hypot(
 const hash = s => { let h = 2166136261; for (const c of String(s)) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; };
 
 // Te same pule co w aplikacji (1.26.0+): tylko najem w Lublinie; sprzedaż i oferty spoza Lublina nie biorą udziału.
-const lubOK = o => { const m = (o.miasto || '').trim().toLowerCase(); return !m || m === 'lublin'; }, najemOK = o => (o.typ || 'najem') === 'najem';
+// OBSZAR=krakow: oferty Krakowa i okolic (woj. małopolskie); domyślnie Lublin jak dotąd
+const OBSZAR = process.env.OBSZAR || 'lublin', WOJ = OBSZAR === 'krakow' ? 'malopolskie' : 'lubelskie';
+const lubOK = OBSZAR === 'krakow' ? (o => o.woj === 'malopolskie') : (o => { const m = (o.miasto || '').trim().toLowerCase(); return o.woj !== 'malopolskie' && (!m || m === 'lublin'); }), najemOK = o => (o.typ || 'najem') === 'najem';
 const dobre = o => o.wlaczone !== false && !(o.flagi && o.flagi.length) && o.m2 > 0 && o.cena > 0;
 const all = JSON.parse(fs.readFileSync(fOf, 'utf8')), pool = all.filter(o => najemOK(o) && lubOK(o) && (!o.kat || o.kat === 'mieszkanie') && dobre(o));
 const pomin = { sprzedaz: all.filter(o => !najemOK(o)).length, poza: all.filter(o => najemOK(o) && !lubOK(o)).length, inne: all.filter(o => najemOK(o) && lubOK(o) && o.kat && o.kat !== 'mieszkanie').length };
@@ -109,7 +111,7 @@ console.log(`\nZYSK to punkty procentowe mniej błędu. POMAGA tylko, gdy cały 
 
 // ---------- KALIBRACJA (21.11.2026): pewność, poprawka pokoi, stare oferty ----------
 // Wszystko uczone wyłącznie na części uczącej (wewnętrzne części z chowaniem ulic), sprawdzane na schowanych ulicach. Nic nie zmienia aplikacji.
-const lastFull = zebr.filter(z => z.pelne && (!z.woj || z.woj === 'lubelskie')).map(z => z.id).reduce((a, b) => Math.max(a, b), -Infinity);
+const lastFull = zebr.filter(z => z.pelne && (z.woj || 'lubelskie') === WOJ).map(z => z.id).reduce((a, b) => Math.max(a, b), -Infinity);
 const aktualna = o => !Number.isFinite(lastFull) || o.ost == null || o.ost >= lastFull;
 const szacR = (u, o) => { const r = estimateRent(u, subjectOf(o)); return r.ok && r.total?.mid > 0 ? r : null; };
 const gPok = o => o.pokoje >= 4 ? 4 : o.pokoje || 0;
