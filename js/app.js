@@ -16,7 +16,7 @@ import { exposure, trendSeries, yieldByDistrict, districtAssigner, lineChart, ba
 import * as OB from './obszary.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer, districtCenters } from './mapa.js';
 
-const VERSION = '1.28.2';
+const VERSION = '1.28.3';
 const S = { wlasne: [], teczki: [], foto: {}, dokumenty: [],
   offers: [], poza: [], katy: [], sprz: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -113,7 +113,7 @@ function menuSheet() {
 }
 function tabs(active) {
   const n = remindN();
-  $('#tabs').innerHTML = '<div class="in-tabs"><div class="brand"><img src="icons/logo-am.png" alt=""><b>OPERAT SZACUNKOWY</b><span>AM Nieruchomości</span></div>' + TABS.map(([k, l]) => `<a href="#/${k}" class="${k === active ? 'on' : ''}${MAIN.includes(k) ? '' : ' xtra'}">${ICON[k]}${k === 'historia' && n ? `<i class="nb">${n}</i>` : ''}<span>${l}</span></a>`).join('')
+  $('#tabs').innerHTML = '<div class="in-tabs"><div class="brand"><img src="icons/logo-am.png" alt=""><b>WYCENA AM</b><span>AM Nieruchomości</span></div>' + TABS.map(([k, l]) => `<a href="#/${k}" class="${k === active ? 'on' : ''}${MAIN.includes(k) ? '' : ' xtra'}">${ICON[k]}${k === 'historia' && n ? `<i class="nb">${n}</i>` : ''}<span>${l}</span></a>`).join('')
     + `<button type="button" class="more ${MAIN.includes(active) ? '' : 'on'}" data-menu aria-label="Więcej">${ICON.wiecej}${n ? `<i class="nb">${n}</i>` : ''}<span>Więcej</span></button></div>`;
 }
 document.addEventListener('click', e => { if (e.target.closest('[data-menu]')) menuSheet(); });

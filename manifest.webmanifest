@@ -1,6 +1,6 @@
 {
-  "name": "Operat szacunkowy",
-  "short_name": "Operat szacunkowy",
+  "name": "Wycena AM",
+  "short_name": "Wycena AM",
   "description": "Narzędzie AM Nieruchomości do orientacyjnej oceny wartości sprzedaży i najmu.",
   "lang": "pl",
   "start_url": "./",
