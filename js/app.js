@@ -16,7 +16,7 @@ import { exposure, trendSeries, yieldByDistrict, districtAssigner, lineChart, ba
 import * as OB from './obszary.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer, districtCenters } from './mapa.js';
 
-const VERSION = '1.28.0';
+const VERSION = '1.28.1';
 const S = { wlasne: [], teczki: [], foto: {}, dokumenty: [],
   offers: [], poza: [], katy: [], sprz: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
@@ -52,8 +52,8 @@ S.safe = ls.get(BOOT) === '1';
 const armBoot = () => { ls.set(BOOT, '1'); setTimeout(() => ls.del(BOOT), 20000); };
 armBoot();
 addEventListener('pagehide', () => ls.del(BOOT)); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') ls.del(BOOT); });
-// Obszar inny niż Lublin: wyceny jeszcze bez testu trafności na tym obszarze (tylko w aplikacji, nigdy w raporcie dla klienta)
-const testBanner = () => OBK_ !== 'lublin' ? `<div class="banner warn"><span>!</span><span>${OBJ().pelna}: dane RCN są kompletne, ale trafność wycen na tym obszarze jest jeszcze sprawdzana. Traktuj wyniki jako orientacyjne.</span></div>` : '';
+// Obszar inny niż Lublin bez ofert najmu: informacja tylko w aplikacji, nigdy w raporcie dla klienta (sprzedaż sprawdzona testem 26.11.2026)
+const testBanner = () => OBK_ !== 'lublin' && S.offers.length < 50 ? `<div class="banner warn"><span>!</span><span>${OBJ().pelna}: brak jeszcze ofert najmu z tego obszaru (zbieranie z Otodom obejmuje na razie lubelskie), więc wycena najmu i rentowność nie działają. Wycena sprzedaży korzysta z pełnych danych RCN i jest sprawdzona na krakowskich transakcjach.</span></div>` : '';
 const safeBanner = () => testBanner() + (S.safe ? '<div class="banner warn"><span>!</span><span>Poprzednie uruchomienie aplikacji nie zakończyło się poprawnie, więc dane RCN (transakcje) nie zostały wczytane. <button class="chip" data-act="safeoff" style="margin-top:8px">Wczytaj dane RCN</button></span></div>' : '');
 async function safeOff() { S.safe = false; armBoot(); S.rcn = await store.get(K('rcn'), null); S.rcnInne = await store.get(K('rcnInne'), null); setTx(); render(); checkRcn(); }
 document.addEventListener('click', e => { if (e.target.closest('[data-act="safeoff"]')) safeOff(); });

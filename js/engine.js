@@ -396,7 +396,10 @@ export function estimateSale(tx, subject, opts = {}) {
     let loc, local = false, same = false;
     if (subLL && t.lat != null) {
       const d = haversine(subLL, [t.lat, t.lon]);
-      loc = d < 0.3 ? 1 : d < 0.8 ? 0.85 : d < 1.5 ? 0.65 : d < 3 ? 0.4 : 0.15; local = d < 1.5;
+      // dalej niż 3 km słabiej (od 1.28.1): w obszarach z kilkoma miastami (Kraków i okolice) porównania z innego rynku zawyżały wyceny w okolicznych
+      // miejscowościach. Zmierzone (tools/sprzedaz_eksp.mjs): okolice Krakowa mediana błędu −0,6 i −0,5 pkt na dwóch próbach, średni błąd −4,9 i −2,5 pkt;
+      // Kraków-miasto bez zmiany (+0,1); Lublin identycznie (0,0 na dwóch próbach po 700).
+      loc = opts.locW ? opts.locW(d) : d < 0.3 ? 1 : d < 0.8 ? 0.85 : d < 1.5 ? 0.65 : d < 3 ? 0.4 : d < 6 ? 0.15 : 0.04; local = d < 1.5;   // opts.locW: tylko testy wariantów
       same = subject.ulica && mscOK(t, subject) && addrKey(t.ulica, t.nr) === addrKey(subject.ulica, subject.nr);
     } else if (subject.ulica) { same = mscOK(t, subject) && streetKey(t.ulica) === streetKey(subject.ulica); loc = same ? 1 : 0.3; local = same; }
     else loc = 0.3;
@@ -406,7 +409,7 @@ export function estimateSale(tx, subject, opts = {}) {
     if (w < 0.08) return null;
     return { id: t.id, kind: 'transakcja', pm2: t.cena / t.m2, cena: t.cena, m2: t.m2, pokoje: t.izby, pietro: t.kond, rok: t.rok, data: t.ts ? new Date(t.ts).toISOString().slice(0, 10) : null, rozdzielona: !!t.rozdzielona, sprz: t.sprz, rodzaj: t.rodzaj, rynek: t.rynek,
       opis: [t.ulica, t.nr].filter(Boolean).join(' '), lat: t.lat, lon: t.lon, w, local, sameBuilding: !!same, rokBudowy: ybuild, src: 'RCN (ceny z aktów notarialnych)', ageY };
-  }).filter(Boolean).sort((a, b) => b.w - a.w).slice(0, 40);
+  }).filter(Boolean).sort((a, b) => b.w - a.w).slice(0, opts.topN || 40);
   let sc = build(3, 0.3), win = 3;
   if (sc.length < 10) { sc = build(5, 0.4); win = 5; notes.push('Za mało transakcji z ostatnich 3 lat: poszerzono okno do 5 lat (starsze transakcje mają niższą wagę).'); }
   notes.push(`Okno czasu: ostatnie ${win} lat (data aktu). Cena z aktu notarialnego, nie z ogłoszenia.`);
@@ -472,18 +475,18 @@ export function estimateSaleKat(tx, subject, opts = {}) {
     let loc = 0.3, local = false, same = false;
     if (subLL && t.lat != null) {
       const d = haversine(subLL, [t.lat, t.lon]);
-      loc = d < 0.3 ? 1 : d < 0.8 ? 0.85 : d < 1.5 ? 0.65 : d < 3 ? 0.4 : d < 6 ? 0.25 : d < 12 ? 0.15 : 0.08; local = d < 1.5;
+      loc = opts.locW ? opts.locW(d) : d < 0.3 ? 1 : d < 0.8 ? 0.85 : d < 1.5 ? 0.65 : d < 3 ? 0.4 : d < 6 ? 0.25 : d < 12 ? 0.15 : 0.08; local = d < 1.5;
       same = !!subject.ulica && mscOK(t, subject) && addrKey(t.ulica, t.nr) === addrKey(subject.ulica, subject.nr);
     } else if (subject.ulica) { same = mscOK(t, subject) && streetKey(t.ulica) === streetKey(subject.ulica); loc = same ? 1 : 0.3; local = same; }
     const rec = ageY <= 1 ? 1 : ageY <= 2 ? 0.85 : ageY <= 3 ? 0.7 : ageY <= 5 ? 0.55 : 0.4;
-    const pod = subject.pod && t.pod ? (subject.pod === t.pod ? 1 : 0.5) : 0.9;
+    const pod = opts.podW ? opts.podW(subject.pod, t.pod) : subject.pod && t.pod ? (subject.pod === t.pod ? 1 : 0.5) : 0.9;   // opts.podW: tylko testy wariantów
     const plot = kat === 'dom' && subject.dzm2 && t.dzm2 ? 0.6 + 0.4 * sizeLog(t.dzm2, subject.dzm2, 3) : 1;
     const wiecz = subject.wieczyste != null && t.wieczyste != null && !!subject.wieczyste !== !!t.wieczyste ? 0.6 : 1;
     const w = loc * (0.3 + 0.7 * sz) * rec * pod * plot * wiecz; if (w < 0.08) return null;
     const lab = kat === 'dzialka' ? (POD_TXT[t.pod] || t.pod || '') : (POD_TXT[t.pod] || '');
     return { id: t.id, kind: 'transakcja', pm2: t.cena / t.m2, cena: t.cena, m2: t.m2, pokoje: null, pietro: null, rok: t.rok, data: t.ts ? new Date(t.ts).toISOString().slice(0, 10) : null, sprz: t.sprz, rodzaj: t.rodzaj, rynek: t.rynek,
       opis: [[t.ulica, t.nr].filter(Boolean).join(' ') || (subject.obszarOkol || 'okolice Lublina') + ' (bez adresu w RCN)', lab].filter(Boolean).join(' · '), lat: t.lat, lon: t.lon, w, local, sameBuilding: same, dzm2: t.dzm2 || null, pod: t.pod, src: 'RCN (ceny z aktów notarialnych)' };
-  }).filter(Boolean).sort((a, b) => b.w - a.w).slice(0, 40);
+  }).filter(Boolean).sort((a, b) => b.w - a.w).slice(0, opts.topN || 40);
   let sc = [], win = 3;
   for (const y of [3, 5, 8]) { sc = build(y); win = y; if (sc.length >= 10) break; if (y < 8) notes.push(`Za mało transakcji z ostatnich ${y} lat: poszerzono okno do ${y === 3 ? 5 : 8} lat (starsze transakcje mają niższą wagę).`); }
   notes.push(`Okno czasu: ostatnie ${win} lat (data aktu). Cena z aktu notarialnego, nie z ogłoszenia.`);
