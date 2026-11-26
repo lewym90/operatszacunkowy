@@ -419,3 +419,17 @@ html, body { touch-action: pan-x pan-y; } a, button, input, select, textarea, la
 /* czynsz administracyjny w monitoringu ofert */
 .orow .cz { grid-column: 1 / -1; font-size: 12.5px; color: var(--bone); } .orow .cz.none { color: var(--ash); font-style: italic; }
 .orow .oin.zf .cz { grid-column: 2 / -1; }
+
+/* obszar pracy (Lublin / Kraków i okolice): pigułka w nagłówku i kafelki wyboru */
+.obsz { display: inline-flex; align-items: center; gap: 6px; margin-top: 7px; padding: 4px 11px 4px 8px; border-radius: 99px; border: 1px solid rgba(200, 164, 77, .45); background: rgba(200, 164, 77, .08); color: var(--gold-l); font: 600 12px var(--text); letter-spacing: .02em; white-space: nowrap; }
+.obsz svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.obsz i { font-style: normal; opacity: .7; font-size: 10px; }
+.hh-top .obsz { margin-top: 8px; }
+.obtiles { display: grid; gap: 10px; }
+.obt { display: block; width: 100%; text-align: left; padding: 16px; border-radius: 18px; border: 1px solid var(--line2); background: var(--g1); color: var(--bone); transition: all .3s var(--ease); }
+.obt b { display: block; font: 400 21px var(--display); color: var(--gold-l); } .obt small { display: block; margin-top: 4px; color: var(--ash); font-size: 13px; line-height: 1.4; }
+.obt.on { border-color: rgba(200, 164, 77, .6); background: rgba(200, 164, 77, .1); }
+@media (hover: hover) { .obt:not(.on):hover, .obsz:hover { border-color: rgba(200, 164, 77, .7); } }
+@media (min-width: 720px) { .obtiles.two { grid-template-columns: 1fr 1fr; } }
+/* komputer: bez przycisku menu tytuł trafiał do wąskiej kolumny 40 px i łamał się słowo po słowie („Rynek / i / trendy”) */
+@media (min-width: 1024px) { .top .ttl { grid-column: 2; } .top .mark { grid-column: 3; } }

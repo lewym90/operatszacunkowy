@@ -19,6 +19,7 @@ node test/rynek.test.mjs
 bash test/sync.sh
 node test/lock.cjs
 node test/poza.cjs
+node test/obszar.cjs
 python3 test/rcn_paczka_test.py
 python3 test/obszar_plik_test.py
 python3 test/otodom_reguly_test.py

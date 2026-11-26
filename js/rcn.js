@@ -44,7 +44,7 @@ export function rcnToObjects(pack, stats) {
       kond: g(r, 'kond') == null || g(r, 'kond') === '' ? null : (+g(r, 'kond') < 0 ? null : +g(r, 'kond')),
       m2: +g(r, 'm2') || 0, ulica: g(r, 'ulica') || '', nr: g(r, 'nr') || '',
       lat: g(r, 'lat') ?? null, lon: g(r, 'lon') ?? null,
-      rodzaj: rodz, sprz: idx.sprz != null ? g(r, 'sprz') : null, data: idx.data != null ? g(r, 'data') : null,
+      rodzaj: rodz, sprz: idx.sprz != null ? g(r, 'sprz') : null, data: idx.data != null ? g(r, 'data') : null, msc: idx.msc != null ? (g(r, 'msc') || null) : null,
       wielolokalowa: multi && !split,
       pelne: u == null || u === '' || /^1(\/1|\.0+)?$/.test(String(u).trim()),
     });

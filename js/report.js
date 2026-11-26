@@ -142,7 +142,7 @@ export async function buildReport(e, ust, opts = {}) {
   const kat = s.kat || 'mieszkanie', fl = kat === 'mieszkanie', stdTxt = ({ remont: 'do remontu', dobry: 'dobry', wysoki: 'wysoki' })[s.standard] || 'nie podano';
   const m2Lbl = kat === 'dzialka' ? 'Powierzchnia działki' : kat === 'dom' ? 'Powierzchnia użytkowa budynku' : 'Powierzchnia';
   const podLbl = { dzialka: 'Przeznaczenie wg planu', lokal: 'Funkcja lokalu', obiekt: 'Rodzaj obiektu' }[kat];
-  const rows = [...(fl ? [] : [['Rodzaj nieruchomości', KAT[kat].n]]), ['Lokalizacja', (lok || 'Lublin') + (sale ? '' : ', Lublin')], [m2Lbl, String(s.m2).replace('.', ',') + ' m²'],
+  const rows = [...(fl ? [] : [['Rodzaj nieruchomości', KAT[kat].n]]), ['Lokalizacja', s.miasto ? (lok ? lok + ', ' + s.miasto : s.miasto) : (lok || 'Lublin') + (sale ? '' : ', Lublin')], [m2Lbl, String(s.m2).replace('.', ',') + ' m²'],
     ...(kat === 'dom' && s.dzm2 ? [['Powierzchnia działki', String(s.dzm2).replace('.', ',') + ' m²']] : []),
     ...(fl ? [['Liczba pokoi', String(s.pokoje)], ['Piętro', s.pietro == null ? '—' : s.pietro === 0 ? 'parter' : String(s.pietro)]] : []),
     ...(podLbl && s.pod ? [[podLbl, POD_TXT[s.pod] || s.pod]] : []),

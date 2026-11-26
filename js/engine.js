@@ -33,6 +33,8 @@ export const normStreet = streetKey;
 export const normDz = norm;
 export const addrKey = (ulica, nr) => streetKey(ulica) + '|' + norm(nr);
 // klucz zapisany w starej postaci (pełna nazwa ulicy) -> nowa postać
+// Obszar z kilkoma miejscowościami (Kraków i okolice): ta sama nazwa ulicy w innej miejscowości to inny adres. Gdy brak miejscowości (Lublin) — bez zmian.
+const mscOK = (t, subject) => !subject.miasto || !t.msc || norm(t.msc) === norm(subject.miasto);
 export const migrateAddrKey = k => { const i = k.lastIndexOf('|'); return i < 0 ? k : streetKey(k.slice(0, i)) + k.slice(i); };
 
 
@@ -375,10 +377,10 @@ export function estimateSale(tx, subject, opts = {}) {
   let subLL = subject.latlon || null, llKind = subLL ? 'podane' : null;
   if (!subLL && subject.ulica) {
     const k = addrKey(subject.ulica, subject.nr);
-    const same = tx.filter(t => t.lat != null && addrKey(t.ulica, t.nr) === k);
+    const same = tx.filter(t => t.lat != null && mscOK(t, subject) && addrKey(t.ulica, t.nr) === k);
     if (same.length) { subLL = avgLL(same); llKind = 'ten sam budynek w RCN'; }
     else {
-      const st = tx.filter(t => t.lat != null && streetKey(t.ulica) === streetKey(subject.ulica));
+      const st = tx.filter(t => t.lat != null && mscOK(t, subject) && streetKey(t.ulica) === streetKey(subject.ulica));
       if (st.length >= 3) { subLL = avgLL(st); llKind = 'środek ulicy wg RCN (przybliżone)'; }
     }
   }
@@ -395,8 +397,8 @@ export function estimateSale(tx, subject, opts = {}) {
     if (subLL && t.lat != null) {
       const d = haversine(subLL, [t.lat, t.lon]);
       loc = d < 0.3 ? 1 : d < 0.8 ? 0.85 : d < 1.5 ? 0.65 : d < 3 ? 0.4 : 0.15; local = d < 1.5;
-      same = subject.ulica && addrKey(t.ulica, t.nr) === addrKey(subject.ulica, subject.nr);
-    } else if (subject.ulica) { same = streetKey(t.ulica) === streetKey(subject.ulica); loc = same ? 1 : 0.3; local = same; }
+      same = subject.ulica && mscOK(t, subject) && addrKey(t.ulica, t.nr) === addrKey(subject.ulica, subject.nr);
+    } else if (subject.ulica) { same = mscOK(t, subject) && streetKey(t.ulica) === streetKey(subject.ulica); loc = same ? 1 : 0.3; local = same; }
     else loc = 0.3;
     const rec = ageY <= 1 ? 1 : ageY <= 2 ? 0.85 : ageY <= 3 ? 0.7 : 0.55;
     const ybuild = yearOfBuilding(addrKey(t.ulica, t.nr));
@@ -438,7 +440,7 @@ export function estimateRentKat(offers, subject) {
     const sz = sizeLog(o.m2, subject.m2, F); if (sz <= 0) return null;
     const sameSt = subject.ulica && o.ulica && streetKey(o.ulica) === streetKey(subject.ulica), sameDz = subject.dzielnica && norm(o.dzielnica) === norm(subject.dzielnica);
     const loc = sameSt ? 1 : sameDz ? 0.9 : 0.4, w = loc * (0.3 + 0.7 * sz); if (w < 0.08) return null;
-    return { id: o.id, kind: 'oferta', pm2: o.cena / o.m2, cena: o.cena, m2: o.m2, pokoje: null, pietro: null, rok: o.rok || null, opis: [o.ulica, o.dzielnica].filter(Boolean).join(', ') || 'Lublin', w, local: !!(sameSt || sameDz), src: o.own ? 'własna umowa' : 'oferta z ogłoszenia' };
+    return { id: o.id, kind: 'oferta', pm2: o.cena / o.m2, cena: o.cena, m2: o.m2, pokoje: null, pietro: null, rok: o.rok || null, opis: [o.ulica, o.dzielnica].filter(Boolean).join(', ') || subject.obszarMiasto || 'Lublin', w, local: !!(sameSt || sameDz), src: o.own ? 'własna umowa' : 'oferta z ogłoszenia' };
   }).filter(Boolean).sort((a, b) => b.w - a.w).slice(0, 40);
   notes.push(`Baza tej kategorii jest mała (${pool.length} pozycji), więc przedział jest szeroki, a pewność niska. Wynik to czynsz za m² z podobnych metrażowo umów i ofert, bez korekt na cechy.`);
   const r = summarize(sc, subject, 'Szacunkowy czynsz najmu', { notes, unused: ['stan i wyposażenie (za mało danych tej kategorii)'], confExtra: ['mała baza kategorii'] });
@@ -458,9 +460,9 @@ export function estimateSaleKat(tx, subject, opts = {}) {
   const own = tx.filter(t => t.kat === kat), base = own.filter(t => pm2Of(t) != null), excluded = own.length - base.length;
   let subLL = subject.latlon || null, llKind = subLL ? 'podane' : null;
   if (!subLL && subject.ulica) {
-    const k = addrKey(subject.ulica, subject.nr), same = geo.filter(t => t.lat != null && addrKey(t.ulica, t.nr) === k);
+    const k = addrKey(subject.ulica, subject.nr), same = geo.filter(t => t.lat != null && mscOK(t, subject) && addrKey(t.ulica, t.nr) === k);
     if (same.length) { subLL = avgLL(same); llKind = 'ten sam adres w RCN'; }
-    else { const st = geo.filter(t => t.lat != null && streetKey(t.ulica) === streetKey(subject.ulica)); if (st.length >= 3) { subLL = avgLL(st); llKind = 'środek ulicy wg RCN (przybliżone)'; } }
+    else { const st = geo.filter(t => t.lat != null && mscOK(t, subject) && streetKey(t.ulica) === streetKey(subject.ulica)); if (st.length >= 3) { subLL = avgLL(st); llKind = 'środek ulicy wg RCN (przybliżone)'; } }
   }
   const ageOf = t => { const w = (t.ts && t.ts <= nowTs) ? t.ts : (t.rok ? Date.UTC(t.rok, 6, 1) : null); return w == null ? 99 : Math.max(0, (nowTs - w) / 31557600000); };
   const build = (years) => base.map(t => {
@@ -471,8 +473,8 @@ export function estimateSaleKat(tx, subject, opts = {}) {
     if (subLL && t.lat != null) {
       const d = haversine(subLL, [t.lat, t.lon]);
       loc = d < 0.3 ? 1 : d < 0.8 ? 0.85 : d < 1.5 ? 0.65 : d < 3 ? 0.4 : d < 6 ? 0.25 : d < 12 ? 0.15 : 0.08; local = d < 1.5;
-      same = !!subject.ulica && addrKey(t.ulica, t.nr) === addrKey(subject.ulica, subject.nr);
-    } else if (subject.ulica) { same = streetKey(t.ulica) === streetKey(subject.ulica); loc = same ? 1 : 0.3; local = same; }
+      same = !!subject.ulica && mscOK(t, subject) && addrKey(t.ulica, t.nr) === addrKey(subject.ulica, subject.nr);
+    } else if (subject.ulica) { same = mscOK(t, subject) && streetKey(t.ulica) === streetKey(subject.ulica); loc = same ? 1 : 0.3; local = same; }
     const rec = ageY <= 1 ? 1 : ageY <= 2 ? 0.85 : ageY <= 3 ? 0.7 : ageY <= 5 ? 0.55 : 0.4;
     const pod = subject.pod && t.pod ? (subject.pod === t.pod ? 1 : 0.5) : 0.9;
     const plot = kat === 'dom' && subject.dzm2 && t.dzm2 ? 0.6 + 0.4 * sizeLog(t.dzm2, subject.dzm2, 3) : 1;
@@ -480,14 +482,14 @@ export function estimateSaleKat(tx, subject, opts = {}) {
     const w = loc * (0.3 + 0.7 * sz) * rec * pod * plot * wiecz; if (w < 0.08) return null;
     const lab = kat === 'dzialka' ? (POD_TXT[t.pod] || t.pod || '') : (POD_TXT[t.pod] || '');
     return { id: t.id, kind: 'transakcja', pm2: t.cena / t.m2, cena: t.cena, m2: t.m2, pokoje: null, pietro: null, rok: t.rok, data: t.ts ? new Date(t.ts).toISOString().slice(0, 10) : null, sprz: t.sprz, rodzaj: t.rodzaj, rynek: t.rynek,
-      opis: [[t.ulica, t.nr].filter(Boolean).join(' ') || 'okolice Lublina (bez adresu w RCN)', lab].filter(Boolean).join(' · '), lat: t.lat, lon: t.lon, w, local, sameBuilding: same, dzm2: t.dzm2 || null, pod: t.pod, src: 'RCN (ceny z aktów notarialnych)' };
+      opis: [[t.ulica, t.nr].filter(Boolean).join(' ') || (subject.obszarOkol || 'okolice Lublina') + ' (bez adresu w RCN)', lab].filter(Boolean).join(' · '), lat: t.lat, lon: t.lon, w, local, sameBuilding: same, dzm2: t.dzm2 || null, pod: t.pod, src: 'RCN (ceny z aktów notarialnych)' };
   }).filter(Boolean).sort((a, b) => b.w - a.w).slice(0, 40);
   let sc = [], win = 3;
   for (const y of [3, 5, 8]) { sc = build(y); win = y; if (sc.length >= 10) break; if (y < 8) notes.push(`Za mało transakcji z ostatnich ${y} lat: poszerzono okno do ${y === 3 ? 5 : 8} lat (starsze transakcje mają niższą wagę).`); }
   notes.push(`Okno czasu: ostatnie ${win} lat (data aktu). Cena z aktu notarialnego, nie z ogłoszenia.`);
   if (kat === 'dom') notes.push(`Cena domu obejmuje działkę. Wynik to cena za m² powierzchni użytkowej budynku; RCN podaje tę powierzchnię tylko w części aktów (użyto ${fmtN(base.length)} z ${fmtN(own.length)} transakcji domów).`);
   if (kat === 'dzialka') notes.push('Cena za m² gruntu. Przeznaczenie działki wg planu miejscowego (jeśli RCN je zna) ma wpływ na wagę porównania.');
-  if (kat === 'garaz' || kat === 'lokal') notes.push('Dane dotyczą lokali (garaży i lokali użytkowych) sprzedawanych w Lublinie i okolicy; lokali tego typu jest w RCN znacznie mniej niż mieszkań.');
+  if (kat === 'garaz' || kat === 'lokal') notes.push(`Dane dotyczą lokali (garaży i lokali użytkowych) sprzedawanych ${subject.obszarMiejsc || 'w Lublinie i okolicy'}; lokali tego typu jest w RCN znacznie mniej niż mieszkań.`);
   if (excluded) notes.push(`Pominięto ${fmtN(excluded)} rekordów tej kategorii: kilka nieruchomości w jednym akcie, udział w prawie, brak lub niejednoznaczna powierzchnia (RCN podaje grunt raz w m², raz w hektarach) albo cena za m² poza rozsądnym zakresem.`);
   if (llKind) notes.push(`Lokalizacja podmiotu: ${llKind}.`); else notes.push('Nie ustalono współrzędnych podmiotu: lokalizację oceniono tylko po nazwie ulicy, więc wynik dotyczy rynku całej okolicy Lublina.');
   if (subject.rok != null) unused.push('rok budowy (RCN go nie zawiera dla tej kategorii)');

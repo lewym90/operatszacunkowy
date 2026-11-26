@@ -13,12 +13,12 @@ export const LAYERS = {
 const BBOX = '51.15,22.38,51.33,22.73', TTL = 864e5;
 // Dane punktów przygotowuje serwer (osm_lublin.json, odświeżany co tydzień), aplikacja tylko go czyta i zapamiętuje na 24 h.
 export const osmUrl = rcnUrl => rcnUrl ? rcnUrl.replace(/[^/]*$/, 'osm_lublin.json') : '';
-export async function loadAll({ url, force = false, fetchFn = fetch } = {}) {
-  const c = await store.get('osm-file');
+export async function loadAll({ url, force = false, fetchFn = fetch, key = 'osm-file' } = {}) {
+  const c = await store.get(key);
   if (!force && c && c.ts && Date.now() - c.ts < TTL && c.layers) return { layers: c.layers, meta: c.meta, cached: true };
   let err = null;
   if (!url) err = 'brak adresu danych (Dane → adres pliku z serwera)';
-  else try { const r = await fetchFn(url, { cache: 'no-store' }); if (!r.ok) throw new Error(r.status === 404 ? 'serwer nie ma jeszcze pliku z otoczeniem (uruchom install_osm.sh)' : 'HTTP ' + r.status); const j = await r.json(); if (!j || !j.layers) throw new Error('zły format pliku'); await store.set('osm-file', { ts: Date.now(), layers: j.layers, meta: j.meta }); return { layers: j.layers, meta: j.meta, cached: false }; }
+  else try { const r = await fetchFn(url, { cache: 'no-store' }); if (!r.ok) throw new Error(r.status === 404 ? 'serwer nie ma jeszcze pliku z otoczeniem (uruchom install_osm.sh)' : 'HTTP ' + r.status); const j = await r.json(); if (!j || !j.layers) throw new Error('zły format pliku'); await store.set(key, { ts: Date.now(), layers: j.layers, meta: j.meta }); return { layers: j.layers, meta: j.meta, cached: false }; }
   catch (e) { err = e.message; }
   if (c && c.layers) return { layers: c.layers, meta: c.meta, cached: true, stale: true };
   throw new Error('Dane otoczenia niedostępne: ' + err + '.');

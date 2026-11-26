@@ -13,25 +13,32 @@ import { sekcje, ocen, ODP, OPIS, NOTA } from './ogledziny.js';
 import { LAYERS as OSM, loadPois, loadAll, nearest, osmUrl, okolica, promienie, opisLokalizacji, PROMIENIE, promLbl } from './osm.js';
 import { geocode, neighbors, suggest as suggestAddr } from './geokod.js';
 import { exposure, trendSeries, yieldByDistrict, districtAssigner, lineChart, barChart, bindCharts } from './rynek.js';
+import * as OB from './obszary.js';
 import { createMap, usableSales, buildGrid, streetCenters, placeOffers, makeClasses, median, popupSale, popupOffer, districtCenters } from './mapa.js';
 
-const VERSION = '1.27.4';
+const VERSION = '1.28.0';
 const S = { wlasne: [], teczki: [], foto: {}, dokumenty: [],
   offers: [], poza: [], katy: [], sprz: [], rcn: null, rcnInne: null, tx: [], inne: [], pool: [], stats: {}, streets: [], budynki: {}, wyceny: [], last: {},
   ust: { biuro: 'AM Nieruchomości', haslo: 'Sprawdzone do końca.', agent: '', tel: '', email: '', www: '', rcnUrl: '' },
   form: { tryb: 'sprzedaz', kat: 'mieszkanie', pod: '', dzm2: '', ulica: '', nr: '', dzielnica: '', m2: '', pokoje: 2, pietro: null, rok: '', rynek: '', standard: '', meble: '', zapamietaj: true, ud: [] },
 };
 // Własne umowy najmu biura -> ta sama postać co oferty, z jawnymi cechami (nie ze słów w tytule) i dużą wagą
-const ownToOffer = w => ({ id: 'w' + w.id, own: true, ...(w.kat && w.kat !== 'mieszkanie' ? { kat: w.kat } : {}), ulica: w.ulica, dzielnica: w.dzielnica, miasto: 'Lublin', m2: w.m2, pokoje: w.pokoje, pietro: w.pietro, cena: w.cena, czynsz: w.czynsz || null, meble: w.meble,
+const ownToOffer = w => ({ id: 'w' + w.id, own: true, ...(w.kat && w.kat !== 'mieszkanie' ? { kat: w.kat } : {}), ulica: w.ulica, dzielnica: w.dzielnica, miasto: w.miasto || 'Lublin', m2: w.m2, pokoje: w.pokoje, pietro: w.pietro, cena: w.cena, czynsz: w.czynsz || null, meble: w.meble,
   tags: { nowe: w.rok && w.rok >= 2018 ? 1 : 0, wysoki: w.standard === 'wysoki' ? 1 : 0 }, tytul: 'własna umowa', wlaczone: true, flagi: [] });
 // Oferty spoza Lublina czekają w S.poza: są zapisywane i synchronizowane, ale nie wchodzą do wycen, rynku, mapy ani list, dopóki aplikacja nie obsłuży innych obszarów.
-const lubOK = o => { const m = (o.miasto || '').trim().toLowerCase(); return !m || m === 'lublin'; };
+const lubOK = o => OB.ofertaW(OBK_, o);   // oferta z bieżącego obszaru (Lublin: puste miasto lub „Lublin”, jak dotąd)
 // Pule: S.offers = najem mieszkań w Lublinie (wyceny, rynek, mapa, listy); S.katy = najem domów, lokali, hal, garaży w Lublinie (tylko wycena tych kategorii);
 // S.sprz = oferty sprzedaży w Lublinie (osobno, nigdy w wycenach najmu); S.poza = wszystko spoza Lublina.
 const sprzOK = o => o.typ === 'sprzedaz', katOK = o => !sprzOK(o) && o.kat && o.kat !== 'mieszkanie';
 const podziel = all => { S.poza = all.filter(o => !lubOK(o)); const l = all.filter(lubOK); S.sprz = l.filter(sprzOK); S.katy = l.filter(katOK); S.offers = l.filter(o => !sprzOK(o) && !katOK(o)); };
 const wszystkie = () => S.offers.concat(S.katy, S.sprz, S.poza);
-const allOffers = () => S.offers.concat((S.wlasne || []).map(ownToOffer));
+const allOffers = () => S.offers.concat((S.wlasne || []).filter(w => OB.ofertaW(OBK_, { miasto: w.miasto || 'Lublin' })).map(ownToOffer));
+// Obszar pracy (Lublin / Kraków i okolice). Wybór zapisany na tym urządzeniu; dane RCN, otoczenie i rok budowy z adresów są osobne dla obszaru.
+let OBK_ = 'lublin';
+const OBK = () => OBK_, OBJ = () => OB.get(OBK_), K = n => OB.klucz(OBK_, n);
+const bk = k => OBK_ === 'lublin' ? k : OBK_ + ':' + k;   // klucz roku budowy (ten sam adres w innym mieście to inny budynek)
+// pola tematu wyceny dla obszarów z wieloma miejscowościami; dla Lublina brak (wynik identyczny jak dotąd)
+const subjObszar = f => OBK_ === 'lublin' ? {} : { miasto: (f.miasto || '').trim() || OBJ().miasto, obszarMiasto: OBJ().miasto, obszarOkol: 'okolice: ' + OBJ().pelna, obszarMiejsc: 'w obszarze ' + OBJ().pelna };
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const now = () => new Date().getFullYear();
 const LV = { 'niska': 'Niska', 'średnia': 'Średnia', 'wysoka': 'Wysoka' };
@@ -45,13 +52,16 @@ S.safe = ls.get(BOOT) === '1';
 const armBoot = () => { ls.set(BOOT, '1'); setTimeout(() => ls.del(BOOT), 20000); };
 armBoot();
 addEventListener('pagehide', () => ls.del(BOOT)); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') ls.del(BOOT); });
-const safeBanner = () => S.safe ? '<div class="banner warn"><span>!</span><span>Poprzednie uruchomienie aplikacji nie zakończyło się poprawnie, więc dane RCN (transakcje) nie zostały wczytane. <button class="chip" data-act="safeoff" style="margin-top:8px">Wczytaj dane RCN</button></span></div>' : '';
-async function safeOff() { S.safe = false; armBoot(); S.rcn = await store.get('rcn', null); S.rcnInne = await store.get('rcnInne', null); setTx(); render(); checkRcn(); }
+// Obszar inny niż Lublin: wyceny jeszcze bez testu trafności na tym obszarze (tylko w aplikacji, nigdy w raporcie dla klienta)
+const testBanner = () => OBK_ !== 'lublin' ? `<div class="banner warn"><span>!</span><span>${OBJ().pelna}: dane RCN są kompletne, ale trafność wycen na tym obszarze jest jeszcze sprawdzana. Traktuj wyniki jako orientacyjne.</span></div>` : '';
+const safeBanner = () => testBanner() + (S.safe ? '<div class="banner warn"><span>!</span><span>Poprzednie uruchomienie aplikacji nie zakończyło się poprawnie, więc dane RCN (transakcje) nie zostały wczytane. <button class="chip" data-act="safeoff" style="margin-top:8px">Wczytaj dane RCN</button></span></div>' : '');
+async function safeOff() { S.safe = false; armBoot(); S.rcn = await store.get(K('rcn'), null); S.rcnInne = await store.get(K('rcnInne'), null); setTx(); render(); checkRcn(); }
 document.addEventListener('click', e => { if (e.target.closest('[data-act="safeoff"]')) safeOff(); });
 async function load() {
+  { const o = await store.get('obszar', null); OBK_ = OB.OBSZARY[o] ? o : 'lublin'; S.obWybrany = !!OB.OBSZARY[o]; }
   S.wlasne = await store.get('wlasne', []); podziel(await store.get('offers', [])); S.budynki = await store.get('budynki', {}); S.wyceny = await store.get('wyceny', []); S.teczki = await store.get('teczki', []); S.dokumenty = await store.get('dokumenty', []); S.foto = await store.get('foto', {});
-  { const m = {}; let ch = false; for (const [k, v] of Object.entries(S.budynki)) { const nk = migrateAddrKey(k); if (nk !== k) ch = true; m[nk] = v; } if (ch) { S.budynki = m; store.set('budynki', m); } }
-  S.ust = { ...S.ust, ...(await store.get('ust', {})) }; S.rcn = S.safe ? null : await store.get('rcn', null); S.rcnInne = S.safe ? null : await store.get('rcnInne', null); setTx();
+  { const m = {}; let ch = false; for (const [k, v] of Object.entries(S.budynki)) { const nk = /^[a-z]+:/.test(k) ? k : migrateAddrKey(k); if (nk !== k) ch = true; m[nk] = v; } if (ch) { S.budynki = m; store.set('budynki', m); } }
+  S.ust = { ...S.ust, ...(await store.get('ust', {})) }; S.rcn = S.safe ? null : await store.get(K('rcn'), null); S.rcnInne = S.safe ? null : await store.get(K('rcnInne'), null); setTx();
 }
 // Surowe wiersze RCN zwalniamy po przeliczeniu (zostają w bazie urządzenia): w pamięci były podwójnie, a duże zużycie sprawia, że iPhone szybciej zamyka aplikację w tle.
 function setTx() {
@@ -142,7 +152,25 @@ function render() {
 const go = h => { location.hash = h; };
 let mapCtl = null;
 
-const head = (title, sub, back, line) => `<div class="top">${back ? `<button class="back" data-back aria-label="Wróć">${ICON.back}</button>` : `<button class="back burger" data-menu aria-label="Menu">${ICON.menu}</button>`}<div class="ttl"><h1>${title}</h1>${sub ? `<small class="${line ? 'line' : ''}">${sub}</small>` : ''}</div><img class="mark" src="icons/logo-am.png" alt="AM Nieruchomości"></div>`;
+const obszPill = () => `<button type="button" class="obsz" data-area aria-label="Obszar pracy: ${OBJ().pelna}. Zmień">${ICON.pin}<span>${OBJ().pelna}</span><i>▾</i></button>`;
+// Wybór obszaru: kafelki (przy pierwszym wejściu i z pigułki w nagłówku). Dane każdego obszaru zostają na urządzeniu, przełączenie nie kasuje niczego.
+function obszarSheet(first) {
+  openSheet(`<div class="eyebrow">${first ? 'Na jakim obszarze pracujesz?' : 'Obszar pracy'}</div><div class="obtiles">${OB.LISTA.map(k => { const O = OB.get(k); return `<button type="button" class="obt${k === OBK_ ? ' on' : ''}" data-ob="${k}"><b>${O.pelna}</b><small>${O.opis}</small></button>`; }).join('')}</div>
+    <p class="tiny muted" style="margin:12px 0 0">Każdy obszar ma osobne transakcje RCN, mapę, rynek i oferty. Teczki i historia wycen są wspólne. Zmienisz to w każdej chwili pigułką z nazwą obszaru w nagłówku.</p>`,
+    p => $$('[data-ob]', p).forEach(b => b.onclick = async () => { closeSheet(); await setObszar(b.dataset.ob); }));
+}
+async function setObszar(k) {
+  await store.set('obszar', k); S.obWybrany = true;
+  if (k === OBK_) return render();
+  OBK_ = k; startMemo = null; centersCache = null;
+  S.rcn = S.safe ? null : await store.get(K('rcn'), null); S.rcnInne = S.safe ? null : await store.get(K('rcnInne'), null); setTx();
+  podziel(wszystkie()); render();
+  toast(OBJ().pelna + (S.tx.length ? '' : ' — pobieram dane RCN…'));
+  const bylo = S.tx.length; await checkRcn(!S.tx.length);
+  if (OBK_ === k && S.tx.length !== bylo && !document.querySelector('#sheet.open')) render();   // dane obszaru doszły po wyświetleniu ekranu
+}
+document.addEventListener('click', e => { if (e.target.closest('[data-area]')) obszarSheet(false); });
+const head = (title, sub, back, line) => `<div class="top">${back ? `<button class="back" data-back aria-label="Wróć">${ICON.back}</button>` : `<button class="back burger" data-menu aria-label="Menu">${ICON.menu}</button>`}<div class="ttl"><h1>${title}</h1>${sub ? `<small class="${line ? 'line' : ''}">${sub}</small>` : ''}${obszPill()}</div><img class="mark" src="icons/logo-am.png" alt="AM Nieruchomości"></div>`;
 
 /* ---------- START ---------- */
 const TILES = [['sale', 'Wycena sprzedaży', 'sprzedaz'], ['rent', 'Wycena najmu', 'najem'], ['#/rynek', 'Rynek i trendy', 'rynek'], ['#/kalkulator', 'Kalkulator inwestycyjny', 'kalkulator'], ['#/mapa', 'Mapa transakcji', 'mapa'], ['#/oferty', 'Monitoring ofert', 'oferty'], ['tec', 'Teczki i CRM', 'teczki'], ['#/raporty', 'Raporty PDF', 'raporty']];
@@ -153,7 +181,7 @@ function tileInfo(k) {
   if (k === 'rent') { const n = allOffers().length; return n ? odm(n, 'oferta', 'oferty', 'ofert') : 'Oferty i własne umowy'; }
   if (k === '#/rynek') return 'Trendy i rentowność';
   if (k === '#/kalkulator') { const r = investCalc(S.invest); return r.ok ? 'Zwrot netto ' + pct1(r.netPost) : 'Zwrot, IRR, NPV'; }
-  if (k === '#/mapa') return 'Lublin i okolice';
+  if (k === '#/mapa') return OBJ().pelna;
   if (k === '#/oferty') { if (!S.offers.length) return 'Zmiany cen i nowe ogłoszenia'; const st = statusFn(), n = S.offers.filter(o => st(o) === 'nowe').length; return n ? odm(n, 'nowa', 'nowe', 'nowych') : 'Bez nowych ogłoszeń'; }
   if (k === 'tec') return S.teczki.length ? odm(S.teczki.length, 'teczka', 'teczki', 'teczek') : 'Nieruchomości i zadania';
   return S.dokumenty.length ? odm(S.dokumenty.length, 'dokument', 'dokumenty', 'dokumentów') : 'Siedem rodzajów raportu';
@@ -161,14 +189,15 @@ function tileInfo(k) {
 let startMemo = null;
 function viewStart() {
   const n = remindN();
-  const html = `<div class="home-hero"><img class="hh-img" src="img/start.webp" alt=""><div class="hh-top"><img class="home-logo" src="icons/logo-am.png" alt="AM Nieruchomości"><h1 class="gold">OPERAT<br>SZACUNKOWY</h1><button class="bell" data-act="bell" aria-label="Zadania i przypomnienia${n ? ': ' + n : ''}">${ICON.dzwonek}${n ? `<i class="nb">${n}</i>` : ''}</button></div>
-    <div class="hh-stats"><div class="hs"><b id="hs-m">—</b><span>mediana zł/m², mieszkania</span></div><div class="hs"><b id="hs-y">—</b><span>zmiana rok do roku</span></div></div></div>${safeBanner()}
+  const html = `<div class="home-hero"><img class="hh-img" src="img/start.webp" alt=""><div class="hh-top"><img class="home-logo" src="icons/logo-am.png" alt="AM Nieruchomości"><div><h1 class="gold">OPERAT<br>SZACUNKOWY</h1>${obszPill()}</div><button class="bell" data-act="bell" aria-label="Zadania i przypomnienia${n ? ': ' + n : ''}">${ICON.dzwonek}${n ? `<i class="nb">${n}</i>` : ''}</button></div>
+    <div class="hh-stats"><div class="hs"><b id="hs-m">—</b><span>mediana zł/m², mieszkania</span></div><div class="hs"><b id="hs-y">—</b><span>zmiana rok do roku</span></div></div></div>${safeBanner()}${S.obWybrany ? '' : `<div class="card obfirst"><div class="eyebrow">Na jakim obszarze pracujesz?</div><div class="obtiles two">${OB.LISTA.map(k => { const O = OB.get(k); return `<button type="button" class="obt${k === OBK_ ? ' on' : ''}" data-ob="${k}"><b>${O.pelna}</b><small>${O.opis}</small></button>`; }).join('')}</div><p class="tiny muted" style="margin:10px 0 0">Później zmienisz to pigułką z nazwą obszaru w nagłówku.</p></div>`}
   <div class="tiles"><button type="button" class="tile wide" data-tile="#/ogledziny" style="background-image:url(img/t-ogledziny.webp)"><span class="tl"><b>Karta oględzin</b><small>Ocena standardu, 25 punktów</small></span></button>${TILES.map(([k, l, im]) => `<button type="button" class="tile" data-tile="${k}" style="background-image:url(img/t-${im}.webp)"><span class="tl"><b>${l}</b><small>${esc(tileInfo(k))}</small></span></button>`).join('')}</div>
   <div class="skyline" aria-hidden="true"><img src="img/panorama.webp" alt=""></div>`;
   return [html, v => {
     $$('[data-tile]', v).forEach(b => b.onclick = () => { const k = b.dataset.tile;
       if (k === 'sale' || k === 'rent') { S.form.tryb = k === 'sale' ? 'sprzedaz' : 'najem'; S.form.oferta = null; go('#/wycena'); } else if (k === 'tec') { S.histTab = 'teczki'; go('#/historia'); } else go(k); });
     $('[data-act="bell"]', v).onclick = () => { S.histTab = 'zadania'; go('#/historia'); };
+    $$('[data-ob]', v).forEach(b => b.onclick = () => setObszar(b.dataset.ob));
     const paint = m => { if (!m) return; const a = $('#hs-m', v), b = $('#hs-y', v); if (a) a.textContent = fmt(m.med); if (b && m.yoy != null) b.textContent = plPct(m.yoy); const r = $('[data-tile="#/rynek"] small', v); if (r && m.yoy != null) r.textContent = plPct(m.yoy) + ' rok do roku'; };
     if (startMemo && startMemo.n === S.pool.length) paint(startMemo); else if (S.pool.length) setTimeout(() => { if (!v.isConnected || v.dataset.view !== 'start') return; try { const T = trendSeries(S.pool, { kat: 'mieszkanie', m2min: 15, m2max: 200, years: 3 }); if (T.ok) { startMemo = { n: S.pool.length, med: T.points[T.points.length - 1].med, yoy: T.yoy ? T.yoy.pct : null }; paint(startMemo); } } catch { } }, 60);
   }];
@@ -205,7 +234,7 @@ function viewWycena() {
   ${ready ? `<div class="banner"><span>◈</span><span>${stat}. Wynik zawsze jako przedział z oceną pewności.</span></div>`
       : `<div class="banner warn"><span>!</span><span>${sale ? 'Brak danych o transakcjach (RCN).' : 'Brak ofert najmu.'} Najpierw zaimportuj dane w zakładce <b>Dane</b>.</span></div>`}
   <form class="card" id="f" autocomplete="off" novalidate>
-    ${sale || !flat ? `<div class="grid3"><label class="field"><span>Ulica${flat ? '' : ' (opcjonalnie)'}</span><input class="in" name="ulica" list="dl-st" value="${esc(f.ulica)}" placeholder="np. Bluszczowa"></label>
+    ${OBK_ !== 'lublin' ? miejscField(f) : ''}${sale || !flat ? `<div class="grid3"><label class="field"><span>Ulica${flat ? '' : ' (opcjonalnie)'}</span><input class="in" name="ulica" list="dl-st" value="${esc(f.ulica)}" placeholder="np. Bluszczowa"></label>
       <label class="field"><span>Nr</span><input class="in" name="nr" value="${esc(f.nr)}" inputmode="text" placeholder="13"></label></div>`
       : `<label class="field"><span>Dzielnica (opcjonalnie)</span><input class="in" name="dzielnica" list="dl-dz" value="${esc(f.dzielnica)}" placeholder="np. Śródmieście"></label>
       <div class="grid3"><label class="field"><span>Ulica</span><input class="in" name="ulica" list="dl-st" value="${esc(f.ulica)}" placeholder="np. Granata"></label>
@@ -251,9 +280,15 @@ function viewWycena() {
     $('#f', v).onsubmit = e => { e.preventDefault(); readForm(v); submitForm(); };
   }];
 }
+// Obszar z wieloma miejscowościami: pole „Miejscowość” (podpowiedzi = miejscowości z transakcji RCN obszaru, od najczęstszych)
+let mscList = null;
+function miejscField(f) {
+  if (!mscList || mscList.for !== S.tx) { const ladna = m => m === m.toUpperCase() ? m.toLowerCase().replace(/(^|[\s-])(\p{L})/gu, (x, p, l) => p + l.toUpperCase()) : m; const c = new Map(); for (const t of S.tx) if (t.msc) { const m = ladna(t.msc); c.set(m, (c.get(m) || 0) + 1); } mscList = { for: S.tx, l: [...c.entries()].sort((a, b) => b[1] - a[1]).map(x => x[0]).slice(0, 400) }; }
+  return `<label class="field"><span>Miejscowość</span><input class="in" name="miasto" list="dl-msc" value="${esc(f.miasto || OBJ().miasto)}" placeholder="${esc(OBJ().miasto)}"><datalist id="dl-msc">${mscList.l.map(m => `<option value="${esc(m)}">`).join('')}</datalist></label>`;
+}
 function readForm(v) {
   const q = n => { const el = $(`[name="${n}"]`, v); return el ? el.value.trim() : undefined; };
-  for (const k of ['ulica', 'nr', 'dzielnica', 'm2', 'dzm2', 'rok']) { const x = q(k); if (x !== undefined) S.form[k] = x; }
+  for (const k of ['miasto', 'ulica', 'nr', 'dzielnica', 'm2', 'dzm2', 'rok']) { const x = q(k); if (x !== undefined) S.form[k] = x; }
   const z = $('[name="zap"]', v); if (z) S.form.zapamietaj = z.checked;
 }
 function submitForm() {
@@ -272,7 +307,7 @@ function computeEntry(f) {
   if (f.rok && !(rok >= 1700 && rok <= now() + 3)) return { err: 'Rok budowy wygląda błędnie' };
   if (f.tryb === 'sprzedaz' && !S.pool.length) return { err: 'Najpierw zaimportuj dane RCN (zakładka Dane)' };
   if (f.tryb === 'najem' && flat && !S.offers.length && !(S.wlasne || []).length) return { err: 'Najpierw zaimportuj oferty najmu (zakładka Dane)' };
-  const subj = { tryb: f.tryb, kat, pod: f.pod || null, dzm2, ulica: f.ulica, nr: f.nr, dzielnica: f.dzielnica, m2, pokoje: flat ? f.pokoje : null, pietro: flat ? f.pietro : null, rok: ['mieszkanie', 'dom', 'obiekt'].includes(kat) ? rok : null, rynek: f.rynek || null, standard: f.standard || null, meble: f.meble === '' ? null : f.meble,
+  const subj = { ...subjObszar(f), tryb: f.tryb, kat, pod: f.pod || null, dzm2, ulica: f.ulica, nr: f.nr, dzielnica: f.dzielnica, m2, pokoje: flat ? f.pokoje : null, pietro: flat ? f.pietro : null, rok: ['mieszkanie', 'dom', 'obiekt'].includes(kat) ? rok : null, rynek: f.rynek || null, standard: f.standard || null, meble: f.meble === '' ? null : f.meble,
     parking: f.tryb === 'najem' && flat ? (f.parking || 'brak') : null,
     attrs: f.tryb === 'najem' && flat ? { ...Object.fromEntries(ATTRS.filter(a => a[0] !== 'meble' && a[0] !== 'garaz').map(([k]) => [k, (f.ud || []).includes(k) ? 1 : 0])), garaz: f.parking === 'wliczony' ? 1 : 0 } : null };
   let dzNote = null;
@@ -284,8 +319,8 @@ function computeEntry(f) {
       else if (normDz(inf.name) !== normDz(subj.dzielnica) && inf.share >= 0.7) dzNote = `Uwaga: wpisano dzielnicę ${subj.dzielnica}, a ulica ${subj.ulica} wg ${src} leży w dzielnicy ${inf.name}.`;
     }
   }
-  if (rok && flat && f.zapamietaj && f.ulica && f.nr && f.tryb === 'sprzedaz') { S.budynki[addrKey(f.ulica, f.nr)] = rok; save.budynki(); }
-  const yearOf = k => S.budynki[k] ?? null;
+  if (rok && flat && f.zapamietaj && f.ulica && f.nr && f.tryb === 'sprzedaz') { S.budynki[bk(addrKey(f.ulica, f.nr))] = rok; save.budynki(); }
+  const yearOf = k => S.budynki[bk(k)] ?? null;
   const res = f.tryb === 'najem' ? (flat ? estimateRent(allOffers(), subj) : (kat === 'dom' || kat === 'lokal' || kat === 'obiekt' || kat === 'garaz') ? estimateRentKat(allOffers().concat(S.katy), subj) : { ok: false, reason: `Najem nie dotyczy kategorii „${KAT[kat].n}”.` }) : flat ? estimateSale(S.tx, subj, { yearOf }) : estimateSaleKat(S.pool, subj, { geo: S.pool });
   if (f.tryb === 'najem' && flat && res.ok) { try { const baseRent = res.adjusted ? estimateRent(allOffers(), { ...subj, rok: null, standard: null }) : res; res.cross = crossCheckRent(allOffers(), S.tx, subj, baseRent.ok ? baseRent : res); const c = res.cross; if (res.adjusted && baseRent.ok) c.vsBase = baseRent.total; if (c.ok && c.agreement === 'rozbieżne' && c.r2 >= 0.3 && res.confidence.score > 1) { res.confidence.score -= 1; res.confidence.level = res.confidence.score === 1 ? 'niska' : 'średnia'; res.confidence.why.push('obniżono: kontrola ze sprzedażą (wiarygodna, R² ≥ 0,3) daje wyraźnie inny czynsz'); } } catch (e) { res.cross = { ok: false, reason: 'Nie udało się policzyć kontroli: ' + e.message }; } }
   if (subj.parking === 'osobno' && res.ok) res.parking = parkingExtra(allOffers());
@@ -311,7 +346,7 @@ function viewWynik(p) {
   const e = getEntry(p);
   if (!e) return [head('Wynik', '', true) + '<div class="empty"><b>Brak wyniku</b>Wróć do formularza i oszacuj wartość.</div>', v => $('[data-back]', v).onclick = () => go('#/wycena')];
   const { subj: s, res: r } = e, sale = s.tryb === 'sprzedaz', step = sale ? 1000 : 10, saved = !!e.id;
-  let html = head(sale ? 'Wycena sprzedaży' : 'Wycena najmu', r.ok ? '' : esc(subjLine(s)), true, true);
+  let html = head(sale ? 'Wycena sprzedaży' : 'Wycena najmu', r.ok ? '' : esc(subjLine(s)), true, true) + (s.miasto ? testBanner() : '');
   if (!r.ok) {
     html += `<div class="card"><div class="eyebrow">Brak wyniku</div><h3>Za mało danych</h3><p class="muted">${esc(r.reason)}</p>
       <p class="small muted">Aplikacja nie podaje liczby, gdy nie ma na czym jej oprzeć. Zaimportuj więcej danych w zakładce <b>Dane</b> albo zmień kryteria.</p></div>
@@ -321,7 +356,7 @@ function viewWynik(p) {
   const lo = roundTo(r.total.lo, step), hi = roundTo(r.total.hi, step), mid = roundTo(r.total.mid, step);
   const pm = r.comps.map(c => c.pm2), dMin = Math.min(...pm, r.pm2.lo), dMax = Math.max(...pm, r.pm2.hi), span = (dMax - dMin) || 1, X = v => ((v - dMin) / span * 100).toFixed(2);
   const srodek = roundTo((r.total.lo + r.total.hi) / 2, step), foto = (e.teczka && (S.foto[e.teczka] || [])[0]) || katImg(s.kat), podM2 = s.m2 > 0 ? srodek / s.m2 : null;
-  html += `${foto ? `<img class="res-foto" src="${foto}" alt="">` : ''}<div class="res-addr"><b>${esc([s.ulica, s.nr].filter(Boolean).join(' ') || s.dzielnica || 'Nieruchomość')}${s.ulica ? ', Lublin' : ''}</b><span>${esc(subjLine(s))}</span></div>
+  html += `${foto ? `<img class="res-foto" src="${foto}" alt="">` : ''}<div class="res-addr"><b>${esc([s.ulica, s.nr].filter(Boolean).join(' ') || s.dzielnica || 'Nieruchomość')}${s.ulica ? ', ' + esc(s.miasto || 'Lublin') : ''}</b><span>${esc(subjLine(s))}</span></div>
   <div class="card hero"><div class="lbl">${esc(r.label)}</div>
     <div class="big gold"><span data-cu="${srodek}">${fmt(srodek)}</span> zł</div>
     <div class="sub">${podM2 ? fmt(podM2) + ' zł/m²' : ''}${sale ? '' : (podM2 ? ' · ' : '') + 'miesięcznie'}</div>
@@ -385,7 +420,7 @@ function viewWynik(p) {
 let geoCtl = null;
 async function ensureGeo(e, q) {
   if (!q && e.geo && e.geo.ok) return e.geo;
-  const r = await geocode({ ulica: q ? q.ulica : e.subj.ulica, nr: q ? q.nr : e.subj.nr });
+  const r = await geocode({ ulica: q ? q.ulica : e.subj.ulica, nr: q ? q.nr : e.subj.nr, ...(e.subj.miasto ? { miasto: e.subj.miasto } : {}) });
   if (r.ok) { e.geo = r; e.geoErr = null; } else { e.geoErr = r; if (q) e.geo = null; }
   if (e.id) save.wyceny();
   return r;
@@ -401,8 +436,8 @@ async function okolMount(e, v) {
     if (pending) inner = '<p class="small muted" style="margin:0">Ustalam położenie budynku w rejestrze adresów…</p>';
     else if (g) {
       let tiles = '';
-      try { const L = await loadAll({ url: osmUrl(S.ust.rcnUrl) }), pr = promienie(g.ll, L.layers); tiles = okTiles(okolica(g.ll, L.layers)) + promHTML(pr); } catch (x) { tiles = `<p class="small muted" style="margin:10px 0 0">${esc(x.message)}</p>`; }
-      inner = `<p class="small" style="margin:0 0 4px"><b>${esc(g.street)} ${esc(g.number)}</b>, ${esc(g.city || 'Lublin')}${g.code ? ' (' + esc(g.code) + ')' : ''}</p>
+      try { const L = await loadAll({ url: OB.url(OBK_, 'osm', S.ust.rcnUrl), key: K('osm-file') }), pr = promienie(g.ll, L.layers); tiles = okTiles(okolica(g.ll, L.layers)) + promHTML(pr); } catch (x) { tiles = `<p class="small muted" style="margin:10px 0 0">${esc(x.message)}</p>`; }
+      inner = `<p class="small" style="margin:0 0 4px"><b>${esc(g.street)} ${esc(g.number)}</b>, ${esc(g.city || OBJ().miasto)}${g.code ? ' (' + esc(g.code) + ')' : ''}</p>
         <p class="tiny muted" style="margin:0 0 12px">${g.source === 'prg' ? 'Położenie budynku z urzędowego rejestru adresów (Państwowy Rejestr Granic, GUGiK). Sprawdź, czy to właściwy adres.' : 'Położenie wskazane ręcznie na mapie.'} Odległości w linii prostej.</p>${tiles}
         <details style="margin-top:12px"><summary class="small" style="color:var(--gold-l);cursor:pointer">Zmień adres lub wskaż na mapie</summary>${form}<div class="gap"></div><button class="btn ghost" id="ok-pin" type="button">Wskaż budynek na mapie</button></details>`;
     } else {
@@ -411,16 +446,16 @@ async function okolMount(e, v) {
     }
     box.innerHTML = `<div class="card"><div class="eyebrow">Najbliższe okolice</div>${inner}<div id="ok-map"></div></div>`;
     const go1 = $('#ok-go', box); if (go1) go1.onclick = async () => { const q = { ulica: $('#ok-ul', box).value.trim(), nr: $('#ok-nr', box).value.trim() }; await draw(true); const r = await ensureGeo(e, q); if (!r.ok) e.geoErr = { ...r, q }; await draw(); };
-    $$('[data-cand]', box).forEach(b => b.onclick = () => { const c = er.candidates[+b.dataset.cand]; e.geo = { ok: true, ll: c.ll, street: c.street, number: c.number, code: c.code, city: 'Lublin', source: 'prg' }; e.geoErr = null; if (e.id) save.wyceny(); draw(); });
-    const sgBox = $('#ok-sg', box); if (sgBox) { const q = (er && er.q) || { ulica: e.subj.ulica, nr: e.subj.nr }; suggestAddr({ ...q, known: S.streets || [] }).then(list => { if (!sgBox.isConnected || !list.length) return;
-      sgBox.innerHTML = 'Czy chodziło o: ' + list.map((c, i) => `<button type="button" class="chip" data-sg="${i}">${esc(c.street + ' ' + c.number)}</button>`).join(' '); $$('[data-sg]', sgBox).forEach(b3 => b3.onclick = () => { const c = list[+b3.dataset.sg]; e.geo = { ok: true, ll: c.ll, street: c.street, number: c.number, code: c.code, city: c.city || 'Lublin', source: 'prg' }; e.geoErr = null; if (e.id) save.wyceny(); draw(); }); }); }
-    const nb = $('#ok-nb', box); if (nb) nb.onclick = async () => { const o = $('#ok-nbl', box); o.textContent = 'Szukam…'; const q = (er && er.q) || { ulica: e.subj.ulica, nr: e.subj.nr }; const list = await neighbors(q); o.innerHTML = list.length ? 'Najbliższe numery w rejestrze: ' + list.map(x => `<button type="button" class="chip" data-nbn="${esc(x.number)}">${esc(x.street + ' ' + x.number)}</button>`).join(' ') : 'Nie znaleziono sąsiednich numerów tej ulicy w rejestrze.'; $$('[data-nbn]', o).forEach(b2 => b2.onclick = async () => { await draw(true); const r2 = await ensureGeo(e, { ulica: q.ulica, nr: b2.dataset.nbn }); if (!r2.ok) e.geoErr = { ...r2, q: { ulica: q.ulica, nr: b2.dataset.nbn } }; draw(); }); };
+    $$('[data-cand]', box).forEach(b => b.onclick = () => { const c = er.candidates[+b.dataset.cand]; e.geo = { ok: true, ll: c.ll, street: c.street, number: c.number, code: c.code, city: e.subj.miasto || 'Lublin', source: 'prg' }; e.geoErr = null; if (e.id) save.wyceny(); draw(); });
+    const sgBox = $('#ok-sg', box); if (sgBox) { const q = (er && er.q) || { ulica: e.subj.ulica, nr: e.subj.nr }; suggestAddr({ ...q, ...(e.subj.miasto ? { miasto: e.subj.miasto } : {}), known: S.streets || [] }).then(list => { if (!sgBox.isConnected || !list.length) return;
+      sgBox.innerHTML = 'Czy chodziło o: ' + list.map((c, i) => `<button type="button" class="chip" data-sg="${i}">${esc(c.street + ' ' + c.number)}</button>`).join(' '); $$('[data-sg]', sgBox).forEach(b3 => b3.onclick = () => { const c = list[+b3.dataset.sg]; e.geo = { ok: true, ll: c.ll, street: c.street, number: c.number, code: c.code, city: c.city || e.subj.miasto || 'Lublin', source: 'prg' }; e.geoErr = null; if (e.id) save.wyceny(); draw(); }); }); }
+    const nb = $('#ok-nb', box); if (nb) nb.onclick = async () => { const o = $('#ok-nbl', box); o.textContent = 'Szukam…'; const q = (er && er.q) || { ulica: e.subj.ulica, nr: e.subj.nr }; const list = await neighbors({ ...q, ...(e.subj.miasto ? { miasto: e.subj.miasto } : {}) }); o.innerHTML = list.length ? 'Najbliższe numery w rejestrze: ' + list.map(x => `<button type="button" class="chip" data-nbn="${esc(x.number)}">${esc(x.street + ' ' + x.number)}</button>`).join(' ') : 'Nie znaleziono sąsiednich numerów tej ulicy w rejestrze.'; $$('[data-nbn]', o).forEach(b2 => b2.onclick = async () => { await draw(true); const r2 = await ensureGeo(e, { ulica: q.ulica, nr: b2.dataset.nbn }); if (!r2.ok) e.geoErr = { ...r2, q: { ulica: q.ulica, nr: b2.dataset.nbn } }; draw(); }); };
     const pin = $('#ok-pin', box); if (pin) pin.onclick = async () => {
       const mb = $('#ok-map', box); mb.innerHTML = '<div class="mapbox" id="ok-pm" style="height:300px;margin-top:12px"></div><p class="tiny muted" style="margin:8px 0">Dotknij mapy w miejscu budynku (można przybliżyć). Potem zatwierdź.</p><button class="btn" id="ok-ok" type="button" disabled>Zatwierdź położenie</button>';
       try {
-        const center = g ? g.ll : undefined, ctl = await createMap($('#ok-pm', box), { center, zoom: center ? 18 : 12 }); let ll = null, mk = null;
+        const center = g ? g.ll : undefined, ctl = await createMap($('#ok-pm', box), { center: center || OBJ().centrum, zoom: center ? 18 : OBJ().zoom }); let ll = null, mk = null;
         ctl.map.on('click', ev => { ll = [+ev.latlng.lat.toFixed(6), +ev.latlng.lng.toFixed(6)]; if (mk) mk.remove(); mk = ctl.L.marker(ll).addTo(ctl.map); $('#ok-ok', box).disabled = false; });
-        $('#ok-ok', box).onclick = () => { if (!ll) return; const q = (er && er.q) || { ulica: e.subj.ulica, nr: e.subj.nr }; e.geo = { ok: true, ll, street: q.ulica || 'wskazany budynek', number: q.nr || '', code: null, city: 'Lublin', source: 'reczne' }; e.geoErr = null; if (e.id) save.wyceny(); ctl.destroy(); draw(); };
+        $('#ok-ok', box).onclick = () => { if (!ll) return; const q = (er && er.q) || { ulica: e.subj.ulica, nr: e.subj.nr }; e.geo = { ok: true, ll, street: q.ulica || 'wskazany budynek', number: q.nr || '', code: null, city: e.subj.miasto || 'Lublin', source: 'reczne' }; e.geoErr = null; if (e.id) save.wyceny(); ctl.destroy(); draw(); };
       } catch (x) { mb.innerHTML = `<p class="small muted">Mapa niedostępna: ${esc(x.message)}</p>`; }
     };
   };
@@ -482,7 +517,7 @@ function viewRaport(p) {
       const s = e.subj, kat = s.kat || 'mieszkanie', m2 = +s.m2 || 0, out = {};
       if (S.pool.length && m2) {
         const T = trendSeries(S.pool, { kat, rynek: ['mieszkanie', 'dom', 'lokal'].includes(kat) ? (s.rynek === 'pierwotny' || s.rynek === 'wtorny' ? s.rynek : '') : '', m2min: Math.round(m2 * .7), m2max: Math.round(m2 * 1.3), years: 8 });
-        if (T.ok) { out.trend = T; out.trendLabel = `Lublin, ${KAT[kat] ? KAT[kat].n.toLowerCase() : 'mieszkania'} o powierzchni ${Math.round(m2 * .7)}–${Math.round(m2 * 1.3)} m².`; }
+        if (T.ok) { out.trend = T; out.trendLabel = `${OBJ().pelna}, ${KAT[kat] ? KAT[kat].n.toLowerCase() : 'mieszkania'} o powierzchni ${Math.round(m2 * .7)}–${Math.round(m2 * 1.3)} m².`; }
       }
       if (kat === 'mieszkanie' && S.tx.length) { try { const Y = yieldByDistrict(allOffers(), S.tx); if (Y.ok) out.yield = Y; } catch { } }
       return out;
@@ -490,7 +525,7 @@ function viewRaport(p) {
     const draw = async () => {
       const my = ++seq, b = $('#pdf', v); b.disabled = true; if (bd) bd.disabled = true; $('#rvh', v).textContent = HINT[variant];
       $('#rp', v).innerHTML = '<div class="empty"><b>Przygotowuję raport…</b></div>';
-      let okol = null, okSrc = '', okMiss = false, prom = null, okOpis = ''; if (variant !== 'short' && variant !== 'rynek' && variant !== 'inwest' && variant !== 'rent') { try { const g = await ensureGeo(e); if (g.ok) { const lay = (await loadAll({ url: osmUrl(S.ust.rcnUrl) })).layers; okol = okolica(g.ll, lay); prom = promienie(g.ll, lay); okOpis = opisLokalizacji(prom); okSrc = g.source === 'prg' ? `Położenie budynku: ${g.street} ${g.number}, ${g.city || 'Lublin'} (Państwowy Rejestr Granic, GUGiK).` : 'Położenie budynku wskazano ręcznie na mapie.'; } else okMiss = true; } catch { okMiss = true; } }
+      let okol = null, okSrc = '', okMiss = false, prom = null, okOpis = ''; if (variant !== 'short' && variant !== 'rynek' && variant !== 'inwest' && variant !== 'rent') { try { const g = await ensureGeo(e); if (g.ok) { const lay = (await loadAll({ url: OB.url(OBK_, 'osm', S.ust.rcnUrl), key: K('osm-file') })).layers; okol = okolica(g.ll, lay); prom = promienie(g.ll, lay); okOpis = opisLokalizacji(prom); okSrc = g.source === 'prg' ? `Położenie budynku: ${g.street} ${g.number}, ${g.city || 'Lublin'} (Państwowy Rejestr Granic, GUGiK).` : 'Położenie budynku wskazano ręcznie na mapie.'; } else okMiss = true; } catch { okMiss = true; } }
       const extra = { variant, market: ['market', 'rent', 'rynek'].includes(variant) ? market() : null, okolica: okol, okolicaNote: okSrc, promienie: prom, okolicaOpis: okOpis, radii: PROMIENIE.map(promLbl) };
       if (variant === 'rynek' && extra.market) { const X = exposure(S.offers, S.ust.zebrania || []); if (X.ok && X.days) extra.market.exp = X; }
       if (variant === 'full' || variant === 'market') { const og = e.teczka ? ogledLast(S.teczki.find(t => t.id === e.teczka)) : null; if (og && og.w.kat) extra.ogled = { ...og.w, fl: (e.subj.kat || 'mieszkanie') === 'mieszkanie', nota: NOTA }; }
@@ -635,7 +670,7 @@ function viewDane() {
   const n = S.offers.length, fl = S.offers.filter(o => o.flagi && o.flagi.length).length, off = S.offers.filter(o => o.wlaczone === false).length;
   const meta = S.rcn?.meta;
   const html = head('Dane', 'Źródła i import') + safeBanner() + `
-  <div class="card"><div class="eyebrow">Oferty najmu</div><div class="kv"><span>W bazie</span><b>${fmt(n)}</b></div>${S.katy.length ? `<div class="kv"><span>Najem domów, lokali, hal, garaży</span><b>${fmt(S.katy.length)}</b></div>` : ''}${S.sprz.length ? `<div class="kv"><span>Oferty sprzedaży (osobno, poza wycenami najmu)</span><b>${fmt(S.sprz.length)}</b></div>` : ''}${S.poza.length ? `<div class="kv"><span>Spoza Lublina (czekają, poza wycenami)</span><b>${fmt(S.poza.length)}</b></div>` : ''}<div class="kv"><span>Podejrzane (pominięte)</span><b>${fl}</b></div><div class="kv"><span>Wyłączone ręcznie</span><b>${off}</b></div>
+  <div class="card"><div class="eyebrow">Oferty najmu</div><div class="kv"><span>W bazie</span><b>${fmt(n)}</b></div>${S.katy.length ? `<div class="kv"><span>Najem domów, lokali, hal, garaży</span><b>${fmt(S.katy.length)}</b></div>` : ''}${S.sprz.length ? `<div class="kv"><span>Oferty sprzedaży (osobno, poza wycenami najmu)</span><b>${fmt(S.sprz.length)}</b></div>` : ''}${S.poza.length ? `<div class="kv"><span>${OBK_ === 'lublin' ? 'Spoza Lublina' : 'Spoza obszaru ' + OBJ().pelna} (czekają, poza wycenami)</span><b>${fmt(S.poza.length)}</b></div>` : ''}<div class="kv"><span>Podejrzane (pominięte)</span><b>${fl}</b></div><div class="kv"><span>Wyłączone ręcznie</span><b>${off}</b></div>
     <div class="gap"></div><button class="btn" data-act="pdf">Wgraj PDF z ofertami</button><div class="gap"></div><button class="btn ghost" data-act="paste">Wklej tekst ofert</button>
     <input type="file" id="fpdf" accept="application/pdf" multiple hidden>
     <p class="tiny muted" style="margin:10px 0 0">W Safari: lista ofert → Udostępnij → Drukuj → pinch na podglądzie → Zapisz do Plików. Plik wgrywasz tutaj. Odczyt dzieje się na tym urządzeniu, bez internetu i bez AI.</p></div>
@@ -660,7 +695,7 @@ function viewDane() {
     $('[data-act="own"]', v).onclick = () => ownSheet(null);
     $$('[data-own]', v).forEach(b => b.onclick = () => ownSheet(b.dataset.own));
     const oc = $('[data-act="ownchk"]', v); if (oc) oc.onclick = () => { const box = $('#ownchk', v); box.innerHTML = '<p class="small muted" style="margin:0">Liczę…</p>'; setTimeout(() => { box.innerHTML = ownImpactHTML(); }, 30); };
-    $('[data-act="rcnurl"]', v).onclick = async () => { const u = $('#rurl', v).value.trim(); if (!u) return toast('Wpisz adres pliku'); S.ust.rcnUrl = u; save.ust(); toast('Pobieram…'); try { const r = await fetch(u, { cache: 'no-store' }); if (!r.ok) throw new Error('HTTP ' + r.status); await setRcn(await r.json(), true); try { const r2 = await fetch(innePath(u), { cache: 'no-store' }); if (r2.ok) await setRcnInne(await r2.json(), true); } catch {} toast(`Wczytano ${fmt(S.tx.length)} lokali${S.inne.length ? ' i ' + fmt(S.inne.length) + ' domów, obiektów i gruntów' : ''}`); render(); } catch (e) { toast('Nie udało się: ' + e.message); } };
+    $('[data-act="rcnurl"]', v).onclick = async () => { const u = $('#rurl', v).value.trim(); if (!u) return toast('Wpisz adres pliku'); S.ust.rcnUrl = u; save.ust(); toast('Pobieram…'); try { const r = await fetch(OB.url(OBK_, 'rcn', u), { cache: 'no-store' }); if (!r.ok) throw new Error('HTTP ' + r.status); await setRcn(await r.json(), true); try { const r2 = await fetch(OB.url(OBK_, 'inne', u), { cache: 'no-store' }); if (r2.ok) await setRcnInne(await r2.json(), true); } catch {} toast(`Wczytano ${fmt(S.tx.length)} lokali${S.inne.length ? ' i ' + fmt(S.inne.length) + ' domów, obiektów i gruntów' : ''}`); render(); } catch (e) { toast('Nie udało się: ' + e.message); } };
     const rc = $('[data-act="rcncheck"]', v); if (rc) rc.onclick = () => checkRcn(true);
     const fr = $('#frcn', v); $('[data-act="rcnfile"]', v).onclick = () => fr.click(); fr.onchange = async () => { try { await setRcn(JSON.parse(await fr.files[0].text())); } catch (e) { toast('Błędny plik: ' + e.message); } };
     $('[data-act="exp"]', v).onclick = async () => { const blob = new Blob([JSON.stringify({ v: 1, offers: wszystkie(), wlasne: S.wlasne, budynki: S.budynki, wyceny: S.wyceny, teczki: S.teczki, dokumenty: S.dokumenty, ust: S.ust })], { type: 'application/json' }); await saveFile(blob, 'kopia-wycena-' + new Date().toISOString().slice(0, 10) + '.json'); };
@@ -701,32 +736,32 @@ async function zbieranieCard(v) {
 
 async function setRcn(pack, quiet) {
   if (!pack || !Array.isArray(pack.cols) || !Array.isArray(pack.rows) || !pack.cols.includes('cena')) throw new Error('nieznany format');
-  await store.set('rcn', pack); S.rcn = pack; setTx();
+  await store.set(K('rcn'), pack); S.rcn = pack; setTx();
   if (!quiet) { toast(`Wczytano ${fmt(S.tx.length)} transakcji`); render(); }
 }
 async function setRcnInne(pack, quiet) {
   if (!pack || !Array.isArray(pack.cols) || !Array.isArray(pack.rows) || !pack.cols.includes('nier')) throw new Error('nieznany format pliku domów i gruntów');
-  await store.set('rcnInne', pack); S.rcnInne = pack; setTx();
+  await store.set(K('rcnInne'), pack); S.rcnInne = pack; setTx();
   if (!quiet) { toast(`Wczytano ${fmt(S.inne.length)} transakcji domów, obiektów i gruntów`); render(); }
 }
-const innePath = url => url.replace(/[^/]*$/, 'rcn_inne.json');
+const innePath = url => url.replace(/[^/]*$/, 'rcn_inne.json');   // (Lublin) dla obszaru: OB.url(OBK(), 'inne', …)
 // Automatyczna aktualizacja RCN: serwer odświeża pliki codziennie i zapisuje mały rcn_meta.json z wersjami danych (mieszkania i lokale + domy, obiekty, grunty).
 // Każde urządzenie sprawdza ten mały plik (przy starcie, po powrocie do aplikacji, co kilka godzin) i pobiera duże pliki tylko gdy wersja się zmieniła.
 let rcnBusy = false;
 async function checkRcn(force) {
-  const url = S.ust.rcnUrl; if (!url || rcnBusy || S.safe) return;
-  if (!force && S.rcn && S.rcnInne) { if (navigator.connection?.saveData) return; if (Date.now() - (await store.get('rcncheck', 0)) < 3 * 3600e3) return; }
+  const url = OB.url(OBK_, 'rcn', S.ust.rcnUrl), ob = OBK_; if (!url || rcnBusy || S.safe) return;
+  if (!force && S.rcn && S.rcnInne) { if (navigator.connection?.saveData) return; if (Date.now() - (await store.get(K('rcncheck'), 0)) < 3 * 3600e3) return; }
   rcnBusy = true;
   try {
-    const r = await fetch(url.replace(/[^/]*$/, 'rcn_meta.json'), { cache: 'no-store' });
+    const r = await fetch(OB.url(ob, 'meta', S.ust.rcnUrl), { cache: 'no-store' });
     if (!r.ok) throw new Error('serwer nie ma jeszcze pliku z wersją danych (HTTP ' + r.status + ')');
-    const m = await r.json(); await store.set('rcncheck', Date.now());
+    const m = await r.json(); if (ob !== OBK_) return; await store.set(K('rcncheck'), Date.now());
     const needA = !(S.rcn?.meta?.wersja && S.rcn.meta.wersja === m.wersja), needB = !!m.inne && S.rcnInne?.meta?.wersja !== m.inne.wersja;
     if (!needA && !needB) { if (force) toast('Dane RCN są aktualne'); return; }
     toast('Pobieram nowe dane RCN…');
     const before = S.tx.length + S.inne.length;
-    if (needA) { const f = await fetch(url, { cache: 'no-store' }); if (!f.ok) throw new Error('HTTP ' + f.status); await setRcn(await f.json(), true); }
-    if (needB) { const f = await fetch(innePath(url), { cache: 'no-store' }); if (!f.ok) throw new Error('domy i grunty: HTTP ' + f.status); await setRcnInne(await f.json(), true); }
+    if (needA) { const f = await fetch(url, { cache: 'no-store' }); if (!f.ok) throw new Error('HTTP ' + f.status); const j = await f.json(); if (ob !== OBK_) return; await setRcn(j, true); }
+    if (needB) { const f = await fetch(OB.url(ob, 'inne', S.ust.rcnUrl), { cache: 'no-store' }); if (!f.ok) throw new Error('domy i grunty: HTTP ' + f.status); const j = await f.json(); if (ob !== OBK_) return; await setRcnInne(j, true); }
     const d = S.tx.length + S.inne.length - before;
     toast(`Dane RCN zaktualizowane: ${fmt(S.rcn.meta.rekordow)} lokali${S.rcnInne ? ' + ' + fmt(S.rcnInne.meta.rekordow) + ' domów, obiektów i gruntów' : ''} (${d >= 0 ? '+' : ''}${fmt(d)} użytecznych)`);
     if (location.hash.replace(/^#\/?/, '').split('/')[0] === 'dane') render();
@@ -1047,8 +1082,8 @@ async function fullAnalysis(t) {
   out.saleId = a.e ? a.e.id : null; out.rentId = b.e ? b.e.id : null;
   const eg = a.e || b.e; let geo = null;
   try { const g = await ensureGeo(eg || { subj: form('sprzedaz') }); if (g.ok) { geo = g; if (a.e) a.e.geo = g; if (b.e) b.e.geo = g; if (a.e || b.e) save.wyceny(); krok('Adres w rejestrze', true, `${g.street} ${g.number}, ${g.city || 'Lublin'}`); } else krok('Adres w rejestrze', false, g.message || 'Nie znaleziono budynku.'); } catch (x) { krok('Adres w rejestrze', false, x.message); }
-  if (geo) { out.geo = { street: geo.street, number: geo.number, city: geo.city || 'Lublin', source: geo.source };
-    try { const L = await loadAll({ url: osmUrl(S.ust.rcnUrl) }), pr = promienie(geo.ll, L.layers); out.okol = okolica(geo.ll, L.layers); out.prom = pr; out.opis = opisLokalizacji(pr); krok('Analiza lokalizacji', true, ''); } catch (x) { krok('Analiza lokalizacji', false, x.message); } }
+  if (geo) { out.geo = { street: geo.street, number: geo.number, city: geo.city || OBJ().miasto, source: geo.source };
+    try { const L = await loadAll({ url: OB.url(OBK_, 'osm', S.ust.rcnUrl), key: K('osm-file') }), pr = promienie(geo.ll, L.layers); out.okol = okolica(geo.ll, L.layers); out.prom = pr; out.opis = opisLokalizacji(pr); krok('Analiza lokalizacji', true, ''); } catch (x) { krok('Analiza lokalizacji', false, x.message); } }
   else krok('Analiza lokalizacji', false, 'Bez adresu w rejestrze nie liczymy odległości.');
   const m2 = parseFloat(String(t.m2).replace(',', '.'));
   try { const T = trendSeries(S.pool, { kat, m2min: Math.round(m2 * .7), m2max: Math.round(m2 * 1.3), years: 8 }); if (T.ok) { const L = T.points[T.points.length - 1]; out.trend = { med: L.med, yoy: T.yoy ? T.yoy.pct : null, n: T.n }; krok('Trend cen', true, ''); } else krok('Trend cen', false, T.reason); } catch (x) { krok('Trend cen', false, x.message); }
@@ -1068,7 +1103,7 @@ function viewAnaliza(id) {
   ${en ? `<a class="card alink" href="#/wynik/h/${en.id}"><div class="eyebrow">Szacunkowy czynsz miesięcznie</div><h3>${fmt(midRange(en).mid)} zł</h3><div class="muted small">${fmt(midRange(en).lo)} – ${fmt(midRange(en).hi)} zł · pewność ${LV[en.res.confidence.level].toLowerCase()}</div></a>` : ''}
   ${A.inw ? `<div class="card"><div class="eyebrow">Inwestycja przy cenie ${fmt(A.inw.cena)} zł i czynszu ${fmt(A.inw.czynsz)} zł</div><div class="kv"><span>Zwrot brutto</span><b>${p1(A.inw.gross)}</b></div><div class="kv"><span>Zwrot netto po podatku</span><b>${p1(A.inw.netPost)}</b></div><div class="kv"><span>IRR, ${A.inw.N} lat</span><b>${p1(A.inw.irr)}</b></div><div class="kv"><span>ROI, ${A.inw.N} lat</span><b>${p1(A.inw.roi)}</b></div><div class="kv"><span>Przepływ miesięczny</span><b>${A.inw.cfMies >= 0 ? '+' : '−'}${zl(Math.abs(A.inw.cfMies))}</b></div><p class="tiny muted" style="margin:8px 0 0">Założenia podatku, kosztów, kredytu i wzrostu wartości z kalkulatora. Bez wpisanego wzrostu wartość końcowa równa się cenie zakupu.</p><div class="gap"></div><button class="btn ghost" data-act="dokalk" type="button">Otwórz w kalkulatorze</button></div>` : ''}
   ${A.opis ? `<div class="card"><div class="eyebrow">Lokalizacja</div>${A.geo ? `<p class="small" style="margin:0 0 6px"><b>${esc(A.geo.street)} ${esc(A.geo.number)}, ${esc(A.geo.city)}</b></p>` : ''}<p class="small muted" style="margin:0 0 10px">${esc(A.opis)}</p>${okTiles(A.okol || [])}</div>` : ''}
-  ${A.trend ? `<div class="card"><div class="eyebrow">Ceny podobnych nieruchomości w Lublinie</div><div class="kv"><span>Mediana, ostatni okres</span><b>${fmt(A.trend.med)} zł/m²</b></div><div class="kv"><span>Rok do roku</span><b>${A.trend.yoy == null ? '—' : plPct(A.trend.yoy)}</b></div><div class="kv"><span>Podstawa</span><b>${fmt(A.trend.n)} transakcji</b></div></div>` : ''}
+  ${A.trend ? `<div class="card"><div class="eyebrow">Ceny podobnych nieruchomości: ${OBJ().pelna}</div><div class="kv"><span>Mediana, ostatni okres</span><b>${fmt(A.trend.med)} zł/m²</b></div><div class="kv"><span>Rok do roku</span><b>${A.trend.yoy == null ? '—' : plPct(A.trend.yoy)}</b></div><div class="kv"><span>Podstawa</span><b>${fmt(A.trend.n)} transakcji</b></div></div>` : ''}
   <div class="card"><div class="eyebrow">Przebieg analizy</div>${A.kroki.map(k => `<div class="kv"><span>${esc(k.k)}${k.txt ? `<br><small>${esc(k.txt)}</small>` : ''}</span><b class="${k.ok ? 'q2' : 'q0'}">${k.ok ? 'gotowe' : 'pominięto'}</b></div>`).join('')}</div>
   ${es || en ? `<a class="btn" href="#/raport/h/${(es || en).id}" style="text-decoration:none">Raport dla klienta</a>` : ''}`;
   return [html, v => { $('[data-back]', v).onclick = backT; const k = $('[data-act="dokalk"]', v); if (k) k.onclick = () => { S.invest.cena = A.inw.cena; S.invest.czynsz = A.inw.czynsz; S.invest.pcc = ''; ls.set('am-invest', JSON.stringify(S.invest)); go('#/kalkulator'); }; }];
@@ -1229,7 +1264,7 @@ function viewMapa() {
     const olStatus = async () => {
       const on = Object.keys(olay).filter(k => olay[k]), box = $('#olst', v); if (!on.length) { box.textContent = 'Dotknij, aby pokazać na mapie. Dane z OpenStreetMap, odświeżane co tydzień na serwerze.'; return; }
       const ls = S.last.sprzedaz; const ll = ls?.res?.ok ? ls.res.subLL : subj; const parts = [];
-      if (ll) for (const k of on) { try { const { pts } = await loadPois(k, { url: osmUrl(S.ust.rcnUrl) }); const n = nearest(pts, ll); if (n) parts.push(`${OSM[k].one}: ${n.m < 1000 ? n.m + ' m' : (n.m / 1000).toFixed(1).replace('.', ',') + ' km'}${n.p.name ? ' (' + esc(n.p.name) + ')' : ''}`); } catch { } }
+      if (ll) for (const k of on) { try { const { pts } = await loadPois(k, { url: OB.url(OBK_, 'osm', S.ust.rcnUrl), key: K('osm-file') }); const n = nearest(pts, ll); if (n) parts.push(`${OSM[k].one}: ${n.m < 1000 ? n.m + ' m' : (n.m / 1000).toFixed(1).replace('.', ',') + ' km'}${n.p.name ? ' (' + esc(n.p.name) + ')' : ''}`); } catch { } }
       box.innerHTML = (parts.length ? `Od ostatnio wycenianej nieruchomości (w linii prostej), najbliżej: ${parts.join(', ')}. ` : '') + '© współtwórcy OpenStreetMap.';
     };
     $$('#olay button', v).forEach(b => b.onclick = async () => {
@@ -1237,13 +1272,13 @@ function viewMapa() {
       if (olay[k]) { olay[k].remove(); olay[k] = null; b.classList.remove('on'); return olStatus(); }
       b.classList.add('on'); $('#olst', v).textContent = 'Pobieram dane…';
       try {
-        const { pts } = await loadPois(k, { url: osmUrl(S.ust.rcnUrl) }), g = ctl.L.layerGroup();
+        const { pts } = await loadPois(k, { url: OB.url(OBK_, 'osm', S.ust.rcnUrl), key: K('osm-file') }), g = ctl.L.layerGroup();
         for (const p of pts) ctl.L.circleMarker([p.lat, p.lon], { radius: 4, weight: 1, color: 'rgba(11,11,13,.9)', fillColor: OSM[k].color, fillOpacity: .95 }).bindTooltip(p.name ? esc(p.name) : OSM[k].one).addTo(g);
         g.addTo(ctl.map); olay[k] = g; await olStatus();
       } catch (e) { b.classList.remove('on'); $('#olst', v).textContent = e.message; }
     });
     bindFilters();
-    try { ctl = await createMap($('#mapbox', v)); } catch (e) { $('#mapbox', v).innerHTML = `<div class="empty"><b>Mapa niedostępna</b>${esc(e.message)}</div>`; return; }
+    try { ctl = await createMap($('#mapbox', v), { center: OBJ().centrum, zoom: OBJ().zoom }); } catch (e) { $('#mapbox', v).innerHTML = `<div class="empty"><b>Mapa niedostępna</b>${esc(e.message)}</div>`; return; }
     if (!$('#mapbox', v).isConnected) { ctl.destroy(); return; }
     mapCtl = ctl; draw(true);
   }];
@@ -1264,7 +1299,7 @@ function viewRynek() {
   <div class="card"><div class="eyebrow">Filtry trendu</div>
     <div class="field"><span>Rodzaj nieruchomości</span>${chips('kat', KAT_ORDER.filter(k => ['mieszkanie', 'dom', 'lokal', 'garaz'].includes(k)).map(k => [k, KAT[k].n]))}</div>
     <div class="field" id="rf-rynek"></div><div class="field" id="rf-metraz"></div>
-    <label class="field" id="rw-dz"><span>Dzielnica</span><select class="in" id="rf-dz"><option value="">Cały Lublin</option>${[...new Set(allOffers().map(o => o.dzielnica).filter(Boolean))].sort((x, y) => x.localeCompare(y, 'pl')).map(x => `<option value="${esc(x)}"${normDz(x) === normDz(m.dzielnica) ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select></label>
+    <label class="field" id="rw-dz"><span>Dzielnica</span><select class="in" id="rf-dz"><option value="">Cały obszar: ${OBJ().pelna}</option>${[...new Set(allOffers().map(o => o.dzielnica).filter(Boolean))].sort((x, y) => x.localeCompare(y, 'pl')).map(x => `<option value="${esc(x)}"${normDz(x) === normDz(m.dzielnica) ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select></label>
     <label class="field" id="rw-ul"><span>Ulica (liczymy wokół niej)</span><input class="in" id="rf-ul" value="${esc(m.ulica)}" placeholder="całe miasto" autocomplete="off" autocapitalize="words"></label>
     <div class="field" id="rf-r"></div></div>
   <div class="card" id="rpelna"><div class="eyebrow">Rentowność najmu w dzielnicach</div><div id="ryield"></div></div>
@@ -1319,7 +1354,7 @@ function viewRynek() {
       box.innerHTML = `<div class="stats" style="margin:0 0 10px"><div class="stat"><b>${d ? Math.round(d.med) + ' dni' : '—'}</b><span>typowy czas do zniknięcia oferty</span></div><div class="stat"><b>${X.nGone}</b><span>ofert, które zniknęły</span></div><div class="stat"><b>${X.nChanged ? Math.round(X.nCut / X.nChanged * 100) + '%' : '—'}</b><span>ofert ze zmianą ceny, które staniały</span></div></div>
         <p class="tiny muted" style="margin:0">${d ? `Połowa ofert znikała w ciągu ${Math.round(d.med)} dni (środkowe 50%: ${Math.round(d.p25)}–${Math.round(d.p75)} dni).` : 'Za mało zniknętych ofert (potrzeba co najmniej 10), by podać czas.'} Oferta „znikła”, gdy nie było jej w ostatnim pełnym zebraniu; dokładność to odstęp między zebraniami (${X.spanDays} dni, ${X.collections} zebrań). Zniknięcie oferty nie zawsze oznacza wynajem.${X.cutMed != null ? ` Mediana obniżki: ${(X.cutMed * 100).toFixed(1).replace('.', ',')}%.` : ''}</p>`;
     };
-    const paintZk = z => { m.zk = z; $('#rw-dz', v).classList.toggle('hide', z !== 'dzielnica'); $('#rw-ul', v).classList.toggle('hide', z !== 'promien'); $('#rtt', v).textContent = 'Trend ceny za m² – ' + (z === 'dzielnica' && m.dzielnica ? m.dzielnica : z === 'promien' && m.ulica ? 'okolice ul. ' + m.ulica : 'Lublin'); };
+    const paintZk = z => { m.zk = z; $('#rw-dz', v).classList.toggle('hide', z !== 'dzielnica'); $('#rw-ul', v).classList.toggle('hide', z !== 'promien'); $('#rtt', v).textContent = 'Trend ceny za m² – ' + (z === 'dzielnica' && m.dzielnica ? m.dzielnica : z === 'promien' && m.ulica ? 'okolice ul. ' + m.ulica : OBJ().pelna); };
     $$('[data-zk]', v).forEach(b => b.onclick = () => { const z = b.dataset.zk; $$('[data-zk]', v).forEach(x => x.classList.toggle('on', x === b)); $('#rzk', v).dataset.v = ZK.findIndex(x => x[0] === z);
       if (z !== 'dzielnica') { m.dzielnica = ''; $('#rf-dz', v).value = ''; } if (z !== 'promien') { m.ulica = ''; $('#rf-ul', v).value = ''; } paintZk(z); paintFilters(); drawTrend(); if (z !== 'miasto') $(z === 'dzielnica' ? '#rw-dz' : '#rw-ul', v).scrollIntoView({ behavior: 'smooth', block: 'center' }); });
     $('[data-act="pelna"]', v).onclick = () => $('#rpelna', v).scrollIntoView({ behavior: 'smooth', block: 'start' });
