@@ -45,6 +45,8 @@ def zdjecie(i):
     """Adres miniatury zdjęcia głównego z portalu (sam link, plik nie jest pobierany). Tylko do rozpoznania oferty przez pośrednika."""
     im = (i.get('images') or [{}])[0] or {}
     u = im.get('small') or im.get('medium') or ''
+    if not u and (im.get('url') or '').startswith('https://'):
+        u = re.sub(r';s=[^/]*$', '', im['url']) + ';s=320x240'      # od 11.2026 portal podaje pełny obraz w polu url; miniatura przez parametr rozmiaru
     return u if u.startswith('https://') else None
 
 def rekord(i, typ='najem', kat='mieszkanie'):

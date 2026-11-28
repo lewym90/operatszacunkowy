@@ -15,4 +15,8 @@ assert Z.rekord(i) == {'portalId': 'ID4abc', 'url': 'https://www.otodom.pl/pl/of
 assert Z.rekord({**i, 'images': [{'small': 'https://x.olxcdn.com/a.jpg'}]})['foto'] == 'https://x.olxcdn.com/a.jpg' and 'foto' not in Z.rekord({**i, 'images': [{'small': 'javascript:x'}]})
 assert Z.rekord({**i, 'hidePrice': True}) is None and Z.rekord({**i, 'estate': 'INVESTMENT'}) is None
 assert Z.czynsz_ad({'target': {'Rent': 500}}) == 500 and Z.czynsz_ad({'target': {'Rent': '450.0'}}) == 450 and Z.czynsz_ad({'target': {}}) is None and Z.czynsz_ad({'target': {'Rent': 'x'}}) is None
+U = 'https://ireland.apollo.olxcdn.com/v1/files/eyJabc.def/image'
+assert Z.zdjecie({'images': [{'url': U}, {'url': U + '2'}]}) == U + ';s=320x240', 'zdjęcie z pola url (format portalu od 11.2026)'
+assert Z.zdjecie({'images': [{'small': 'https://x/s.jpg', 'url': U}]}) == 'https://x/s.jpg', 'stary format: small'
+assert Z.zdjecie({'images': []}) is None and Z.zdjecie({}) is None, 'bez zdjęcia'
 print('otodom_reguly: OK')
