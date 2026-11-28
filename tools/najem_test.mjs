@@ -26,7 +26,8 @@ const subjectOf = o => ({ tryb: 'najem', kat: 'mieszkanie', ulica: o.ulica || ''
 // ---------- dane z RCN i OSM: punkt ulicy, poziom cen, odległość, rok budowy ----------
 const naUlicy = new Map(); for (const t of tx) { if (!t.ulica) continue; const k = streetKey(t.ulica); (naUlicy.get(k) || naUlicy.set(k, []).get(k)).push(t); }
 const punkt = new Map(); for (const [k, l] of naUlicy) punkt.set(k, [med(l.map(t => t.lat)), med(l.map(t => t.lon))]);
-const maxTs = Math.max(...tx.map(t => t.ts || 0)), swieze = tx.filter(t => t.ts && t.ts >= maxTs - 3 * 365.25 * 864e5 && t.pelne && !t.wielolokalowa && t.m2 >= 12 && t.cena > 0).map(t => [t.lat, t.lon, t.cena / t.m2]);
+const maxTs = tx.reduce((m, t) => Math.max(m, t.ts || 0), 0),   // bez rozwijania tablicy: Kraków ma ponad 200 tys. transakcji (przepełnienie stosu)
+      swieze = tx.filter(t => t.ts && t.ts >= maxTs - 3 * 365.25 * 864e5 && t.pelne && !t.wielolokalowa && t.m2 >= 12 && t.cena > 0).map(t => [t.lat, t.lon, t.cena / t.m2]);
 const poziomCen = p => { for (const r of [0.5, 1, 1.5]) { const v = swieze.filter(t => dist(t, p) <= r).map(t => t[2]); if (v.length >= 10) return Math.log(med(v)); } return null; };
 const uczelnie = (osm.layers?.uczelnie || []).map(x => Array.isArray(x) ? x : [x.lat, x.lon]);
 const doUczelni = p => uczelnie.length ? Math.log(100 + 1000 * Math.min(...uczelnie.map(u => dist(u, p)))) : null;
